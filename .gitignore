@@ -1,0 +1,92 @@
+# OSX
+.DS_Store
+
+# XDE / Expo
+.expo/
+
+# VSCode
+.vscode/
+jsconfig.json
+
+# Xcode
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+project.xcworkspace
+
+# Android / IntelliJ
+.classpath
+.cxx
+.gradle
+.idea
+.project
+.settings
+local.properties
+*.iml
+
+# CocoaPods (local example apps only)
+**/Pods/
+example/ios/Pods
+
+# Ruby
+example/vendor/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Package manager artifacts
+*.tgz
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# BUCK
+buck-out/
+\.buckd/
+android/app/libs
+android/keystores/debug.keystore
+
+# Kotlin
+.kotlin
+
+# Tests / coverage
+coverage/
+.nyc_output/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Misc
+*.log
+tmp/
+temp/
+dist/
+.turbo
+
+# react-native-builder-bob — built output (rebuilt by `npm run build` / prepublish)
+lib/
+tsconfig.tsbuildinfo

@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Optional: declares Vulkan may be used; not required so the app still installs on devices without Vulkan. -->
+  <uses-feature android:name="android.hardware.vulkan.level" android:required="false" />
+  <uses-feature android:name="android.hardware.vulkan.version" android:required="false" />
+</manifest>

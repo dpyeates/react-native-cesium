@@ -1,0 +1,41 @@
+version: 2
+enable-beta-ecosystems: true
+updates:
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'daily'
+    labels:
+      - 'dependencies'
+
+  - package-ecosystem: 'gradle'
+    directories:
+      - '/android/'
+    schedule:
+      interval: 'daily'
+    labels:
+      - 'dependencies'
+      - 'kotlin'
+
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'daily'
+    labels:
+      - 'dependencies'
+      - 'typescript'
+
+    groups:
+      react-native-cli:
+        patterns:
+          - '@react-native-community/cli*'
+      babel:
+        patterns:
+          - '@babel/*'
+      react-native:
+        patterns:
+          - '@react-native/*'
+      nitro:
+        patterns:
+          - 'nitrogen'
+          - 'react-native-nitro-modules'

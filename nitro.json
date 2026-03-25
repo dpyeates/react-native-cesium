@@ -1,0 +1,30 @@
+{
+  "$schema": "https://nitro.margelo.com/nitro.schema.json",
+  "cxxNamespace": [
+    "reactnativecesium"
+  ],
+  "ios": {
+    "iosModuleName": "ReactNativeCesium"
+  },
+  "android": {
+    "androidNamespace": [
+      "reactnativecesium"
+    ],
+    "androidCxxLibName": "ReactNativeCesium"
+  },
+  "autolinking": {
+    "ReactNativeCesium": {
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "HybridReactNativeCesium"
+      },
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridReactNativeCesium"
+      }
+    }
+  },
+  "ignorePaths": [
+    "**/node_modules"
+  ]
+}
