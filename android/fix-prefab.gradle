@@ -13,7 +13,7 @@ tasks.configureEach { task ->
 }
 
 afterEvaluate {
-  def abis = reactNativeArchitectures()
+  def abis = cesiumNativeAbiFilters()
   rootProject.allprojects.each { proj ->
     if (proj === rootProject) return
 

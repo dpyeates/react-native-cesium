@@ -13,6 +13,18 @@ Pod::Spec.new do |s|
   s.platforms    = { :ios => min_ios_version_supported, :visionos => 1.0 }
   s.source       = { :git => "https://github.com/sensorworks/react-native-cesium.git", :tag => "#{s.version}" }
 
+  cesium_xcframework = File.join(__dir__, "vendor", "ios", "CesiumNative.xcframework")
+  unless File.exist?(cesium_xcframework)
+    raise "react-native-cesium: Missing Cesium Native iOS prebuilts at #{cesium_xcframework}. Maintainer: run `yarn run update` and `yarn run build` (see package README)."
+  end
+  s.vendored_frameworks = "vendor/ios/CesiumNative.xcframework"
+
+  cpp_include = File.join(__dir__, "cpp")
+  s.pod_target_xcconfig = {
+    "HEADER_SEARCH_PATHS" => "$(inherited) \"#{cpp_include}\"",
+    "CLANG_CXX_LANGUAGE_STANDARD" => "c++20",
+  }
+
   # GPU: Metal (iOS). Link frameworks used by Metal-based rendering.
   s.frameworks   = "Metal", "MetalKit", "QuartzCore"
 

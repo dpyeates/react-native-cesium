@@ -9,11 +9,14 @@
   "source": "src/index",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "clean": "git clean -dfX",
+    "clean": "node scripts/cesium/clean.mjs",
     "release": "semantic-release",
-    "build": "npm run typecheck && bob build",
-    "codegen": "nitrogen --logLevel=\"debug\" && npm run build && node post-script.js",
-    "prepublishOnly": "npm run build"
+    "build": "node scripts/cesium/build.mjs",
+    "build:js": "npm run typecheck && bob build",
+    "update": "node scripts/cesium/clone.mjs",
+    "cesium:update": "npm run update",
+    "codegen": "nitrogen --logLevel=\"debug\" && npm run build:js && node post-script.js",
+    "prepublishOnly": "npm run build:js"
   },
   "keywords": [
     "react-native",
@@ -28,7 +31,11 @@
     "react-native.config.js",
     "lib",
     "LICENSE",
+    "NOTICE",
     "nitrogen",
+    "scripts/cesium",
+    "vendor/android",
+    "vendor/ios",
     "cpp",
     "nitro.json",
     "android/build.gradle",

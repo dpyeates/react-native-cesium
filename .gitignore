@@ -80,6 +80,22 @@ coverage/
 .env.*
 !.env.example
 
+# Local path to vcpkg for `yarn run build` (optional; see README)
+.vcpkg-root
+
+# vcpkg clone used by `yarn run build` when no system vcpkg exists (auto-installed)
+vendor/vcpkg/
+
+# Cesium Native source checkout (maintainers: `yarn run update`)
+vendor/cesium-native/
+# Local staging for native prebuild script (not published)
+vendor/.cesium-staging/
+
+# Prebuilt Cesium Native (thousands of files / ~1GB+; run `yarn build` after clone).
+# Still listed in package.json `files` — `npm publish` packs them from disk when maintainers build before release.
+vendor/android/
+vendor/ios/
+
 # Misc
 *.log
 tmp/
@@ -87,6 +103,6 @@ temp/
 dist/
 .turbo
 
-# react-native-builder-bob — built output (rebuilt by `npm run build` / prepublish)
+# react-native-builder-bob — built output (rebuilt by `npm run build:js` / prepublish)
 lib/
 tsconfig.tsbuildinfo

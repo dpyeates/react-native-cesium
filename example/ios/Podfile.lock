@@ -2211,7 +2211,7 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: e96e93b493d8d86eeaee3e590ba0be53f6abe46f
   ReactCodegen: 797de5178718324c6eba3327b07f9a423fbd5787
   ReactCommon: 07572bf9e687c8a52fbe4a3641e9e3a1a477c78e
-  ReactNativeCesium: 312509b82c7bde9deda001e6fe0140d3cf43cce4
+  ReactNativeCesium: df5f4a76dee3705815b24753bacc0ce1d7b4776c
   ReactNativeDependencies: 84650a60c6fdf4f95626e28e9de092f5677c5239
   Yoga: c0b3f2c7e8d3e327e450223a2414ca3fa296b9a2
 

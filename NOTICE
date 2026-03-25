@@ -1,0 +1,12 @@
+Third-party notices
+===================
+
+This package may ship prebuilt static libraries and headers produced from
+Cesium Native (https://github.com/CesiumGS/cesium-native).
+
+Cesium Native is licensed under the Apache License, Version 2.0.
+You may obtain a copy of the License at:
+https://www.apache.org/licenses/LICENSE-2.0
+
+See also the upstream repository for copyright notices and third-party
+dependencies bundled by Cesium Native and vcpkg.
