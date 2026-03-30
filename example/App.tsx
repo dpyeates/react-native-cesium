@@ -1,6 +1,5 @@
 import React, { useRef, useState, useCallback, useMemo } from 'react';
 import {
-  PanResponder,
   StatusBar,
   StyleSheet,
   View,
@@ -225,59 +224,6 @@ function AppContent() {
     []
   );
 
-  // ── Camera gesture overlay ────────────────────────────────────────────────
-  // Tracks which pointer IDs are currently active so we can detect new touches
-  // that join during an ongoing gesture and cleanly end all touches on release.
-  const activeTouchIds = useRef<Set<number>>(new Set());
-
-  const cameraResponder = useRef(
-    PanResponder.create({
-      // Claim every touch that starts on the camera overlay.
-      onStartShouldSetPanResponder: () => true,
-      // Also claim moves so multi-touch updates flow through.
-      onMoveShouldSetPanResponder: () => true,
-      // Don't steal from the joystick / layer-picker children.
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponderCapture:  () => false,
-
-      onPanResponderGrant: (e) => {
-        activeTouchIds.current.clear();
-        for (const t of e.nativeEvent.touches) {
-          nativeMethods.current?.onTouchStart(t.identifier, t.pageX, t.pageY);
-          activeTouchIds.current.add(t.identifier);
-        }
-      },
-
-      onPanResponderMove: (e) => {
-        // Register any new fingers that joined mid-gesture.
-        for (const t of e.nativeEvent.touches) {
-          if (!activeTouchIds.current.has(t.identifier)) {
-            nativeMethods.current?.onTouchStart(t.identifier, t.pageX, t.pageY);
-            activeTouchIds.current.add(t.identifier);
-          }
-        }
-        // Forward moves.
-        for (const t of e.nativeEvent.changedTouches) {
-          nativeMethods.current?.onTouchChange(t.identifier, t.pageX, t.pageY);
-        }
-      },
-
-      onPanResponderRelease: (e) => {
-        for (const t of e.nativeEvent.changedTouches) {
-          nativeMethods.current?.onTouchEnd(t.identifier);
-          activeTouchIds.current.delete(t.identifier);
-        }
-      },
-
-      onPanResponderTerminate: () => {
-        for (const id of activeTouchIds.current) {
-          nativeMethods.current?.onTouchEnd(id);
-        }
-        activeTouchIds.current.clear();
-      },
-    })
-  ).current;
-
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -299,12 +245,6 @@ function AppContent() {
         cameraRoll={0}
         debugOverlay={false}
         ionImageryAssetId={imageryAssetId}
-      />
-
-      {/* Transparent overlay — captures camera pan / pinch / rotate gestures */}
-      <View
-        style={StyleSheet.absoluteFillObject}
-        {...cameraResponder.panHandlers}
       />
 
       {/* Joystick + layer picker — bottom centre, stacked */}

@@ -27,6 +27,23 @@ void TaskProcessor::startTask(std::function<void()> f) {
   cv_.notify_one();
 }
 
+uint32_t TaskProcessor::getActiveTaskCount() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return activeTasks_;
+}
+
+uint32_t TaskProcessor::getQueuedTaskCount() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return static_cast<uint32_t>(tasks_.size());
+}
+
+void TaskProcessor::waitUntilIdle() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  idleCv_.wait(lock, [this] {
+    return tasks_.empty() && activeTasks_ == 0;
+  });
+}
+
 void TaskProcessor::workerLoop() {
   while (true) {
     std::function<void()> task;
@@ -40,8 +57,14 @@ void TaskProcessor::workerLoop() {
       }
       task = std::move(tasks_.front());
       tasks_.pop();
+      ++activeTasks_; // increment under the lock so waitUntilIdle sees it
     }
     task();
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      --activeTasks_;
+    }
+    idleCv_.notify_all(); // wake any thread waiting in waitUntilIdle
   }
 }
 

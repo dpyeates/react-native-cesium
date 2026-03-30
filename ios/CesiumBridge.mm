@@ -16,6 +16,11 @@
   int   _viewportHeight;
   BOOL  _initialized;
 
+  // Stored init params needed to rebuild the engine on imagery switch.
+  NSString* _cacheDir;
+  NSString* _ionAccessToken;
+  int64_t   _ionTilesetAssetId;
+
   // Aircraft joystick rates (degrees/second), written from JS thread,
   // read from CADisplayLink thread. Use atomic for safety.
   std::atomic<double> _pitchRate;
@@ -28,41 +33,65 @@
                          cacheDir:(NSString *)cacheDir {
   self = [super init];
   if (self) {
-    _viewportWidth  = width;
-    _viewportHeight = height;
-    _initialized    = NO;
+    _viewportWidth      = width;
+    _viewportHeight     = height;
+    _initialized        = NO;
+    _cacheDir           = [cacheDir copy];
+    _ionAccessToken     = nil;
+    _ionTilesetAssetId  = 1;
     _pitchRate.store(0.0);
     _rollRate.store(0.0);
 
     _metalBackend = std::make_unique<reactnativecesium::MetalBackend>();
     _metalBackend->initialize((__bridge void*)layer, width, height);
 
-    _engine = std::make_unique<reactnativecesium::CesiumEngine>();
-
     _gestureHandler = std::make_unique<reactnativecesium::GestureHandler>();
     _gestureHandler->setViewportSize(width, height);
 
-    reactnativecesium::EngineConfig config;
-    config.cacheDatabasePath = cacheDir
-        ? std::string([cacheDir UTF8String]) + "/cesium_cache.db"
-        : "";
-
-    // initialize() creates the ResourcePreparer internally; wire up the Metal
-    // texture factory immediately after so it's ready before any overlay tiles load.
-    _engine->initialize(*_metalBackend, config);
-
-    auto* backendPtr = _metalBackend.get();
-    _engine->getResourcePreparer()->setMetalTextureCreator(
-        [backendPtr](const uint8_t* pixels, int32_t w, int32_t h) -> void* {
-          return backendPtr->createRasterTexture(pixels, w, h);
-        });
+    [self buildEngine];
     _initialized = YES;
   }
   return self;
 }
 
+// Tear down and completely rebuild _engine using the currently stored config.
+// Resetting the unique_ptr calls ~CesiumEngine() which calls shutdown()
+// (destroyTileset + waitUntilIdle), ensuring all worker tasks finish and all
+// resources are freed before the fresh engine is created.
+// Call on the main thread only.
+- (void)buildEngine {
+  NSLog(@"[CesiumBridge] buildEngine: isMainThread=%d",
+        (int)[NSThread isMainThread]);
+  // Destructor handles shutdown() + waitUntilIdle() for the old engine.
+  _engine.reset();
+  NSLog(@"[CesiumBridge] buildEngine: old engine destroyed");
+
+  _engine = std::make_unique<reactnativecesium::CesiumEngine>();
+
+  reactnativecesium::EngineConfig config;
+  if (_ionAccessToken) {
+    config.ionAccessToken = std::string([_ionAccessToken UTF8String]);
+  }
+  config.ionAssetId        = _ionTilesetAssetId;
+  config.cacheDatabasePath = _cacheDir
+      ? std::string([_cacheDir UTF8String]) + "/cesium_cache.db"
+      : "";
+
+  NSLog(@"[CesiumBridge] buildEngine: initialising new engine");
+  _engine->initialize(*_metalBackend, config);
+  NSLog(@"[CesiumBridge] buildEngine: engine initialised");
+
+  auto* backendPtr = _metalBackend.get();
+  _engine->getResourcePreparer()->setMetalTextureCreator(
+      [backendPtr](const uint8_t* pixels, int32_t w, int32_t h) -> void* {
+        return backendPtr->createRasterTexture(pixels, w, h);
+      });
+}
+
 - (void)updateIonAccessToken:(NSString *)token assetId:(int64_t)assetId {
   if (!_initialized) return;
+  _ionAccessToken    = [token copy];
+  _ionTilesetAssetId = assetId;
   reactnativecesium::EngineConfig config;
   config.ionAccessToken = token ? std::string([token UTF8String]) : "";
   config.ionAssetId     = assetId;
@@ -71,7 +100,33 @@
 
 - (void)updateImageryAssetId:(int64_t)assetId {
   if (!_initialized) return;
+
+  NSLog(@"[CesiumBridge] updateImageryAssetId: assetId=%lld isMainThread=%d",
+        (long long)assetId, (int)[NSThread isMainThread]);
+
+  // Save camera state so the view position survives the restart.
+  const auto camParams = _engine->camera().getParams();
+
+  // Completely rebuild the engine from scratch.  This is the only reliable
+  // way to ensure no stale async callbacks or IntrusivePointer references
+  // from the previous overlay survive into the new one.  ~CesiumEngine()
+  // calls shutdown() → destroyTileset() → waitUntilIdle(), so worker threads
+  // are fully joined before the new engine is created.
+  [self buildEngine];
+
+  // Restore the camera to where it was before the restart.
+  _engine->camera().setParams(camParams);
+
+  NSLog(@"[CesiumBridge] calling setImageryAssetId: isMainThread=%d",
+        (int)[NSThread isMainThread]);
+
+  // Add the imagery overlay.  setImageryAssetId() destroys and recreates the
+  // (just-created, empty) tileset and adds the overlay INLINE inside
+  // createTileset(), before the async pipeline has started — the only safe
+  // window to do this on a completely fresh engine.
   _engine->setImageryAssetId(assetId);
+
+  NSLog(@"[CesiumBridge] setImageryAssetId returned — no crash yet");
 }
 
 - (void)updateCameraLatitude:(double)lat

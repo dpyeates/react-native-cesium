@@ -9,16 +9,13 @@
 
 #include <CesiumAsync/AsyncSystem.h>
 #include <CesiumAsync/IAssetAccessor.h>
-#include <CesiumUtility/IntrusivePointer.h>
 
 #include <memory>
 #include <string>
+#include <thread>
 
 namespace Cesium3DTilesSelection {
 class Tileset;
-}
-namespace CesiumRasterOverlays {
-class RasterOverlay;
 }
 
 namespace reactnativecesium {
@@ -45,7 +42,13 @@ public:
   FrameResult updateFrame(double viewportWidth, double viewportHeight);
 
   // Switch the active imagery overlay. assetId==1 means terrain-only (no overlay).
+  // Tears down and recreates the tileset to ensure a clean slate; the overlay is
+  // applied on the next updateFrame() call.
   void setImageryAssetId(int64_t assetId);
+
+  // Directly queue an imagery overlay to be applied on the next updateFrame().
+  // Only safe to call on a freshly-initialised engine (no prior async state).
+  void queueImageryOverlay(int64_t assetId);
 
   GlobeCamera&       camera()       { return camera_; }
   const GlobeCamera& camera() const { return camera_; }
@@ -53,7 +56,13 @@ public:
   ResourcePreparer* getResourcePreparer() const { return resourcePreparer_.get(); }
 
 private:
-  void createTileset(const std::string& token, int64_t assetId);
+  // Creates a fresh Tileset.  If imageryAssetId != 1, the IonRasterOverlay is
+  // added IMMEDIATELY after construction (before any async work has started)
+  // to avoid cross-thread IntrusivePointer assertions that arise when the
+  // overlay is added after the async pipeline has begun.
+  void createTileset(const std::string& token,
+                     int64_t            assetId,
+                     int64_t            imageryAssetId = 1);
   void destroyTileset();
 
   IGPUBackend* gpu_ = nullptr;
@@ -66,9 +75,13 @@ private:
 
   std::unique_ptr<Cesium3DTilesSelection::Tileset> tileset_;
 
-  // Intrusive pointer to the current raster overlay (kept alive here; removed from
-  // tileset_->getOverlays() when switching layers).
-  CesiumUtility::IntrusivePointer<CesiumRasterOverlays::RasterOverlay> currentOverlay_;
+  // Asset ID of the active raster overlay (1 = terrain-only, no overlay).
+  // Stored so it can be re-applied when the tileset is rebuilt.
+  int64_t currentImageryAssetId_ = 1;
+
+  // Thread on which this engine was constructed.  Used by instrumentation to
+  // verify that overlay operations are always performed on the same thread.
+  std::thread::id constructionThreadId_;
 
   GlobeCamera          camera_;
   TileLifecycleManager lifecycle_;

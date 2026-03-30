@@ -3,6 +3,33 @@ import Metal
 import MetalKit
 import NitroModules
 
+private final class CesiumMTKView: MTKView {
+  var onTouchesBegan: ((Set<UITouch>) -> Void)?
+  var onTouchesMoved: ((Set<UITouch>) -> Void)?
+  var onTouchesEnded: ((Set<UITouch>) -> Void)?
+  var onTouchesCancelled: ((Set<UITouch>) -> Void)?
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+    onTouchesBegan?(touches)
+    super.touchesBegan(touches, with: event)
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+    onTouchesMoved?(touches)
+    super.touchesMoved(touches, with: event)
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+    onTouchesEnded?(touches)
+    super.touchesEnded(touches, with: event)
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+    onTouchesCancelled?(touches)
+    super.touchesCancelled(touches, with: event)
+  }
+}
+
 class HybridCesiumView: HybridCesiumViewSpec {
   // MARK: - Props
 
@@ -58,16 +85,18 @@ class HybridCesiumView: HybridCesiumViewSpec {
 
   // MARK: - View
 
-  private let metalView: MTKView
+  private let metalView: CesiumMTKView
   private var bridge: CesiumBridge?
   private var displayLink: CADisplayLink?
   private var layoutPollTimer: Timer?
+  private var activeTouchIds: [ObjectIdentifier: Int32] = [:]
+  private var nextTouchId: Int32 = 1
 
   var view: UIView { metalView }
 
   override init() {
     let device = MTLCreateSystemDefaultDevice()!
-    metalView = MTKView()
+    metalView = CesiumMTKView(frame: .zero, device: device)
     metalView.device = device
     metalView.colorPixelFormat = .bgra8Unorm_srgb
     metalView.depthStencilPixelFormat = .depth32Float
@@ -170,37 +199,57 @@ class HybridCesiumView: HybridCesiumViewSpec {
 
   // MARK: - Touch Gestures
 
+  private func touchId(for touch: UITouch) -> Int32 {
+    let key = ObjectIdentifier(touch)
+    if let existing = activeTouchIds[key] {
+      return existing
+    }
+    let id = nextTouchId
+    nextTouchId &+= 1
+    if nextTouchId <= 0 {
+      nextTouchId = 1
+    }
+    activeTouchIds[key] = id
+    return id
+  }
+
+  private func releaseTouchId(for touch: UITouch) {
+    activeTouchIds.removeValue(forKey: ObjectIdentifier(touch))
+  }
+
   private func setupGestures() {
     metalView.isUserInteractionEnabled = true
-  }
-
-  func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-    for touch in touches {
-      let loc = touch.location(in: metalView)
-      let id = touch.hash
-      bridge?.onTouchDown(Int32(id), x: Float(loc.x), y: Float(loc.y))
+    metalView.onTouchesBegan = { [weak self] touches in
+      guard let self = self else { return }
+      for touch in touches {
+        let loc = touch.location(in: self.metalView)
+        let id = self.touchId(for: touch)
+        self.bridge?.onTouchDown(id, x: Float(loc.x), y: Float(loc.y))
+      }
     }
-  }
-
-  func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-    for touch in touches {
-      let loc = touch.location(in: metalView)
-      let id = touch.hash
-      bridge?.onTouchMove(Int32(id), x: Float(loc.x), y: Float(loc.y))
+    metalView.onTouchesMoved = { [weak self] touches in
+      guard let self = self else { return }
+      for touch in touches {
+        let loc = touch.location(in: self.metalView)
+        let id = self.touchId(for: touch)
+        self.bridge?.onTouchMove(id, x: Float(loc.x), y: Float(loc.y))
+      }
     }
-  }
-
-  func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-    for touch in touches {
-      let id = touch.hash
-      bridge?.onTouchUp(Int32(id))
+    metalView.onTouchesEnded = { [weak self] touches in
+      guard let self = self else { return }
+      for touch in touches {
+        let id = self.touchId(for: touch)
+        self.bridge?.onTouchUp(id)
+        self.releaseTouchId(for: touch)
+      }
     }
-  }
-
-  func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-    for touch in touches {
-      let id = touch.hash
-      bridge?.onTouchUp(Int32(id))
+    metalView.onTouchesCancelled = { [weak self] touches in
+      guard let self = self else { return }
+      for touch in touches {
+        let id = self.touchId(for: touch)
+        self.bridge?.onTouchUp(id)
+        self.releaseTouchId(for: touch)
+      }
     }
   }
 
