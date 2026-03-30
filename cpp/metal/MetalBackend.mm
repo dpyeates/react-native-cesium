@@ -1,20 +1,26 @@
 // MetalBackend.mm — Metal rendering backend.
 //
-// Architecture matches the reference implementation:
+// Architecture:
 //   • Eye-relative float positions computed on CPU (double precision).
 //   • Single merged vertex + index buffer uploaded each frame.
 //   • Reversed-Z infinite projection: depth clear = 0, compare = GREATER.
 //   • Sky drawn first (no depth write), terrain drawn after.
-//   • Imagery overlays: UV buffer uploaded alongside positions; each draw
-//     primitive can bind an optional overlay MTLTexture sampled in the shader.
+//   • Imagery overlays: UV buffer alongside positions; each draw primitive can
+//     bind an optional overlay MTLTexture sampled in the shader.
+//   • Triple-buffered persistent MTLBuffers: one slot per in-flight frame,
+//     guarded by a dispatch_semaphore.  This eliminates per-frame GPU-memory
+//     allocation while keeping CPU-GPU safety.
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
+#import <dispatch/dispatch.h>
 
 #include "MetalBackend.h"
 
 #include <glm/gtc/type_ptr.hpp>
+#include <cstring> // memcpy
+#include <algorithm> // std::max
 
 // Uniforms — float3 in MSL is 16-byte aligned (same as float4), so we always
 // use float[4] on the C++ side to keep sizes identical.
@@ -29,7 +35,7 @@ struct SkyUniforms {
   float lightDir[4];    // xyz used, w=0          (16 bytes)
 };                      // total 96 bytes
 
-// ── Shader source (inlined for simplicity; avoids bundle lookup) ──────────────
+// ── Shader source ─────────────────────────────────────────────────────────────
 
 static NSString* const kTerrainShaderSrc = @R"MSL(
 #include <metal_stdlib>
@@ -191,6 +197,27 @@ fragment float4 skyFragment(SkyVOut in [[stage_in]],
 }
 )MSL";
 
+// ── Helper: ensure a persistent buffer is large enough, then memcpy into it ──
+// Grows by doubling (rounded up to 4 KB) to amortise reallocation cost.
+// Returns a non-owning bridge pointer to the buffer (ownership in *pBuf).
+static id<MTLBuffer> ensureBuffer(void** pBuf, size_t* pCap,
+                                   size_t needed, const void* data,
+                                   id<MTLDevice> dev) {
+  if (needed == 0) return nil;
+  if (needed > *pCap) {
+    size_t newCap = std::max(needed, *pCap > 0 ? *pCap * 2 : needed);
+    newCap = (newCap + 4095UL) & ~4095UL; // round up to 4 KB page
+    if (*pBuf) CFRelease(*pBuf);
+    id<MTLBuffer> b = [dev newBufferWithLength:newCap
+                                       options:MTLResourceStorageModeShared];
+    *pBuf = (__bridge_retained void*)b;
+    *pCap = newCap;
+  }
+  id<MTLBuffer> b = (__bridge id<MTLBuffer>)*pBuf;
+  memcpy(b.contents, data, needed);
+  return b;
+}
+
 namespace reactnativecesium {
 
 MetalBackend::MetalBackend()
@@ -199,7 +226,13 @@ MetalBackend::MetalBackend()
       terrainDepthState_(nullptr), skyDepthState_(nullptr),
       depthTexture_(nullptr), fallbackTexture_(nullptr),
       currentDrawable_(nullptr), currentCommandBuffer_(nullptr),
-      currentEncoder_(nullptr) {}
+      currentEncoder_(nullptr),
+      frameSemaphore_(nullptr), frameIndex_(0) {
+  for (int i = 0; i < kMaxFramesInFlight; ++i) {
+    vtxBufs_[i] = idxBufs_[i] = uvBufs_[i] = nullptr;
+    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = 0;
+  }
+}
 
 MetalBackend::~MetalBackend() { shutdown(); }
 
@@ -212,15 +245,18 @@ void MetalBackend::initialize(void* nativeSurface, int width, int height) {
   commandQueue_ = (__bridge_retained void*)[dev newCommandQueue];
   metalLayer_   = nativeSurface; // weak — owned by CAMetalLayer
 
+  // Semaphore starts at kMaxFramesInFlight; each beginFrame decrements it and
+  // each GPU completion handler increments it.
+  dispatch_semaphore_t sem = dispatch_semaphore_create(kMaxFramesInFlight);
+  frameSemaphore_ = (__bridge_retained void*)sem;
+
   CAMetalLayer* layer = (__bridge CAMetalLayer*)metalLayer_;
   layer.device        = dev;
-  // Don't override layer.pixelFormat — MTKView already configured it (bgra8Unorm_srgb).
   layer.framebufferOnly = YES;
 
-  // Read the pixel format already set on the layer so pipelines match drawables.
   const MTLPixelFormat colorFmt = layer.pixelFormat;
 
-  // ── Terrain pipeline ─────────────────────────────────────────────────────
+  // ── Terrain pipeline ──────────────────────────────────────────────────────
   NSError* err = nil;
   id<MTLLibrary> tLib = [dev newLibraryWithSource:kTerrainShaderSrc
                                           options:nil error:&err];
@@ -235,7 +271,7 @@ void MetalBackend::initialize(void* nativeSurface, int width, int height) {
       [dev newRenderPipelineStateWithDescriptor:tDesc error:&err];
   if (err) NSLog(@"[MetalBackend] terrain pipeline error: %@", err);
 
-  // ── Sky pipeline ─────────────────────────────────────────────────────────
+  // ── Sky pipeline ──────────────────────────────────────────────────────────
   id<MTLLibrary> sLib = [dev newLibraryWithSource:kSkyShaderSrc
                                           options:nil error:&err];
   if (err) NSLog(@"[MetalBackend] sky shader error: %@", err);
@@ -249,14 +285,13 @@ void MetalBackend::initialize(void* nativeSurface, int width, int height) {
       [dev newRenderPipelineStateWithDescriptor:sDesc error:&err];
   if (err) NSLog(@"[MetalBackend] sky pipeline error: %@", err);
 
-  // ── Terrain depth state: reversed-Z (GREATER, write=YES) ─────────────────
+  // ── Depth states ──────────────────────────────────────────────────────────
   MTLDepthStencilDescriptor* dd = [MTLDepthStencilDescriptor new];
-  dd.depthCompareFunction = MTLCompareFunctionGreater;
+  dd.depthCompareFunction = MTLCompareFunctionGreater; // reversed-Z
   dd.depthWriteEnabled    = YES;
   terrainDepthState_ = (__bridge_retained void*)
       [dev newDepthStencilStateWithDescriptor:dd];
 
-  // ── Sky depth state: always pass, no write ────────────────────────────────
   MTLDepthStencilDescriptor* sd = [MTLDepthStencilDescriptor new];
   sd.depthCompareFunction = MTLCompareFunctionAlways;
   sd.depthWriteEnabled    = NO;
@@ -274,19 +309,36 @@ void MetalBackend::resize(int width, int height) {
 }
 
 void MetalBackend::shutdown() {
-  if (device_)           { CFRelease(device_);           device_           = nullptr; }
-  if (commandQueue_)     { CFRelease(commandQueue_);     commandQueue_     = nullptr; }
-  if (terrainPipeline_)  { CFRelease(terrainPipeline_);  terrainPipeline_  = nullptr; }
-  if (skyPipeline_)      { CFRelease(skyPipeline_);      skyPipeline_      = nullptr; }
-  if (terrainDepthState_){ CFRelease(terrainDepthState_);terrainDepthState_= nullptr; }
-  if (skyDepthState_)    { CFRelease(skyDepthState_);    skyDepthState_    = nullptr; }
-  if (depthTexture_)     { CFRelease(depthTexture_);     depthTexture_     = nullptr; }
-  if (fallbackTexture_)  { CFRelease(fallbackTexture_);  fallbackTexture_  = nullptr; }
+  // Drain in-flight frames: wait until all GPU completion handlers have fired
+  // before releasing the semaphore and the persistent buffers they reference.
+  if (frameSemaphore_) {
+    dispatch_semaphore_t sem = (__bridge dispatch_semaphore_t)frameSemaphore_;
+    for (int i = 0; i < kMaxFramesInFlight; ++i) {
+      dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+    }
+    CFRelease(frameSemaphore_);
+    frameSemaphore_ = nullptr;
+  }
+
+  for (int i = 0; i < kMaxFramesInFlight; ++i) {
+    if (vtxBufs_[i]) { CFRelease(vtxBufs_[i]); vtxBufs_[i] = nullptr; }
+    if (idxBufs_[i]) { CFRelease(idxBufs_[i]); idxBufs_[i] = nullptr; }
+    if (uvBufs_[i])  { CFRelease(uvBufs_[i]);  uvBufs_[i]  = nullptr; }
+    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = 0;
+  }
+
+  if (device_)            { CFRelease(device_);            device_           = nullptr; }
+  if (commandQueue_)      { CFRelease(commandQueue_);      commandQueue_     = nullptr; }
+  if (terrainPipeline_)   { CFRelease(terrainPipeline_);   terrainPipeline_  = nullptr; }
+  if (skyPipeline_)       { CFRelease(skyPipeline_);       skyPipeline_      = nullptr; }
+  if (terrainDepthState_) { CFRelease(terrainDepthState_); terrainDepthState_= nullptr; }
+  if (skyDepthState_)     { CFRelease(skyDepthState_);     skyDepthState_    = nullptr; }
+  if (depthTexture_)      { CFRelease(depthTexture_);      depthTexture_     = nullptr; }
+  if (fallbackTexture_)   { CFRelease(fallbackTexture_);   fallbackTexture_  = nullptr; }
 }
 
 void MetalBackend::createDepthTexture() {
-  if (viewportWidth_ <= 0 || viewportHeight_ <= 0) return;
-  if (!device_) return;
+  if (viewportWidth_ <= 0 || viewportHeight_ <= 0 || !device_) return;
   id<MTLDevice> dev = (__bridge id<MTLDevice>)device_;
 
   if (depthTexture_) { CFRelease(depthTexture_); depthTexture_ = nullptr; }
@@ -302,7 +354,6 @@ void MetalBackend::createDepthTexture() {
 }
 
 void MetalBackend::createFallbackTexture() {
-  // 1×1 white RGBA8 texture used when no overlay is bound for a primitive.
   if (!device_) return;
   id<MTLDevice> dev = (__bridge id<MTLDevice>)device_;
 
@@ -348,13 +399,20 @@ void* MetalBackend::createRasterTexture(const uint8_t* pixels,
   return (__bridge_retained void*)tex;
 }
 
-// ── Per-frame ────────────────────────────────────────────────────────────────
+// ── Per-frame ─────────────────────────────────────────────────────────────────
 
 void MetalBackend::beginFrame(const FrameParams& /*params*/) {
+  // Acquire a frame slot.  Blocks if kMaxFramesInFlight frames are already
+  // queued on the GPU.  The completion handler in endFrame() signals the
+  // semaphore to release the slot.
+  dispatch_semaphore_wait((__bridge dispatch_semaphore_t)frameSemaphore_,
+                          DISPATCH_TIME_FOREVER);
+  frameIndex_ = (frameIndex_ + 1) % kMaxFramesInFlight;
+
   CAMetalLayer* layer    = (__bridge CAMetalLayer*)metalLayer_;
   id<MTLCommandQueue> cq = (__bridge id<MTLCommandQueue>)commandQueue_;
 
-  // Rebuild depth texture if layer drawable size changed or not yet created.
+  // Sync depth texture with actual drawable size if it changed.
   CGSize drawSize = layer.drawableSize;
   int dw = (int)drawSize.width, dh = (int)drawSize.height;
   if (dw > 0 && dh > 0) {
@@ -371,7 +429,13 @@ void MetalBackend::beginFrame(const FrameParams& /*params*/) {
   }
 
   id<CAMetalDrawable> drawable = [layer nextDrawable];
-  if (!drawable) { currentDrawable_ = nullptr; currentCommandBuffer_ = nullptr; return; }
+  if (!drawable) {
+    // No drawable available — restore semaphore slot and bail.
+    dispatch_semaphore_signal((__bridge dispatch_semaphore_t)frameSemaphore_);
+    currentDrawable_ = nullptr;
+    currentCommandBuffer_ = nullptr;
+    return;
+  }
   currentDrawable_ = (__bridge_retained void*)drawable;
 
   id<MTLCommandBuffer> cb = [cq commandBuffer];
@@ -387,7 +451,7 @@ void MetalBackend::beginFrame(const FrameParams& /*params*/) {
     rp.depthAttachment.texture     = (__bridge id<MTLTexture>)depthTexture_;
     rp.depthAttachment.loadAction  = MTLLoadActionClear;
     rp.depthAttachment.storeAction = MTLStoreActionDontCare;
-    rp.depthAttachment.clearDepth  = 0.0; // reversed-Z: clear to 0 (= far)
+    rp.depthAttachment.clearDepth  = 0.0; // reversed-Z: 0 = far
   }
 
   id<MTLRenderCommandEncoder> enc =
@@ -401,7 +465,7 @@ void MetalBackend::drawScene(const FrameResult& frame) {
   id<MTLRenderCommandEncoder> enc = (__bridge id<MTLRenderCommandEncoder>)currentEncoder_;
   id<MTLDevice> dev = (__bridge id<MTLDevice>)device_;
 
-  // ── Sky pass (no depth write, always passes depth test) ──────────────────
+  // ── Sky pass ──────────────────────────────────────────────────────────────
   if (skyPipeline_ && skyDepthState_) {
     SkyUniforms skyU{};
     const float* iv = glm::value_ptr(frame.invVP);
@@ -409,7 +473,6 @@ void MetalBackend::drawScene(const FrameResult& frame) {
     skyU.cameraEcef[0] = frame.cameraEcef.x;
     skyU.cameraEcef[1] = frame.cameraEcef.y;
     skyU.cameraEcef[2] = frame.cameraEcef.z;
-    // Light direction = normalise(cameraEcef) (sun roughly above camera).
     float cl = sqrtf(frame.cameraEcef.x * frame.cameraEcef.x +
                      frame.cameraEcef.y * frame.cameraEcef.y +
                      frame.cameraEcef.z * frame.cameraEcef.z);
@@ -427,78 +490,65 @@ void MetalBackend::drawScene(const FrameResult& frame) {
     [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
   }
 
-  // ── Terrain pass ─────────────────────────────────────────────────────────
-  if (!frame.draws.empty() &&
-      !frame.eyeRelPositions.empty() &&
-      !frame.indices.empty() &&
-      terrainPipeline_ && terrainDepthState_)
-  {
-    const size_t vtxBytes = frame.eyeRelPositions.size() * sizeof(float);
-    const size_t idxBytes = frame.indices.size()        * sizeof(uint32_t);
-    const size_t uvBytes  = frame.uvs.size()            * sizeof(float);
+  // ── Terrain pass ──────────────────────────────────────────────────────────
+  if (frame.draws.empty() || frame.eyeRelPositions.empty() || frame.indices.empty() ||
+      !terrainPipeline_ || !terrainDepthState_) {
+    return;
+  }
 
-    id<MTLBuffer> vtxBuf =
-        [dev newBufferWithBytes:frame.eyeRelPositions.data()
-                        length:vtxBytes
-                       options:MTLResourceStorageModeShared];
-    id<MTLBuffer> idxBuf =
-        [dev newBufferWithBytes:frame.indices.data()
-                        length:idxBytes
-                       options:MTLResourceStorageModeShared];
+  const int fi = frameIndex_;
 
-    // UV buffer — always present (padded with (0.5,0.5) when no real UVs).
-    id<MTLBuffer> uvBuf = nil;
-    if (uvBytes > 0) {
-      uvBuf = [dev newBufferWithBytes:frame.uvs.data()
-                               length:uvBytes
-                              options:MTLResourceStorageModeShared];
-    }
+  // Write CPU data into the current frame's persistent Metal buffers.
+  // ensureBuffer grows the buffer if needed (amortised doubling) without
+  // allocating a new MTLBuffer on every frame once at steady-state.
+  const size_t vtxBytes = frame.eyeRelPositions.size() * sizeof(float);
+  const size_t idxBytes = frame.indices.size()         * sizeof(uint32_t);
+  const size_t uvBytes  = frame.uvs.size()             * sizeof(float);
 
-    if (!vtxBuf || !idxBuf) return;
+  id<MTLBuffer> vtxBuf = ensureBuffer(&vtxBufs_[fi], &vtxCaps_[fi],
+                                       vtxBytes, frame.eyeRelPositions.data(), dev);
+  id<MTLBuffer> idxBuf = ensureBuffer(&idxBufs_[fi], &idxCaps_[fi],
+                                       idxBytes, frame.indices.data(), dev);
+  id<MTLBuffer> uvBuf  = ensureBuffer(&uvBufs_[fi],  &uvCaps_[fi],
+                                       uvBytes,  frame.uvs.data(), dev);
 
-    TerrainUniforms terrU{};
-    const float* vp = glm::value_ptr(frame.vpMatrix);
-    for (int i = 0; i < 16; ++i) terrU.vpMatrix[i] = vp[i];
-    terrU.cameraEcef[0] = frame.cameraEcef.x;
-    terrU.cameraEcef[1] = frame.cameraEcef.y;
-    terrU.cameraEcef[2] = frame.cameraEcef.z;
+  if (!vtxBuf || !idxBuf) return;
 
-    [enc setRenderPipelineState:(__bridge id<MTLRenderPipelineState>)terrainPipeline_];
-    [enc setDepthStencilState:(__bridge id<MTLDepthStencilState>)terrainDepthState_];
-    [enc setCullMode:MTLCullModeNone];
+  TerrainUniforms terrU{};
+  const float* vp = glm::value_ptr(frame.vpMatrix);
+  for (int i = 0; i < 16; ++i) terrU.vpMatrix[i] = vp[i];
+  terrU.cameraEcef[0] = frame.cameraEcef.x;
+  terrU.cameraEcef[1] = frame.cameraEcef.y;
+  terrU.cameraEcef[2] = frame.cameraEcef.z;
 
-    // Bind shared buffers (vertex position + uniforms + UVs).
-    [enc setVertexBuffer:vtxBuf offset:0 atIndex:0];
-    [enc setVertexBytes:&terrU length:sizeof(terrU) atIndex:1];
-    if (uvBuf) {
-      [enc setVertexBuffer:uvBuf offset:0 atIndex:2];
-    }
-    [enc setFragmentBytes:&terrU length:sizeof(terrU) atIndex:0];
+  [enc setRenderPipelineState:(__bridge id<MTLRenderPipelineState>)terrainPipeline_];
+  [enc setDepthStencilState:(__bridge id<MTLDepthStencilState>)terrainDepthState_];
+  [enc setCullMode:MTLCullModeNone];
 
-    // Fallback texture used for draws without an overlay.
-    id<MTLTexture> fallbackTex = (__bridge id<MTLTexture>)fallbackTexture_;
+  [enc setVertexBuffer:vtxBuf offset:0 atIndex:0];
+  [enc setVertexBytes:&terrU length:sizeof(terrU) atIndex:1];
+  if (uvBuf) [enc setVertexBuffer:uvBuf offset:0 atIndex:2];
+  [enc setFragmentBytes:&terrU length:sizeof(terrU) atIndex:0];
 
-    for (const auto& draw : frame.draws) {
-      if (draw.indexCount == 0) continue;
+  id<MTLTexture> fallbackTex = (__bridge id<MTLTexture>)fallbackTexture_;
 
-      // Per-draw: overlay flag and texture binding.
-      const uint32_t hasOverlay =
-          (draw.overlayTexture != nullptr && draw.hasUVs) ? 1u : 0u;
-      [enc setFragmentBytes:&hasOverlay length:sizeof(uint32_t) atIndex:1];
+  for (const auto& draw : frame.draws) {
+    if (draw.indexCount == 0) continue;
 
-      id<MTLTexture> tex = (draw.overlayTexture && draw.hasUVs)
-          ? (__bridge id<MTLTexture>)draw.overlayTexture
-          : fallbackTex;
-      if (tex) {
-        [enc setFragmentTexture:tex atIndex:0];
-      }
+    const uint32_t hasOverlay =
+        (draw.overlayTexture && draw.hasUVs) ? 1u : 0u;
+    [enc setFragmentBytes:&hasOverlay length:sizeof(uint32_t) atIndex:1];
 
-      [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                      indexCount:draw.indexCount
-                       indexType:MTLIndexTypeUInt32
-                     indexBuffer:idxBuf
-               indexBufferOffset:draw.indexByteOffset];
-    }
+    id<MTLTexture> tex = (draw.overlayTexture && draw.hasUVs)
+        ? (__bridge id<MTLTexture>)draw.overlayTexture
+        : fallbackTex;
+    if (tex) [enc setFragmentTexture:tex atIndex:0];
+
+    [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                    indexCount:draw.indexCount
+                     indexType:MTLIndexTypeUInt32
+                   indexBuffer:idxBuf
+             indexBufferOffset:draw.indexByteOffset];
   }
 }
 
@@ -514,6 +564,13 @@ void MetalBackend::endFrame() {
       (__bridge_transfer id<CAMetalDrawable>)currentDrawable_;
   id<MTLCommandBuffer> cb =
       (__bridge_transfer id<MTLCommandBuffer>)currentCommandBuffer_;
+
+  // Signal the frame semaphore when the GPU is done with this frame's buffers.
+  void* semPtr = frameSemaphore_;
+  [cb addCompletedHandler:^(id<MTLCommandBuffer> __unused) {
+    dispatch_semaphore_signal((__bridge dispatch_semaphore_t)semPtr);
+  }];
+
   [cb presentDrawable:drawable];
   [cb commit];
   currentDrawable_      = nullptr;

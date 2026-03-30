@@ -20,7 +20,10 @@ NS_ASSUME_NONNULL_BEGIN
                         roll:(double)roll;
 - (void)setDebugOverlay:(BOOL)enabled;
 - (void)resize:(int)width height:(int)height;
-- (void)renderFrame;
+/// Render one frame.  |dt| is the actual frame duration in seconds
+/// (from CADisplayLink.targetTimestamp - CADisplayLink.timestamp).
+/// Used to integrate joystick rates correctly at any refresh rate.
+- (void)renderFrameWithDt:(double)dt;
 - (void)shutdown;
 
 - (void)onTouchDown:(int)pointerId x:(float)x y:(float)y;

@@ -12,11 +12,14 @@
   std::unique_ptr<reactnativecesium::MetalBackend>   _metalBackend;
   std::unique_ptr<reactnativecesium::CesiumEngine>   _engine;
   std::unique_ptr<reactnativecesium::GestureHandler> _gestureHandler;
+  // Persistent frame result — cleared each frame without freeing vector
+  // capacity, so after the first warm-up frame no heap allocation occurs.
+  reactnativecesium::FrameResult                     _frameResult;
   int   _viewportWidth;
   int   _viewportHeight;
   BOOL  _initialized;
 
-  // Stored init params needed to rebuild the engine on imagery switch.
+  // Stored init params (used by buildEngine to reconstruct the engine).
   NSString* _cacheDir;
   NSString* _ionAccessToken;
   int64_t   _ionTilesetAssetId;
@@ -125,7 +128,7 @@
   _rollRate.store(rollRate);
 }
 
-- (void)renderFrame {
+- (void)renderFrameWithDt:(double)dt {
   if (!_initialized) return;
 
   @autoreleasepool {
@@ -133,15 +136,14 @@
     _gestureHandler->applyToCamera(_engine->camera());
     _gestureHandler->resetDeltas();
 
-    // Apply aircraft joystick rates (degrees/second at ~60fps).
+    // Apply aircraft joystick rates using real frame duration so movement
+    // stays consistent at both 30 Hz and 60 Hz (and ProMotion 120 Hz).
     const double pr = _pitchRate.load();
     const double rr = _rollRate.load();
     if (pr != 0.0 || rr != 0.0) {
-      static constexpr double kDt = 1.0 / 60.0;
       auto p = _engine->camera().getParams();
-      p.pitch += pr * kDt;
-      p.roll  += rr * kDt;
-      // Wrap both values to (-180, 180] for full-circle movement.
+      p.pitch += pr * dt;
+      p.roll  += rr * dt;
       while (p.pitch >  180.0) p.pitch -= 360.0;
       while (p.pitch < -180.0) p.pitch += 360.0;
       while (p.roll  >  180.0) p.roll  -= 360.0;
@@ -149,21 +151,23 @@
       _engine->camera().setParams(p);
     }
 
-    const auto frame = _engine->updateFrame(_viewportWidth, _viewportHeight);
+    // Fill the persistent _frameResult (vectors cleared internally; capacity
+    // is preserved across frames to avoid per-frame heap allocation).
+    _engine->updateFrame(_viewportWidth, _viewportHeight, _frameResult);
 
     static int logFrame = 0;
     if (++logFrame % 120 == 0) {
       NSLog(@"[CesiumBridge] draws=%zu verts=%zu indices=%zu loading=%d lat=%.4f lon=%.4f alt=%.0f",
-            frame.draws.size(),
-            frame.eyeRelPositions.size() / 3,
-            frame.indices.size(),
-            frame.tilesLoading,
-            frame.cameraLat, frame.cameraLon, frame.cameraAlt);
+            _frameResult.draws.size(),
+            _frameResult.eyeRelPositions.size() / 3,
+            _frameResult.indices.size(),
+            _frameResult.tilesLoading,
+            _frameResult.cameraLat, _frameResult.cameraLon, _frameResult.cameraAlt);
     }
 
     reactnativecesium::FrameParams params;
     _metalBackend->beginFrame(params);
-    _metalBackend->drawScene(frame);
+    _metalBackend->drawScene(_frameResult);
     _metalBackend->endFrame();
   }
 }

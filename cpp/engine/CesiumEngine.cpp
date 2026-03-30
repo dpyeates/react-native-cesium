@@ -120,32 +120,36 @@ void CesiumEngine::setImageryAssetId(int64_t assetId) {
   createTileset(config_.ionAccessToken, config_.ionAssetId, assetId);
 }
 
-FrameResult CesiumEngine::updateFrame(double w, double h) {
-  FrameResult result;
+void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   ++frameCount_;
 
-  if (!tileset_) return result;
+  // Clear without releasing capacity so the vectors never reallocate after the
+  // first warm-up frame (caller holds a persistent FrameResult across frames).
+  result.eyeRelPositions.clear();
+  result.uvs.clear();
+  result.indices.clear();
+  result.draws.clear();
 
-  // Flush async work (tile loads, overlay resolution) that worker threads have
-  // posted back to the main thread.
+  if (!tileset_) return;
+
+  // One-time capacity hints — no-ops on subsequent frames once the vectors
+  // have grown to their working size.
+  result.eyeRelPositions.reserve(512 * 1024);
+  result.uvs.reserve(512 * 1024 * 2);
+  result.indices.reserve(3 * 1024 * 1024);
+
+  // Flush async work (tile loads, overlay resolution) posted to the main thread.
   asyncSystem_.dispatchMainThreadTasks();
 
   // Camera position in ECEF (double precision for eye-relative subtraction).
   const glm::dvec3 cameraPos = camera_.getECEFPosition();
   result.cameraEcef = glm::vec3(cameraPos);
 
-  // VP matrix for the GPU (rotation-only view + reversed-Z projection).
   result.vpMatrix = camera_.computeVPMatrix(w, h);
   result.invVP    = glm::inverse(result.vpMatrix);
 
-  // Ask Cesium which tiles to render.
   const auto viewState     = camera_.computeViewState(w, h);
   const auto& updateResult = tileset_->updateView({viewState});
-
-  // Merge visible tile geometry into single eye-relative float buffers.
-  result.eyeRelPositions.reserve(512 * 1024);
-  result.uvs.reserve(512 * 1024 * 2); // 2 floats per vertex
-  result.indices.reserve(3 * 1024 * 1024);
 
   for (const auto& tile : updateResult.tilesToRenderThisFrame) {
     if (!tile) continue;
@@ -162,17 +166,12 @@ FrameResult CesiumEngine::updateFrame(double w, double h) {
     for (const auto& prim : res->primitives) {
       if (prim.indices.empty() || prim.positionsEcef.empty()) continue;
 
-      const size_t currentVertex =
-          result.eyeRelPositions.size() / 3;
-
+      const size_t   currentVertex   = result.eyeRelPositions.size() / 3;
       const uint32_t indexByteOffset =
           static_cast<uint32_t>(result.indices.size() * sizeof(uint32_t));
-
       const bool hasPrimUVs =
           !prim.uvs.empty() && prim.uvs.size() == prim.positionsEcef.size();
 
-      // Convert each vertex from absolute ECEF (double) to eye-relative (float).
-      // Simultaneously populate the UV buffer (real UVs or (0.5,0.5) placeholder).
       for (size_t vi = 0; vi < prim.positionsEcef.size(); ++vi) {
         const glm::dvec3 eyeRel = prim.positionsEcef[vi] - cameraPos;
         result.eyeRelPositions.push_back(static_cast<float>(eyeRel.x));
@@ -188,7 +187,6 @@ FrameResult CesiumEngine::updateFrame(double w, double h) {
         }
       }
 
-      // Offset indices by cumulative vertex count.
       for (uint32_t idx : prim.indices) {
         result.indices.push_back(static_cast<uint32_t>(currentVertex) + idx);
       }
@@ -202,7 +200,6 @@ FrameResult CesiumEngine::updateFrame(double w, double h) {
     }
   }
 
-  // Debug info.
   result.tilesRendered = static_cast<int>(updateResult.tilesToRenderThisFrame.size());
   result.tilesLoading  = updateResult.workerThreadTileLoadQueueLength +
                          updateResult.mainThreadTileLoadQueueLength;
@@ -212,10 +209,7 @@ FrameResult CesiumEngine::updateFrame(double w, double h) {
   result.cameraLon     = params.longitude;
   result.cameraAlt     = params.altitude;
 
-  // Advance lifecycle frame counter.
   lifecycle_.advanceFrame();
-
-  return result;
 }
 
 } // namespace reactnativecesium

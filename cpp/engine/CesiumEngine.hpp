@@ -37,8 +37,11 @@ public:
   void shutdown();
   void updateConfig(const EngineConfig& config);
 
-  // Returns merged eye-relative geometry + matrices for one frame.
-  FrameResult updateFrame(double viewportWidth, double viewportHeight);
+  // Fills |result| with merged eye-relative geometry + matrices for one frame.
+  // Passing a persistent FrameResult from the caller avoids per-frame heap
+  // allocation: clear() keeps the vector capacity, so after the first frame
+  // the internal std::vectors never reallocate.
+  void updateFrame(double viewportWidth, double viewportHeight, FrameResult& result);
 
   // Switch the active imagery overlay. assetId==1 means terrain-only (no overlay).
   // Tears down and recreates the tileset so the overlay is applied cleanly.

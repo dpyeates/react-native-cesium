@@ -181,7 +181,11 @@ class HybridCesiumView: HybridCesiumViewSpec {
   }
 
   @objc private func renderFrame() {
-    guard let metalLayer = metalView.layer as? CAMetalLayer else { return }
+    guard let dl = displayLink,
+          let metalLayer = metalView.layer as? CAMetalLayer else { return }
+
+    // Real frame duration drives joystick integration — correct at 30/60/120 Hz.
+    let dt = max(dl.targetTimestamp - dl.timestamp, 1.0 / 120.0)
 
     let scale = metalView.contentScaleFactor
     let w = Int(metalView.bounds.width * scale)
@@ -194,7 +198,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
       }
     }
 
-    bridge?.renderFrame()
+    bridge?.renderFrame(withDt: dt)
   }
 
   // MARK: - Touch Gestures
