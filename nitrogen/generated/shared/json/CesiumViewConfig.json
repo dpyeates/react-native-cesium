@@ -1,0 +1,19 @@
+{
+  "uiViewClassName": "CesiumView",
+  "supportsRawText": false,
+  "bubblingEventTypes": {},
+  "directEventTypes": {},
+  "validAttributes": {
+    "ionAccessToken": true,
+    "ionAssetId": true,
+    "cameraLatitude": true,
+    "cameraLongitude": true,
+    "cameraAltitude": true,
+    "cameraHeading": true,
+    "cameraPitch": true,
+    "cameraRoll": true,
+    "debugOverlay": true,
+    "ionImageryAssetId": true,
+    "hybridRef": true
+  }
+}

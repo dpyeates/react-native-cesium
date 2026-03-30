@@ -33,9 +33,11 @@ target_sources(
   # Autolinking Setup
   ../nitrogen/generated/android/ReactNativeCesiumOnLoad.cpp
   # Shared Nitrogen C++ sources
-  ../nitrogen/generated/shared/c++/HybridReactNativeCesiumSpec.cpp
+  ../nitrogen/generated/shared/c++/HybridCesiumViewSpec.cpp
+  ../nitrogen/generated/shared/c++/views/HybridCesiumViewComponent.cpp
   # Android-specific Nitrogen C++ sources
-  ../nitrogen/generated/android/c++/JHybridReactNativeCesiumSpec.cpp
+  ../nitrogen/generated/android/c++/JHybridCesiumViewSpec.cpp
+  ../nitrogen/generated/android/c++/views/JHybridCesiumViewStateUpdater.cpp
 )
 
 # From node_modules/react-native/ReactAndroid/cmake-utils/folly-flags.cmake

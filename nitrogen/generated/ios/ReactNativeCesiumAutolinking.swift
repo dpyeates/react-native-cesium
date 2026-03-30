@@ -12,15 +12,15 @@ import NitroModules
 public final class ReactNativeCesiumAutolinking {
   public typealias bridge = margelo.nitro.reactnativecesium.bridge.swift
 
-  public static func createReactNativeCesium() -> bridge.std__shared_ptr_HybridReactNativeCesiumSpec_ {
-    let hybridObject = HybridReactNativeCesium()
-    return { () -> bridge.std__shared_ptr_HybridReactNativeCesiumSpec_ in
+  public static func createCesiumView() -> bridge.std__shared_ptr_HybridCesiumViewSpec_ {
+    let hybridObject = HybridCesiumView()
+    return { () -> bridge.std__shared_ptr_HybridCesiumViewSpec_ in
       let __cxxWrapped = hybridObject.getCxxWrapper()
       return __cxxWrapped.getCxxPart()
     }()
   }
   
-  public static func isReactNativeCesiumRecyclable() -> Bool {
-    return HybridReactNativeCesium.self is any RecyclableView.Type
+  public static func isCesiumViewRecyclable() -> Bool {
+    return HybridCesiumView.self is any RecyclableView.Type
   }
 }

@@ -8,25 +8,25 @@
 #include "ReactNativeCesium-Swift-Cxx-Bridge.hpp"
 
 // Include C++ implementation defined types
-#include "HybridReactNativeCesiumSpecSwift.hpp"
+#include "HybridCesiumViewSpecSwift.hpp"
 #include "ReactNativeCesium-Swift-Cxx-Umbrella.hpp"
 #include <NitroModules/NitroDefines.hpp>
 
 namespace margelo::nitro::reactnativecesium::bridge::swift {
 
-  // pragma MARK: std::shared_ptr<HybridReactNativeCesiumSpec>
-  std::shared_ptr<HybridReactNativeCesiumSpec> create_std__shared_ptr_HybridReactNativeCesiumSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
-    ReactNativeCesium::HybridReactNativeCesiumSpec_cxx swiftPart = ReactNativeCesium::HybridReactNativeCesiumSpec_cxx::fromUnsafe(swiftUnsafePointer);
-    return std::make_shared<margelo::nitro::reactnativecesium::HybridReactNativeCesiumSpecSwift>(swiftPart);
+  // pragma MARK: std::shared_ptr<HybridCesiumViewSpec>
+  std::shared_ptr<HybridCesiumViewSpec> create_std__shared_ptr_HybridCesiumViewSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
+    ReactNativeCesium::HybridCesiumViewSpec_cxx swiftPart = ReactNativeCesium::HybridCesiumViewSpec_cxx::fromUnsafe(swiftUnsafePointer);
+    return std::make_shared<margelo::nitro::reactnativecesium::HybridCesiumViewSpecSwift>(swiftPart);
   }
-  void* NON_NULL get_std__shared_ptr_HybridReactNativeCesiumSpec_(std__shared_ptr_HybridReactNativeCesiumSpec_ cppType) {
-    std::shared_ptr<margelo::nitro::reactnativecesium::HybridReactNativeCesiumSpecSwift> swiftWrapper = std::dynamic_pointer_cast<margelo::nitro::reactnativecesium::HybridReactNativeCesiumSpecSwift>(cppType);
+  void* NON_NULL get_std__shared_ptr_HybridCesiumViewSpec_(std__shared_ptr_HybridCesiumViewSpec_ cppType) {
+    std::shared_ptr<margelo::nitro::reactnativecesium::HybridCesiumViewSpecSwift> swiftWrapper = std::dynamic_pointer_cast<margelo::nitro::reactnativecesium::HybridCesiumViewSpecSwift>(cppType);
     #ifdef NITRO_DEBUG
     if (swiftWrapper == nullptr) [[unlikely]] {
-      throw std::runtime_error("Class \"HybridReactNativeCesiumSpec\" is not implemented in Swift!");
+      throw std::runtime_error("Class \"HybridCesiumViewSpec\" is not implemented in Swift!");
     }
     #endif
-    ReactNativeCesium::HybridReactNativeCesiumSpec_cxx& swiftPart = swiftWrapper->getSwiftPart();
+    ReactNativeCesium::HybridCesiumViewSpec_cxx& swiftPart = swiftWrapper->getSwiftPart();
     return swiftPart.toUnsafe();
   }
 

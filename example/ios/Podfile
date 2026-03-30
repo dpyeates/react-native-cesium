@@ -1,3 +1,5 @@
+require_relative "../node_modules/react-native-cesium/ios/react_native_cesium_post_install"
+
 # Resolve react_native_pods.rb with node to allow for hoisting
 require Pod::Executable.execute_command('node', ['-p',
   'require.resolve(
@@ -30,5 +32,6 @@ target 'CesiumExample' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+    react_native_cesium_post_install(installer)
   end
 end

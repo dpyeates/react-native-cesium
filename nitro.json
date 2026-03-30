@@ -13,14 +13,14 @@
     "androidCxxLibName": "ReactNativeCesium"
   },
   "autolinking": {
-    "ReactNativeCesium": {
+    "CesiumView": {
       "ios": {
         "language": "swift",
-        "implementationClassName": "HybridReactNativeCesium"
+        "implementationClassName": "HybridCesiumView"
       },
       "android": {
         "language": "kotlin",
-        "implementationClassName": "HybridReactNativeCesium"
+        "implementationClassName": "HybridCesiumView"
       }
     }
   },

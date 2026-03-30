@@ -15,7 +15,8 @@
 #include <fbjni/fbjni.h>
 #include <NitroModules/HybridObjectRegistry.hpp>
 
-#include "JHybridReactNativeCesiumSpec.hpp"
+#include "JHybridCesiumViewSpec.hpp"
+#include "views/JHybridCesiumViewStateUpdater.hpp"
 #include <NitroModules/DefaultConstructableObject.hpp>
 
 namespace margelo::nitro::reactnativecesium {
@@ -26,12 +27,12 @@ int initialize(JavaVM* vm) {
   });
 }
 
-struct JHybridReactNativeCesiumSpecImpl: public jni::JavaClass<JHybridReactNativeCesiumSpecImpl, JHybridReactNativeCesiumSpec::JavaPart> {
-  static constexpr auto kJavaDescriptor = "Lcom/margelo/nitro/reactnativecesium/HybridReactNativeCesium;";
-  static std::shared_ptr<JHybridReactNativeCesiumSpec> create() {
-    static const auto constructorFn = javaClassStatic()->getConstructor<JHybridReactNativeCesiumSpecImpl::javaobject()>();
-    jni::local_ref<JHybridReactNativeCesiumSpec::JavaPart> javaPart = javaClassStatic()->newObject(constructorFn);
-    return javaPart->getJHybridReactNativeCesiumSpec();
+struct JHybridCesiumViewSpecImpl: public jni::JavaClass<JHybridCesiumViewSpecImpl, JHybridCesiumViewSpec::JavaPart> {
+  static constexpr auto kJavaDescriptor = "Lcom/margelo/nitro/reactnativecesium/HybridCesiumView;";
+  static std::shared_ptr<JHybridCesiumViewSpec> create() {
+    static const auto constructorFn = javaClassStatic()->getConstructor<JHybridCesiumViewSpecImpl::javaobject()>();
+    jni::local_ref<JHybridCesiumViewSpec::JavaPart> javaPart = javaClassStatic()->newObject(constructorFn);
+    return javaPart->getJHybridCesiumViewSpec();
   }
 };
 
@@ -40,13 +41,14 @@ void registerAllNatives() {
   using namespace margelo::nitro::reactnativecesium;
 
   // Register native JNI methods
-  margelo::nitro::reactnativecesium::JHybridReactNativeCesiumSpec::CxxPart::registerNatives();
+  margelo::nitro::reactnativecesium::JHybridCesiumViewSpec::CxxPart::registerNatives();
+  margelo::nitro::reactnativecesium::views::JHybridCesiumViewStateUpdater::registerNatives();
 
   // Register Nitro Hybrid Objects
   HybridObjectRegistry::registerHybridObjectConstructor(
-    "ReactNativeCesium",
+    "CesiumView",
     []() -> std::shared_ptr<HybridObject> {
-      return JHybridReactNativeCesiumSpecImpl::create();
+      return JHybridCesiumViewSpecImpl::create();
     }
   );
 }

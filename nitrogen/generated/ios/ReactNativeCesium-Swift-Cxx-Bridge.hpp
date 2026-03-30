@@ -8,15 +8,15 @@
 #pragma once
 
 // Forward declarations of C++ defined types
-// Forward declaration of `HybridReactNativeCesiumSpec` to properly resolve imports.
-namespace margelo::nitro::reactnativecesium { class HybridReactNativeCesiumSpec; }
+// Forward declaration of `HybridCesiumViewSpec` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { class HybridCesiumViewSpec; }
 
 // Forward declarations of Swift defined types
-// Forward declaration of `HybridReactNativeCesiumSpec_cxx` to properly resolve imports.
-namespace ReactNativeCesium { class HybridReactNativeCesiumSpec_cxx; }
+// Forward declaration of `HybridCesiumViewSpec_cxx` to properly resolve imports.
+namespace ReactNativeCesium { class HybridCesiumViewSpec_cxx; }
 
 // Include C++ defined types
-#include "HybridReactNativeCesiumSpec.hpp"
+#include "HybridCesiumViewSpec.hpp"
 #include <NitroModules/Result.hpp>
 #include <exception>
 #include <memory>
@@ -27,25 +27,25 @@ namespace ReactNativeCesium { class HybridReactNativeCesiumSpec_cxx; }
  */
 namespace margelo::nitro::reactnativecesium::bridge::swift {
 
-  // pragma MARK: std::shared_ptr<HybridReactNativeCesiumSpec>
+  // pragma MARK: std::shared_ptr<HybridCesiumViewSpec>
   /**
-   * Specialized version of `std::shared_ptr<HybridReactNativeCesiumSpec>`.
+   * Specialized version of `std::shared_ptr<HybridCesiumViewSpec>`.
    */
-  using std__shared_ptr_HybridReactNativeCesiumSpec_ = std::shared_ptr<HybridReactNativeCesiumSpec>;
-  std::shared_ptr<HybridReactNativeCesiumSpec> create_std__shared_ptr_HybridReactNativeCesiumSpec_(void* NON_NULL swiftUnsafePointer) noexcept;
-  void* NON_NULL get_std__shared_ptr_HybridReactNativeCesiumSpec_(std__shared_ptr_HybridReactNativeCesiumSpec_ cppType);
+  using std__shared_ptr_HybridCesiumViewSpec_ = std::shared_ptr<HybridCesiumViewSpec>;
+  std::shared_ptr<HybridCesiumViewSpec> create_std__shared_ptr_HybridCesiumViewSpec_(void* NON_NULL swiftUnsafePointer) noexcept;
+  void* NON_NULL get_std__shared_ptr_HybridCesiumViewSpec_(std__shared_ptr_HybridCesiumViewSpec_ cppType);
   
-  // pragma MARK: std::weak_ptr<HybridReactNativeCesiumSpec>
-  using std__weak_ptr_HybridReactNativeCesiumSpec_ = std::weak_ptr<HybridReactNativeCesiumSpec>;
-  inline std__weak_ptr_HybridReactNativeCesiumSpec_ weakify_std__shared_ptr_HybridReactNativeCesiumSpec_(const std::shared_ptr<HybridReactNativeCesiumSpec>& strong) noexcept { return strong; }
+  // pragma MARK: std::weak_ptr<HybridCesiumViewSpec>
+  using std__weak_ptr_HybridCesiumViewSpec_ = std::weak_ptr<HybridCesiumViewSpec>;
+  inline std__weak_ptr_HybridCesiumViewSpec_ weakify_std__shared_ptr_HybridCesiumViewSpec_(const std::shared_ptr<HybridCesiumViewSpec>& strong) noexcept { return strong; }
   
-  // pragma MARK: Result<double>
-  using Result_double_ = Result<double>;
-  inline Result_double_ create_Result_double_(double value) noexcept {
-    return Result<double>::withValue(std::move(value));
+  // pragma MARK: Result<void>
+  using Result_void_ = Result<void>;
+  inline Result_void_ create_Result_void_() noexcept {
+    return Result<void>::withValue();
   }
-  inline Result_double_ create_Result_double_(const std::exception_ptr& error) noexcept {
-    return Result<double>::withError(error);
+  inline Result_void_ create_Result_void_(const std::exception_ptr& error) noexcept {
+    return Result<void>::withError(error);
   }
 
 } // namespace margelo::nitro::reactnativecesium::bridge::swift

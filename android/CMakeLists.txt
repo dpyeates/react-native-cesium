@@ -11,7 +11,16 @@ add_compile_options(-DRN_SERIALIZABLE_STATE=1)
 # Define C++ library and add all sources
 add_library(${PACKAGE_NAME} SHARED
         src/main/cpp/cpp-adapter.cpp
-        ../cpp/cesium-native-smoke.cpp
+        # Engine
+        ../cpp/engine/CesiumEngine.cpp
+        ../cpp/engine/TaskProcessor.cpp
+        ../cpp/engine/ResourcePreparer.cpp
+        ../cpp/engine/GltfToMesh.cpp
+        ../cpp/engine/GlobeCamera.cpp
+        ../cpp/engine/DeletionQueue.cpp
+        ../cpp/engine/TileLifecycleManager.cpp
+        # Gestures
+        ../cpp/gestures/GestureHandler.cpp
 )
 
 # Add Nitrogen specs :)
@@ -19,8 +28,9 @@ include(${CMAKE_SOURCE_DIR}/../nitrogen/generated/android/ReactNativeCesium+auto
 
 # Set up local includes
 include_directories(
-        "src/main/cpp"
+        BEFORE
         "../cpp"
+        "src/main/cpp"
 )
 
 find_library(LOG_LIB log)
@@ -37,11 +47,24 @@ list(APPEND CMAKE_PREFIX_PATH "${CESIUM_PREFIX}")
 list(APPEND CMAKE_FIND_ROOT_PATH "${CESIUM_PREFIX}")
 find_package(cesium-native CONFIG REQUIRED)
 
-# Link all libraries together (Vulkan loader for GPU work on Android)
+# Link all libraries together
 target_link_libraries(
         ${PACKAGE_NAME}
         ${LOG_LIB}
         ${VULKAN_LIB}
         android
+        # Cesium Native libraries
+        Cesium3DTilesSelection
+        Cesium3DTilesContent
+        CesiumGltf
+        CesiumGltfReader
+        CesiumGltfContent
+        CesiumGeospatial
+        CesiumGeometry
+        CesiumAsync
+        CesiumIonClient
+        CesiumRasterOverlays
+        CesiumCurl
+        CesiumJsonReader
         CesiumUtility
 )

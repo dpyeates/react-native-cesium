@@ -21,21 +21,29 @@ Pod::Spec.new do |s|
 
   cpp_include = File.join(__dir__, "cpp")
   s.pod_target_xcconfig = {
+    # cpp/ must precede XCFramework Headers for <fmt/format.h>; CocoaPods merges $(inherited)
+    # first, so apps should call react_native_cesium_post_install from ios/react_native_cesium_post_install.rb.
     "HEADER_SEARCH_PATHS" => "$(inherited) \"#{cpp_include}\"",
     "CLANG_CXX_LANGUAGE_STANDARD" => "c++20",
+    "GCC_PREPROCESSOR_DEFINITIONS" => "$(inherited) GLM_FORCE_DEPTH_ZERO_TO_ONE=1",
   }
 
-  # GPU: Metal (iOS). Link frameworks used by Metal-based rendering.
   s.frameworks   = "Metal", "MetalKit", "QuartzCore"
 
   s.source_files = [
-    # Implementation (Swift)
     "ios/**/*.{swift}",
-    # Autolinking/Registration (Objective-C++)
-    "ios/**/*.{m,mm}",
-    # Implementation (C++ objects)
-    "cpp/**/*.{hpp,cpp}",
+    "ios/**/*.{h,m,mm}",
+    "cpp/**/*.{hpp,cpp,h,mm}",
   ]
+
+  s.public_header_files = [
+    "ios/ReactNativeCesium-umbrella.h",
+    "ios/CesiumBridge.h",
+  ]
+
+  s.resource_bundles = {
+    "ReactNativeCesiumShaders" => ["cpp/metal/*.metal"],
+  }
 
   load 'nitrogen/generated/ios/ReactNativeCesium+autolinking.rb'
   add_nitrogen_files(s)

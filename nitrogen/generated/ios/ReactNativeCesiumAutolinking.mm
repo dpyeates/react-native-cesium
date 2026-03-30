@@ -10,7 +10,7 @@
 #import "ReactNativeCesium-Swift-Cxx-Umbrella.hpp"
 #import <type_traits>
 
-#include "HybridReactNativeCesiumSpecSwift.hpp"
+#include "HybridCesiumViewSpecSwift.hpp"
 
 @interface ReactNativeCesiumAutolinking : NSObject
 @end
@@ -22,9 +22,9 @@
   using namespace margelo::nitro::reactnativecesium;
 
   HybridObjectRegistry::registerHybridObjectConstructor(
-    "ReactNativeCesium",
+    "CesiumView",
     []() -> std::shared_ptr<HybridObject> {
-      std::shared_ptr<HybridReactNativeCesiumSpec> hybridObject = ReactNativeCesium::ReactNativeCesiumAutolinking::createReactNativeCesium();
+      std::shared_ptr<HybridCesiumViewSpec> hybridObject = ReactNativeCesium::ReactNativeCesiumAutolinking::createCesiumView();
       return hybridObject;
     }
   );

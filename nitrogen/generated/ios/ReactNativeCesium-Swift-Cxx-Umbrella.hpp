@@ -8,14 +8,15 @@
 #pragma once
 
 // Forward declarations of C++ defined types
-// Forward declaration of `HybridReactNativeCesiumSpec` to properly resolve imports.
-namespace margelo::nitro::reactnativecesium { class HybridReactNativeCesiumSpec; }
+// Forward declaration of `HybridCesiumViewSpec` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { class HybridCesiumViewSpec; }
 
 // Include C++ defined types
-#include "HybridReactNativeCesiumSpec.hpp"
+#include "HybridCesiumViewSpec.hpp"
 #include <NitroModules/Result.hpp>
 #include <exception>
 #include <memory>
+#include <string>
 
 // C++ helpers for Swift
 #include "ReactNativeCesium-Swift-Cxx-Bridge.hpp"
@@ -27,8 +28,8 @@ namespace margelo::nitro::reactnativecesium { class HybridReactNativeCesiumSpec;
 #include <NitroModules/DateToChronoDate.hpp>
 
 // Forward declarations of Swift defined types
-// Forward declaration of `HybridReactNativeCesiumSpec_cxx` to properly resolve imports.
-namespace ReactNativeCesium { class HybridReactNativeCesiumSpec_cxx; }
+// Forward declaration of `HybridCesiumViewSpec_cxx` to properly resolve imports.
+namespace ReactNativeCesium { class HybridCesiumViewSpec_cxx; }
 
 // Include Swift defined types
 #if __has_include("ReactNativeCesium-Swift.h")

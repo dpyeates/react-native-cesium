@@ -484,6 +484,9 @@ function buildIosDevice() {
     '-DCMAKE_OSX_SYSROOT=iphoneos',
     '-DCMAKE_OSX_ARCHITECTURES=arm64',
     '-DCMAKE_OSX_DEPLOYMENT_TARGET=15.1',
+    // Xcode 16 may inject -ffp-model=precise while cesium-native sets -ffp-contract=off.
+    // Keep the diagnostic visible, but avoid failing the whole prebuilt pipeline on this override.
+    '-DCMAKE_CXX_FLAGS=-Wno-error=overriding-option',
   ])
   cmakeBuildInstall(buildDir, stagingDevice)
   mergeVcpkgInstalled(buildDir, triplet, stagingDevice)
@@ -503,6 +506,8 @@ function buildIosSimulator() {
     '-DCMAKE_OSX_SYSROOT=iphonesimulator',
     '-DCMAKE_OSX_ARCHITECTURES=arm64',
     '-DCMAKE_OSX_DEPLOYMENT_TARGET=15.1',
+    // Same warning behavior as device build to keep simulator configuration consistent.
+    '-DCMAKE_CXX_FLAGS=-Wno-error=overriding-option',
   ])
   cmakeBuildInstall(buildDir, stagingSim)
   mergeVcpkgInstalled(buildDir, triplet, stagingSim)
