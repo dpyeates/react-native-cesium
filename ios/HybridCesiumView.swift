@@ -2,6 +2,7 @@ import Foundation
 import Metal
 import MetalKit
 import NitroModules
+import UIKit
 
 private final class CesiumMTKView: MTKView {
   var onTouchesBegan: ((Set<UITouch>) -> Void)?
@@ -39,7 +40,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
   var ionAssetId: Double = 1 {
     didSet { bridge?.updateIonAccessToken(ionAccessToken, assetId: Int64(ionAssetId)) }
   }
-  // Swiss Valais: aerial default toward Matterhorn
   var cameraLatitude: Double = 46.15 {
     didSet { pushCameraParams() }
   }
@@ -58,39 +58,139 @@ class HybridCesiumView: HybridCesiumViewSpec {
   var cameraRoll: Double = 0 {
     didSet { pushCameraParams() }
   }
+  var cameraVerticalFovDeg: Double = 60 {
+    didSet { bridge?.setVerticalFovDeg(cameraVerticalFovDeg) }
+  }
   var debugOverlay: Bool = false {
     didSet { bridge?.setDebugOverlay(debugOverlay) }
+  }
+  var pauseRendering: Bool = false {
+    didSet { displayLink?.isPaused = pauseRendering }
+  }
+  var gesturePanEnabled: Bool = true {
+    didSet { bridge?.setGesturePanEnabled(gesturePanEnabled) }
+  }
+  var gesturePinchZoomEnabled: Bool = true {
+    didSet { bridge?.setGesturePinchZoomEnabled(gesturePinchZoomEnabled) }
+  }
+  var gesturePinchRotateEnabled: Bool = true {
+    didSet { bridge?.setGesturePinchRotateEnabled(gesturePinchRotateEnabled) }
+  }
+  var gesturePanSensitivity: Double = 1 {
+    didSet { bridge?.setGesturePanSensitivity(gesturePanSensitivity) }
+  }
+  var gesturePinchSensitivity: Double = 1 {
+    didSet { bridge?.setGesturePinchSensitivity(gesturePinchSensitivity) }
+  }
+  var maximumScreenSpaceError: Double = 32 {
+    didSet { bridge?.setMaximumScreenSpaceError(maximumScreenSpaceError) }
+  }
+  var maximumSimultaneousTileLoads: Double = 12 {
+    didSet { bridge?.setMaximumSimultaneousTileLoads(Int32(maximumSimultaneousTileLoads)) }
+  }
+  var loadingDescendantLimit: Double = 20 {
+    didSet { bridge?.setLoadingDescendantLimit(Int32(loadingDescendantLimit)) }
+  }
+  var msaaSampleCount: Double = 1 {
+    didSet {
+      let s = Int32(msaaSampleCount)
+      bridge?.setMsaaSampleCount(s)
+      applyMtkViewMsaa(Int(s))
+    }
+  }
+  var showCreditsFooter: Bool = true {
+    didSet { creditsLabel.isHidden = !showCreditsFooter }
   }
   var ionImageryAssetId: Double = 1 {
     didSet { bridge?.updateImageryAssetId(Int64(ionImageryAssetId)) }
   }
+  var onMetrics: ((CesiumMetrics) -> Void)?
 
   // MARK: - Methods
 
-  func setJoystickRates(pitchRate: Double, rollRate: Double) throws -> Void {
+  func setJoystickRates(pitchRate: Double, rollRate: Double) throws {
     bridge?.setJoystickPitchRate(pitchRate, rollRate: rollRate)
   }
 
-  func onTouchStart(pointerId: Double, x: Double, y: Double) throws -> Void {
+  func onTouchStart(pointerId: Double, x: Double, y: Double) throws {
     bridge?.onTouchDown(Int32(pointerId), x: Float(x), y: Float(y))
   }
 
-  func onTouchChange(pointerId: Double, x: Double, y: Double) throws -> Void {
+  func onTouchChange(pointerId: Double, x: Double, y: Double) throws {
     bridge?.onTouchMove(Int32(pointerId), x: Float(x), y: Float(y))
   }
 
-  func onTouchEnd(pointerId: Double) throws -> Void {
+  func onTouchEnd(pointerId: Double) throws {
     bridge?.onTouchUp(Int32(pointerId))
+  }
+
+  func getCameraState() throws -> Promise<CameraState> {
+    guard let b = bridge else {
+      return Promise.rejected(
+        withError: NSError(
+          domain: "HybridCesiumView",
+          code: 1,
+          userInfo: [NSLocalizedDescriptionKey: "Native bridge not initialized"]
+        )
+      )
+    }
+    let s = CameraState(
+      latitude: b.readCameraLatitude(),
+      longitude: b.readCameraLongitude(),
+      altitude: b.readCameraAltitude(),
+      heading: b.readCameraHeading(),
+      pitch: b.readCameraPitch(),
+      roll: b.readCameraRoll(),
+      verticalFovDeg: b.readVerticalFovDeg()
+    )
+    return Promise.resolved(withResult: s)
+  }
+
+  func flyTo(
+    latitude: Double,
+    longitude: Double,
+    altitude: Double,
+    heading: Double,
+    pitch: Double,
+    roll: Double,
+    durationSeconds: Double
+  ) throws {
+    bridge?.fly(
+      toLatitude: latitude,
+      longitude: longitude,
+      altitude: altitude,
+      heading: heading,
+      pitch: pitch,
+      roll: roll,
+      durationSeconds: durationSeconds
+    )
+  }
+
+  func lookAt(
+    targetLatitude: Double,
+    targetLongitude: Double,
+    targetAltitude: Double,
+    durationSeconds: Double
+  ) throws {
+    bridge?.look(
+      atTargetLatitude: targetLatitude,
+      longitude: targetLongitude,
+      altitude: targetAltitude,
+      durationSeconds: durationSeconds
+    )
   }
 
   // MARK: - View
 
   private let metalView: CesiumMTKView
+  private let debugLabel: UILabel
+  private let creditsLabel: UILabel
   private var bridge: CesiumBridge?
   private var displayLink: CADisplayLink?
   private var layoutPollTimer: Timer?
   private var activeTouchIds: [ObjectIdentifier: Int32] = [:]
   private var nextTouchId: Int32 = 1
+  private var metricsFrameCounter: Int = 0
 
   var view: UIView { metalView }
 
@@ -104,9 +204,28 @@ class HybridCesiumView: HybridCesiumViewSpec {
     metalView.enableSetNeedsDisplay = false
     metalView.isMultipleTouchEnabled = true
 
+    debugLabel = UILabel()
+    debugLabel.numberOfLines = 0
+    debugLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+    debugLabel.textColor = .white
+    debugLabel.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+    debugLabel.layer.cornerRadius = 4
+    debugLabel.clipsToBounds = true
+    debugLabel.isHidden = true
+
+    creditsLabel = UILabel()
+    creditsLabel.numberOfLines = 0
+    creditsLabel.font = .systemFont(ofSize: 10, weight: .regular)
+    creditsLabel.textColor = UIColor.white.withAlphaComponent(0.85)
+    creditsLabel.backgroundColor = UIColor.black.withAlphaComponent(0.45)
+    creditsLabel.textAlignment = .center
+    creditsLabel.isHidden = false
+
     super.init()
 
     metalView.layer.isOpaque = true
+    metalView.addSubview(debugLabel)
+    metalView.addSubview(creditsLabel)
   }
 
   // MARK: - Lifecycle
@@ -147,16 +266,51 @@ class HybridCesiumView: HybridCesiumViewSpec {
       cacheDir: cacheDir
     )
 
+    syncBridgeOptionsFromProps()
+
     if !ionAccessToken.isEmpty {
       bridge?.updateIonAccessToken(ionAccessToken, assetId: Int64(ionAssetId))
     }
     pushCameraParams()
+    bridge?.setVerticalFovDeg(cameraVerticalFovDeg)
     if ionImageryAssetId != 1 {
       bridge?.updateImageryAssetId(Int64(ionImageryAssetId))
     }
 
+    let sc = Int32(msaaSampleCount)
+    bridge?.setMsaaSampleCount(sc)
+    applyMtkViewMsaa(Int(sc))
+
     startRenderLoop()
     setupGestures()
+    layoutOverlayLabels()
+  }
+
+  private func applyMtkViewMsaa(_ s: Int) {
+    guard let d = metalView.device else {
+      metalView.sampleCount = 1
+      return
+    }
+    if s >= 4, d.supportsTextureSampleCount(4) {
+      metalView.sampleCount = 4
+    } else if s >= 2, d.supportsTextureSampleCount(2) {
+      metalView.sampleCount = 2
+    } else {
+      metalView.sampleCount = 1
+    }
+  }
+
+  private func syncBridgeOptionsFromProps() {
+    bridge?.setGesturePanEnabled(gesturePanEnabled)
+    bridge?.setGesturePinchZoomEnabled(gesturePinchZoomEnabled)
+    bridge?.setGesturePinchRotateEnabled(gesturePinchRotateEnabled)
+    bridge?.setGesturePanSensitivity(gesturePanSensitivity)
+    bridge?.setGesturePinchSensitivity(gesturePinchSensitivity)
+    bridge?.setMaximumScreenSpaceError(maximumScreenSpaceError)
+    bridge?.setMaximumSimultaneousTileLoads(Int32(maximumSimultaneousTileLoads))
+    bridge?.setLoadingDescendantLimit(Int32(loadingDescendantLimit))
+    bridge?.setDebugOverlay(debugOverlay)
+    creditsLabel.isHidden = !showCreditsFooter
   }
 
   private func pushCameraParams() {
@@ -170,6 +324,36 @@ class HybridCesiumView: HybridCesiumViewSpec {
     )
   }
 
+  private func layoutOverlayLabels() {
+    let safe = metalView.safeAreaInsets
+    let w = metalView.bounds.width
+    let h = metalView.bounds.height
+    debugLabel.frame = CGRect(
+      x: 8 + safe.left,
+      y: 8 + safe.top,
+      width: max(w - 16 - safe.left - safe.right, 0),
+      height: 120
+    )
+    debugLabel.sizeToFit()
+    var df = debugLabel.frame
+    df.size.width = min(df.size.width + 12, w - 16 - safe.left - safe.right)
+    df.size.height = min(max(df.size.height + 8, 44), h * 0.4)
+    debugLabel.frame = df
+
+    creditsLabel.preferredMaxLayoutWidth = w - 16 - safe.left - safe.right
+    creditsLabel.frame = CGRect(
+      x: 8 + safe.left,
+      y: h - 72 - safe.bottom,
+      width: max(w - 16 - safe.left - safe.right, 0),
+      height: 64
+    )
+    creditsLabel.sizeToFit()
+    var cf = creditsLabel.frame
+    cf.origin.y = h - cf.size.height - 8 - safe.bottom
+    cf.size.width = w - 16 - safe.left - safe.right
+    creditsLabel.frame = cf
+  }
+
   // MARK: - Render Loop
 
   private func startRenderLoop() {
@@ -178,13 +362,14 @@ class HybridCesiumView: HybridCesiumViewSpec {
       minimum: 30, maximum: 60, preferred: 60
     )
     displayLink?.add(to: .main, forMode: .common)
+    displayLink?.isPaused = pauseRendering
   }
 
   @objc private func renderFrame() {
-    guard let dl = displayLink,
+    guard !pauseRendering,
+          let dl = displayLink,
           let metalLayer = metalView.layer as? CAMetalLayer else { return }
 
-    // Real frame duration drives joystick integration — correct at 30/60/120 Hz.
     let dt = max(dl.targetTimestamp - dl.timestamp, 1.0 / 120.0)
 
     let scale = metalView.contentScaleFactor
@@ -199,6 +384,37 @@ class HybridCesiumView: HybridCesiumViewSpec {
     }
 
     bridge?.renderFrame(withDt: dt)
+
+    if debugOverlay {
+      debugLabel.isHidden = false
+      debugLabel.text = bridge?.debugOverlayText
+    } else {
+      debugLabel.isHidden = true
+    }
+
+    if showCreditsFooter, let t = bridge?.creditsPlainText, !t.isEmpty {
+      creditsLabel.isHidden = false
+      creditsLabel.text = t
+    } else {
+      creditsLabel.isHidden = true
+    }
+
+    layoutOverlayLabels()
+
+    metricsFrameCounter += 1
+    if metricsFrameCounter >= 20, let b = bridge, let cb = onMetrics {
+      metricsFrameCounter = 0
+      let m = CesiumMetrics(
+        fps: b.metricsFps,
+        tilesRendered: Double(b.metricsTilesRendered),
+        tilesLoading: Double(b.metricsTilesLoading),
+        tilesVisited: Double(b.metricsTilesVisited),
+        ionTokenConfigured: b.metricsIonTokenConfigured,
+        tilesetReady: b.metricsTilesetReady,
+        creditsPlainText: b.metricsCreditsPlainText
+      )
+      cb(m)
+    }
   }
 
   // MARK: - Touch Gestures

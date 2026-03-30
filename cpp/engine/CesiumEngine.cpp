@@ -1,12 +1,3 @@
-// ---------------------------------------------------------------------------
-// The Cesium Native xcframework is compiled with -DNDEBUG (Release mode).
-// ReferenceCounted<T,false> in debug mode inherits from ThreadIdHolder<false>,
-// which adds a std::thread::id _threadID field absent in the release binary.
-// This shifts _referenceCount from offset 8 to offset 16, creating an ABI
-// mismatch: addReference() reads garbage memory and the thread-ID assertion
-// fires even on the correct thread.  Defining NDEBUG before Cesium headers
-// forces the same (release) layout, eliminating the spurious crash.
-// ---------------------------------------------------------------------------
 #ifndef NDEBUG
 # define NDEBUG
 # define CESIUM_ENGINE_UNDEF_NDEBUG
@@ -34,6 +25,8 @@
 #include <spdlog/spdlog.h>
 #include <glm/gtc/matrix_inverse.hpp>
 
+#include <algorithm>
+
 namespace reactnativecesium {
 
 CesiumEngine::CesiumEngine()
@@ -43,6 +36,13 @@ CesiumEngine::CesiumEngine()
 }
 
 CesiumEngine::~CesiumEngine() { shutdown(); }
+
+bool CesiumEngine::tilesetOptionsMatch(const EngineConfig& a,
+                                       const EngineConfig& b) const {
+  return a.maximumScreenSpaceError == b.maximumScreenSpaceError &&
+         a.maximumSimultaneousTileLoads == b.maximumSimultaneousTileLoads &&
+         a.loadingDescendantLimit == b.loadingDescendantLimit;
+}
 
 void CesiumEngine::initialize(IGPUBackend& /*gpu*/, const EngineConfig& config) {
   config_ = config;
@@ -60,43 +60,61 @@ void CesiumEngine::initialize(IGPUBackend& /*gpu*/, const EngineConfig& config) 
   }
 
   resourcePreparer_ = std::make_shared<ResourcePreparer>(lifecycle_);
+
+  if (!creditSystem_) {
+    creditSystem_ = std::make_shared<CesiumUtility::CreditSystem>();
+  }
+
   createTileset(config.ionAccessToken, config.ionAssetId);
 }
 
 void CesiumEngine::shutdown() {
   destroyTileset();
+  creditSystem_.reset();
 }
 
 void CesiumEngine::updateConfig(const EngineConfig& config) {
-  bool newTileset = config.ionAccessToken != config_.ionAccessToken ||
-                    config.ionAssetId     != config_.ionAssetId;
+  const bool needRebuild =
+      config.ionAccessToken != config_.ionAccessToken ||
+      config.ionAssetId != config_.ionAssetId ||
+      !tilesetOptionsMatch(config, config_);
+
   config_ = config;
-  if (newTileset) {
-    destroyTileset();
-    createTileset(config.ionAccessToken, config.ionAssetId, currentImageryAssetId_);
+
+  if (!needRebuild) return;
+
+  destroyTileset();
+  if (!config_.ionAccessToken.empty()) {
+    createTileset(config_.ionAccessToken, config_.ionAssetId, currentImageryAssetId_);
   }
 }
 
 void CesiumEngine::createTileset(const std::string& token,
-                                  int64_t            assetId,
-                                  int64_t            imageryAssetId) {
+                                 int64_t            assetId,
+                                 int64_t            imageryAssetId) {
   if (token.empty()) return;
 
-  auto logger       = spdlog::default_logger();
-  auto creditSystem = std::make_shared<CesiumUtility::CreditSystem>();
+  if (!creditSystem_) {
+    creditSystem_ = std::make_shared<CesiumUtility::CreditSystem>();
+  }
+
+  auto logger = spdlog::default_logger();
 
   Cesium3DTilesSelection::TilesetExternals externals{
-      assetAccessor_, resourcePreparer_, asyncSystem_, creditSystem,
+      assetAccessor_, resourcePreparer_, asyncSystem_, creditSystem_,
       logger, nullptr};
 
   Cesium3DTilesSelection::TilesetOptions opts;
-  opts.maximumCachedBytes           = 256 * 1024 * 1024;
-  opts.maximumSimultaneousTileLoads = 12;
-  opts.loadingDescendantLimit       = 20;
-  opts.maximumScreenSpaceError      = 32.0;
-  opts.preloadAncestors             = true;
-  opts.preloadSiblings              = true;
-  opts.forbidHoles                  = true;
+  opts.maximumCachedBytes = 256 * 1024 * 1024;
+  opts.maximumSimultaneousTileLoads =
+      static_cast<uint32_t>(std::max(1, config_.maximumSimultaneousTileLoads));
+  opts.loadingDescendantLimit =
+      static_cast<uint32_t>(std::max(1, config_.loadingDescendantLimit));
+  opts.maximumScreenSpaceError =
+      std::max(1.0, config_.maximumScreenSpaceError);
+  opts.preloadAncestors = true;
+  opts.preloadSiblings  = true;
+  opts.forbidHoles      = true;
 
   tileset_ = std::make_unique<Cesium3DTilesSelection::Tileset>(
       externals, assetId, token, opts);
@@ -123,25 +141,27 @@ void CesiumEngine::setImageryAssetId(int64_t assetId) {
 void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   ++frameCount_;
 
-  // Clear without releasing capacity so the vectors never reallocate after the
-  // first warm-up frame (caller holds a persistent FrameResult across frames).
   result.eyeRelPositions.clear();
   result.uvs.clear();
   result.indices.clear();
   result.draws.clear();
+  result.creditHtmlLines.clear();
 
-  if (!tileset_) return;
+  result.ionTokenConfigured = !config_.ionAccessToken.empty();
+  result.tilesetActive      = (tileset_ != nullptr);
+  result.verticalFovDeg     = camera_.getVerticalFovDegrees();
 
-  // One-time capacity hints — no-ops on subsequent frames once the vectors
-  // have grown to their working size.
+  if (!tileset_) {
+    lifecycle_.advanceFrame();
+    return;
+  }
+
   result.eyeRelPositions.reserve(512 * 1024);
   result.uvs.reserve(512 * 1024 * 2);
   result.indices.reserve(3 * 1024 * 1024);
 
-  // Flush async work (tile loads, overlay resolution) posted to the main thread.
   asyncSystem_.dispatchMainThreadTasks();
 
-  // Camera position in ECEF (double precision for eye-relative subtraction).
   const glm::dvec3 cameraPos = camera_.getECEFPosition();
   result.cameraEcef = glm::vec3(cameraPos);
 
@@ -150,6 +170,20 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
 
   const auto viewState     = camera_.computeViewState(w, h);
   const auto& updateResult = tileset_->updateView({viewState});
+
+  // Include every active credit, not only shouldBeShownOnScreen==true. Cesium
+  // marks many provider strings (Bing, Google, etc.) for off-screen / popup
+  // attribution; we have no separate popup, so fold them into the footer.
+  if (creditSystem_) {
+    const CesiumUtility::CreditsSnapshot& snap =
+        creditSystem_->getSnapshot(CesiumUtility::CreditFilteringMode::UniqueHtml);
+    for (const auto& c : snap.currentCredits) {
+      const std::string& html = creditSystem_->getHtml(c);
+      if (html.empty()) continue;
+      if (html.find("Error: Invalid Credit") != std::string::npos) continue;
+      result.creditHtmlLines.push_back(html);
+    }
+  }
 
   for (const auto& tile : updateResult.tilesToRenderThisFrame) {
     if (!tile) continue;

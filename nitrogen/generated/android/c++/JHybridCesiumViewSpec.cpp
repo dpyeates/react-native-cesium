@@ -7,9 +7,22 @@
 
 #include "JHybridCesiumViewSpec.hpp"
 
-
+// Forward declaration of `CesiumMetrics` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
+// Forward declaration of `CameraState` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CameraState; }
 
 #include <string>
+#include "CesiumMetrics.hpp"
+#include <functional>
+#include <optional>
+#include "JFunc_void_CesiumMetrics.hpp"
+#include <NitroModules/JNICallable.hpp>
+#include "JCesiumMetrics.hpp"
+#include "CameraState.hpp"
+#include <NitroModules/Promise.hpp>
+#include <NitroModules/JPromise.hpp>
+#include "JCameraState.hpp"
 
 namespace margelo::nitro::reactnativecesium {
 
@@ -113,6 +126,15 @@ namespace margelo::nitro::reactnativecesium {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* cameraRoll */)>("setCameraRoll");
     method(_javaPart, cameraRoll);
   }
+  double JHybridCesiumViewSpec::getCameraVerticalFovDeg() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getCameraVerticalFovDeg");
+    auto __result = method(_javaPart);
+    return __result;
+  }
+  void JHybridCesiumViewSpec::setCameraVerticalFovDeg(double cameraVerticalFovDeg) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* cameraVerticalFovDeg */)>("setCameraVerticalFovDeg");
+    method(_javaPart, cameraVerticalFovDeg);
+  }
   bool JHybridCesiumViewSpec::getDebugOverlay() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getDebugOverlay");
     auto __result = method(_javaPart);
@@ -122,6 +144,105 @@ namespace margelo::nitro::reactnativecesium {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* debugOverlay */)>("setDebugOverlay");
     method(_javaPart, debugOverlay);
   }
+  bool JHybridCesiumViewSpec::getPauseRendering() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getPauseRendering");
+    auto __result = method(_javaPart);
+    return static_cast<bool>(__result);
+  }
+  void JHybridCesiumViewSpec::setPauseRendering(bool pauseRendering) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* pauseRendering */)>("setPauseRendering");
+    method(_javaPart, pauseRendering);
+  }
+  bool JHybridCesiumViewSpec::getGesturePanEnabled() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getGesturePanEnabled");
+    auto __result = method(_javaPart);
+    return static_cast<bool>(__result);
+  }
+  void JHybridCesiumViewSpec::setGesturePanEnabled(bool gesturePanEnabled) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* gesturePanEnabled */)>("setGesturePanEnabled");
+    method(_javaPart, gesturePanEnabled);
+  }
+  bool JHybridCesiumViewSpec::getGesturePinchZoomEnabled() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getGesturePinchZoomEnabled");
+    auto __result = method(_javaPart);
+    return static_cast<bool>(__result);
+  }
+  void JHybridCesiumViewSpec::setGesturePinchZoomEnabled(bool gesturePinchZoomEnabled) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* gesturePinchZoomEnabled */)>("setGesturePinchZoomEnabled");
+    method(_javaPart, gesturePinchZoomEnabled);
+  }
+  bool JHybridCesiumViewSpec::getGesturePinchRotateEnabled() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getGesturePinchRotateEnabled");
+    auto __result = method(_javaPart);
+    return static_cast<bool>(__result);
+  }
+  void JHybridCesiumViewSpec::setGesturePinchRotateEnabled(bool gesturePinchRotateEnabled) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* gesturePinchRotateEnabled */)>("setGesturePinchRotateEnabled");
+    method(_javaPart, gesturePinchRotateEnabled);
+  }
+  double JHybridCesiumViewSpec::getGesturePanSensitivity() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getGesturePanSensitivity");
+    auto __result = method(_javaPart);
+    return __result;
+  }
+  void JHybridCesiumViewSpec::setGesturePanSensitivity(double gesturePanSensitivity) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* gesturePanSensitivity */)>("setGesturePanSensitivity");
+    method(_javaPart, gesturePanSensitivity);
+  }
+  double JHybridCesiumViewSpec::getGesturePinchSensitivity() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getGesturePinchSensitivity");
+    auto __result = method(_javaPart);
+    return __result;
+  }
+  void JHybridCesiumViewSpec::setGesturePinchSensitivity(double gesturePinchSensitivity) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* gesturePinchSensitivity */)>("setGesturePinchSensitivity");
+    method(_javaPart, gesturePinchSensitivity);
+  }
+  double JHybridCesiumViewSpec::getMaximumScreenSpaceError() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getMaximumScreenSpaceError");
+    auto __result = method(_javaPart);
+    return __result;
+  }
+  void JHybridCesiumViewSpec::setMaximumScreenSpaceError(double maximumScreenSpaceError) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* maximumScreenSpaceError */)>("setMaximumScreenSpaceError");
+    method(_javaPart, maximumScreenSpaceError);
+  }
+  double JHybridCesiumViewSpec::getMaximumSimultaneousTileLoads() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getMaximumSimultaneousTileLoads");
+    auto __result = method(_javaPart);
+    return __result;
+  }
+  void JHybridCesiumViewSpec::setMaximumSimultaneousTileLoads(double maximumSimultaneousTileLoads) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* maximumSimultaneousTileLoads */)>("setMaximumSimultaneousTileLoads");
+    method(_javaPart, maximumSimultaneousTileLoads);
+  }
+  double JHybridCesiumViewSpec::getLoadingDescendantLimit() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getLoadingDescendantLimit");
+    auto __result = method(_javaPart);
+    return __result;
+  }
+  void JHybridCesiumViewSpec::setLoadingDescendantLimit(double loadingDescendantLimit) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* loadingDescendantLimit */)>("setLoadingDescendantLimit");
+    method(_javaPart, loadingDescendantLimit);
+  }
+  double JHybridCesiumViewSpec::getMsaaSampleCount() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getMsaaSampleCount");
+    auto __result = method(_javaPart);
+    return __result;
+  }
+  void JHybridCesiumViewSpec::setMsaaSampleCount(double msaaSampleCount) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* msaaSampleCount */)>("setMsaaSampleCount");
+    method(_javaPart, msaaSampleCount);
+  }
+  bool JHybridCesiumViewSpec::getShowCreditsFooter() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getShowCreditsFooter");
+    auto __result = method(_javaPart);
+    return static_cast<bool>(__result);
+  }
+  void JHybridCesiumViewSpec::setShowCreditsFooter(bool showCreditsFooter) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* showCreditsFooter */)>("setShowCreditsFooter");
+    method(_javaPart, showCreditsFooter);
+  }
   double JHybridCesiumViewSpec::getIonImageryAssetId() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getIonImageryAssetId");
     auto __result = method(_javaPart);
@@ -130,6 +251,23 @@ namespace margelo::nitro::reactnativecesium {
   void JHybridCesiumViewSpec::setIonImageryAssetId(double ionImageryAssetId) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* ionImageryAssetId */)>("setIonImageryAssetId");
     method(_javaPart, ionImageryAssetId);
+  }
+  std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> JHybridCesiumViewSpec::getOnMetrics() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_CesiumMetrics::javaobject>()>("getOnMetrics_cxx");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional([&]() -> std::function<void(const CesiumMetrics& /* metrics */)> {
+      if (__result->isInstanceOf(JFunc_void_CesiumMetrics_cxx::javaClassStatic())) [[likely]] {
+        auto downcast = jni::static_ref_cast<JFunc_void_CesiumMetrics_cxx::javaobject>(__result);
+        return downcast->cthis()->getFunction();
+      } else {
+        auto __resultRef = jni::make_global(__result);
+        return JNICallable<JFunc_void_CesiumMetrics, void(CesiumMetrics)>(std::move(__resultRef));
+      }
+    }()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_CesiumMetrics::javaobject> /* onMetrics */)>("setOnMetrics_cxx");
+    method(_javaPart, onMetrics.has_value() ? JFunc_void_CesiumMetrics_cxx::fromCpp(onMetrics.value()) : nullptr);
   }
 
   // Methods
@@ -148,6 +286,30 @@ namespace margelo::nitro::reactnativecesium {
   void JHybridCesiumViewSpec::onTouchEnd(double pointerId) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* pointerId */)>("onTouchEnd");
     method(_javaPart, pointerId);
+  }
+  std::shared_ptr<Promise<CameraState>> JHybridCesiumViewSpec::getCameraState() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>()>("getCameraState");
+    auto __result = method(_javaPart);
+    return [&]() {
+      auto __promise = Promise<CameraState>::create();
+      __result->cthis()->addOnResolvedListener([=](const jni::alias_ref<jni::JObject>& __boxedResult) {
+        auto __result = jni::static_ref_cast<JCameraState>(__boxedResult);
+        __promise->resolve(__result->toCpp());
+      });
+      __result->cthis()->addOnRejectedListener([=](const jni::alias_ref<jni::JThrowable>& __throwable) {
+        jni::JniException __jniError(__throwable);
+        __promise->reject(std::make_exception_ptr(__jniError));
+      });
+      return __promise;
+    }();
+  }
+  void JHybridCesiumViewSpec::flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* latitude */, double /* longitude */, double /* altitude */, double /* heading */, double /* pitch */, double /* roll */, double /* durationSeconds */)>("flyTo");
+    method(_javaPart, latitude, longitude, altitude, heading, pitch, roll, durationSeconds);
+  }
+  void JHybridCesiumViewSpec::lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* targetLatitude */, double /* targetLongitude */, double /* targetAltitude */, double /* durationSeconds */)>("lookAt");
+    method(_javaPart, targetLatitude, targetLongitude, targetAltitude, durationSeconds);
   }
 
 } // namespace margelo::nitro::reactnativecesium

@@ -13,9 +13,17 @@
 #error NitroModules cannot be found! Are you sure you installed NitroModules properly?
 #endif
 
-
+// Forward declaration of `CesiumMetrics` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
+// Forward declaration of `CameraState` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CameraState; }
 
 #include <string>
+#include "CesiumMetrics.hpp"
+#include <functional>
+#include <optional>
+#include "CameraState.hpp"
+#include <NitroModules/Promise.hpp>
 
 namespace margelo::nitro::reactnativecesium {
 
@@ -60,10 +68,36 @@ namespace margelo::nitro::reactnativecesium {
       virtual void setCameraPitch(double cameraPitch) = 0;
       virtual double getCameraRoll() = 0;
       virtual void setCameraRoll(double cameraRoll) = 0;
+      virtual double getCameraVerticalFovDeg() = 0;
+      virtual void setCameraVerticalFovDeg(double cameraVerticalFovDeg) = 0;
       virtual bool getDebugOverlay() = 0;
       virtual void setDebugOverlay(bool debugOverlay) = 0;
+      virtual bool getPauseRendering() = 0;
+      virtual void setPauseRendering(bool pauseRendering) = 0;
+      virtual bool getGesturePanEnabled() = 0;
+      virtual void setGesturePanEnabled(bool gesturePanEnabled) = 0;
+      virtual bool getGesturePinchZoomEnabled() = 0;
+      virtual void setGesturePinchZoomEnabled(bool gesturePinchZoomEnabled) = 0;
+      virtual bool getGesturePinchRotateEnabled() = 0;
+      virtual void setGesturePinchRotateEnabled(bool gesturePinchRotateEnabled) = 0;
+      virtual double getGesturePanSensitivity() = 0;
+      virtual void setGesturePanSensitivity(double gesturePanSensitivity) = 0;
+      virtual double getGesturePinchSensitivity() = 0;
+      virtual void setGesturePinchSensitivity(double gesturePinchSensitivity) = 0;
+      virtual double getMaximumScreenSpaceError() = 0;
+      virtual void setMaximumScreenSpaceError(double maximumScreenSpaceError) = 0;
+      virtual double getMaximumSimultaneousTileLoads() = 0;
+      virtual void setMaximumSimultaneousTileLoads(double maximumSimultaneousTileLoads) = 0;
+      virtual double getLoadingDescendantLimit() = 0;
+      virtual void setLoadingDescendantLimit(double loadingDescendantLimit) = 0;
+      virtual double getMsaaSampleCount() = 0;
+      virtual void setMsaaSampleCount(double msaaSampleCount) = 0;
+      virtual bool getShowCreditsFooter() = 0;
+      virtual void setShowCreditsFooter(bool showCreditsFooter) = 0;
       virtual double getIonImageryAssetId() = 0;
       virtual void setIonImageryAssetId(double ionImageryAssetId) = 0;
+      virtual std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() = 0;
+      virtual void setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) = 0;
 
     public:
       // Methods
@@ -71,6 +105,9 @@ namespace margelo::nitro::reactnativecesium {
       virtual void onTouchStart(double pointerId, double x, double y) = 0;
       virtual void onTouchChange(double pointerId, double x, double y) = 0;
       virtual void onTouchEnd(double pointerId) = 0;
+      virtual std::shared_ptr<Promise<CameraState>> getCameraState() = 0;
+      virtual void flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) = 0;
+      virtual void lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) = 0;
 
     protected:
       // Hybrid Setup

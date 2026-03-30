@@ -17,10 +17,11 @@
 #include <react/renderer/components/view/ViewProps.h>
 
 #include <string>
-#include <memory>
-#include "HybridCesiumViewSpec.hpp"
+#include "CesiumMetrics.hpp"
 #include <functional>
 #include <optional>
+#include <memory>
+#include "HybridCesiumViewSpec.hpp"
 
 namespace margelo::nitro::reactnativecesium::views {
 
@@ -50,8 +51,21 @@ namespace margelo::nitro::reactnativecesium::views {
     CachedProp<double> cameraHeading;
     CachedProp<double> cameraPitch;
     CachedProp<double> cameraRoll;
+    CachedProp<double> cameraVerticalFovDeg;
     CachedProp<bool> debugOverlay;
+    CachedProp<bool> pauseRendering;
+    CachedProp<bool> gesturePanEnabled;
+    CachedProp<bool> gesturePinchZoomEnabled;
+    CachedProp<bool> gesturePinchRotateEnabled;
+    CachedProp<double> gesturePanSensitivity;
+    CachedProp<double> gesturePinchSensitivity;
+    CachedProp<double> maximumScreenSpaceError;
+    CachedProp<double> maximumSimultaneousTileLoads;
+    CachedProp<double> loadingDescendantLimit;
+    CachedProp<double> msaaSampleCount;
+    CachedProp<bool> showCreditsFooter;
     CachedProp<double> ionImageryAssetId;
+    CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> onMetrics;
     CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>> hybridRef;
 
   private:

@@ -106,6 +106,16 @@ namespace margelo::nitro::reactnativecesium::views {
         throw std::runtime_error(std::string("CesiumView.cameraRoll: ") + exc.what());
       }
     }()),
+    cameraVerticalFovDeg([&]() -> CachedProp<double> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("cameraVerticalFovDeg", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.cameraVerticalFovDeg;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.cameraVerticalFovDeg);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.cameraVerticalFovDeg: ") + exc.what());
+      }
+    }()),
     debugOverlay([&]() -> CachedProp<bool> {
       try {
         const react::RawValue* rawValue = rawProps.at("debugOverlay", nullptr, nullptr);
@@ -116,6 +126,116 @@ namespace margelo::nitro::reactnativecesium::views {
         throw std::runtime_error(std::string("CesiumView.debugOverlay: ") + exc.what());
       }
     }()),
+    pauseRendering([&]() -> CachedProp<bool> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("pauseRendering", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.pauseRendering;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.pauseRendering);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.pauseRendering: ") + exc.what());
+      }
+    }()),
+    gesturePanEnabled([&]() -> CachedProp<bool> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("gesturePanEnabled", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.gesturePanEnabled;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.gesturePanEnabled);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.gesturePanEnabled: ") + exc.what());
+      }
+    }()),
+    gesturePinchZoomEnabled([&]() -> CachedProp<bool> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("gesturePinchZoomEnabled", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.gesturePinchZoomEnabled;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.gesturePinchZoomEnabled);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.gesturePinchZoomEnabled: ") + exc.what());
+      }
+    }()),
+    gesturePinchRotateEnabled([&]() -> CachedProp<bool> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("gesturePinchRotateEnabled", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.gesturePinchRotateEnabled;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.gesturePinchRotateEnabled);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.gesturePinchRotateEnabled: ") + exc.what());
+      }
+    }()),
+    gesturePanSensitivity([&]() -> CachedProp<double> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("gesturePanSensitivity", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.gesturePanSensitivity;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.gesturePanSensitivity);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.gesturePanSensitivity: ") + exc.what());
+      }
+    }()),
+    gesturePinchSensitivity([&]() -> CachedProp<double> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("gesturePinchSensitivity", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.gesturePinchSensitivity;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.gesturePinchSensitivity);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.gesturePinchSensitivity: ") + exc.what());
+      }
+    }()),
+    maximumScreenSpaceError([&]() -> CachedProp<double> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("maximumScreenSpaceError", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.maximumScreenSpaceError;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.maximumScreenSpaceError);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.maximumScreenSpaceError: ") + exc.what());
+      }
+    }()),
+    maximumSimultaneousTileLoads([&]() -> CachedProp<double> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("maximumSimultaneousTileLoads", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.maximumSimultaneousTileLoads;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.maximumSimultaneousTileLoads);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.maximumSimultaneousTileLoads: ") + exc.what());
+      }
+    }()),
+    loadingDescendantLimit([&]() -> CachedProp<double> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("loadingDescendantLimit", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.loadingDescendantLimit;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.loadingDescendantLimit);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.loadingDescendantLimit: ") + exc.what());
+      }
+    }()),
+    msaaSampleCount([&]() -> CachedProp<double> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("msaaSampleCount", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.msaaSampleCount;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.msaaSampleCount);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.msaaSampleCount: ") + exc.what());
+      }
+    }()),
+    showCreditsFooter([&]() -> CachedProp<bool> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("showCreditsFooter", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.showCreditsFooter;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.showCreditsFooter);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.showCreditsFooter: ") + exc.what());
+      }
+    }()),
     ionImageryAssetId([&]() -> CachedProp<double> {
       try {
         const react::RawValue* rawValue = rawProps.at("ionImageryAssetId", nullptr, nullptr);
@@ -124,6 +244,16 @@ namespace margelo::nitro::reactnativecesium::views {
         return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.ionImageryAssetId);
       } catch (const std::exception& exc) {
         throw std::runtime_error(std::string("CesiumView.ionImageryAssetId: ") + exc.what());
+      }
+    }()),
+    onMetrics([&]() -> CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("onMetrics", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.onMetrics;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>>::fromRawValue(*runtime, value.asObject(*runtime).getProperty(*runtime, PropNameIDCache::get(*runtime, "f")), sourceProps.onMetrics);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.onMetrics: ") + exc.what());
       }
     }()),
     hybridRef([&]() -> CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>> {
@@ -147,8 +277,21 @@ namespace margelo::nitro::reactnativecesium::views {
       case hashString("cameraHeading"): return true;
       case hashString("cameraPitch"): return true;
       case hashString("cameraRoll"): return true;
+      case hashString("cameraVerticalFovDeg"): return true;
       case hashString("debugOverlay"): return true;
+      case hashString("pauseRendering"): return true;
+      case hashString("gesturePanEnabled"): return true;
+      case hashString("gesturePinchZoomEnabled"): return true;
+      case hashString("gesturePinchRotateEnabled"): return true;
+      case hashString("gesturePanSensitivity"): return true;
+      case hashString("gesturePinchSensitivity"): return true;
+      case hashString("maximumScreenSpaceError"): return true;
+      case hashString("maximumSimultaneousTileLoads"): return true;
+      case hashString("loadingDescendantLimit"): return true;
+      case hashString("msaaSampleCount"): return true;
+      case hashString("showCreditsFooter"): return true;
       case hashString("ionImageryAssetId"): return true;
+      case hashString("onMetrics"): return true;
       case hashString("hybridRef"): return true;
       default: return false;
     }

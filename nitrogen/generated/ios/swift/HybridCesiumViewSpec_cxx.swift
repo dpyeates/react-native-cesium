@@ -209,6 +209,17 @@ open class HybridCesiumViewSpec_cxx {
     }
   }
   
+  public final var cameraVerticalFovDeg: Double {
+    @inline(__always)
+    get {
+      return self.__implementation.cameraVerticalFovDeg
+    }
+    @inline(__always)
+    set {
+      self.__implementation.cameraVerticalFovDeg = newValue
+    }
+  }
+  
   public final var debugOverlay: Bool {
     @inline(__always)
     get {
@@ -220,6 +231,127 @@ open class HybridCesiumViewSpec_cxx {
     }
   }
   
+  public final var pauseRendering: Bool {
+    @inline(__always)
+    get {
+      return self.__implementation.pauseRendering
+    }
+    @inline(__always)
+    set {
+      self.__implementation.pauseRendering = newValue
+    }
+  }
+  
+  public final var gesturePanEnabled: Bool {
+    @inline(__always)
+    get {
+      return self.__implementation.gesturePanEnabled
+    }
+    @inline(__always)
+    set {
+      self.__implementation.gesturePanEnabled = newValue
+    }
+  }
+  
+  public final var gesturePinchZoomEnabled: Bool {
+    @inline(__always)
+    get {
+      return self.__implementation.gesturePinchZoomEnabled
+    }
+    @inline(__always)
+    set {
+      self.__implementation.gesturePinchZoomEnabled = newValue
+    }
+  }
+  
+  public final var gesturePinchRotateEnabled: Bool {
+    @inline(__always)
+    get {
+      return self.__implementation.gesturePinchRotateEnabled
+    }
+    @inline(__always)
+    set {
+      self.__implementation.gesturePinchRotateEnabled = newValue
+    }
+  }
+  
+  public final var gesturePanSensitivity: Double {
+    @inline(__always)
+    get {
+      return self.__implementation.gesturePanSensitivity
+    }
+    @inline(__always)
+    set {
+      self.__implementation.gesturePanSensitivity = newValue
+    }
+  }
+  
+  public final var gesturePinchSensitivity: Double {
+    @inline(__always)
+    get {
+      return self.__implementation.gesturePinchSensitivity
+    }
+    @inline(__always)
+    set {
+      self.__implementation.gesturePinchSensitivity = newValue
+    }
+  }
+  
+  public final var maximumScreenSpaceError: Double {
+    @inline(__always)
+    get {
+      return self.__implementation.maximumScreenSpaceError
+    }
+    @inline(__always)
+    set {
+      self.__implementation.maximumScreenSpaceError = newValue
+    }
+  }
+  
+  public final var maximumSimultaneousTileLoads: Double {
+    @inline(__always)
+    get {
+      return self.__implementation.maximumSimultaneousTileLoads
+    }
+    @inline(__always)
+    set {
+      self.__implementation.maximumSimultaneousTileLoads = newValue
+    }
+  }
+  
+  public final var loadingDescendantLimit: Double {
+    @inline(__always)
+    get {
+      return self.__implementation.loadingDescendantLimit
+    }
+    @inline(__always)
+    set {
+      self.__implementation.loadingDescendantLimit = newValue
+    }
+  }
+  
+  public final var msaaSampleCount: Double {
+    @inline(__always)
+    get {
+      return self.__implementation.msaaSampleCount
+    }
+    @inline(__always)
+    set {
+      self.__implementation.msaaSampleCount = newValue
+    }
+  }
+  
+  public final var showCreditsFooter: Bool {
+    @inline(__always)
+    get {
+      return self.__implementation.showCreditsFooter
+    }
+    @inline(__always)
+    set {
+      self.__implementation.showCreditsFooter = newValue
+    }
+  }
+  
   public final var ionImageryAssetId: Double {
     @inline(__always)
     get {
@@ -228,6 +360,38 @@ open class HybridCesiumViewSpec_cxx {
     @inline(__always)
     set {
       self.__implementation.ionImageryAssetId = newValue
+    }
+  }
+  
+  public final var onMetrics: bridge.std__optional_std__function_void_const_CesiumMetrics_____metrics______ {
+    @inline(__always)
+    get {
+      return { () -> bridge.std__optional_std__function_void_const_CesiumMetrics_____metrics______ in
+        if let __unwrappedValue = self.__implementation.onMetrics {
+          return bridge.create_std__optional_std__function_void_const_CesiumMetrics_____metrics______({ () -> bridge.Func_void_CesiumMetrics in
+            let __closureWrapper = Func_void_CesiumMetrics(__unwrappedValue)
+            return bridge.create_Func_void_CesiumMetrics(__closureWrapper.toUnsafe())
+          }())
+        } else {
+          return .init()
+        }
+      }()
+    }
+    @inline(__always)
+    set {
+      self.__implementation.onMetrics = { () -> ((_ metrics: CesiumMetrics) -> Void)? in
+        if bridge.has_value_std__optional_std__function_void_const_CesiumMetrics_____metrics______(newValue) {
+          let __unwrapped = bridge.get_std__optional_std__function_void_const_CesiumMetrics_____metrics______(newValue)
+          return { () -> (CesiumMetrics) -> Void in
+            let __wrappedFunction = bridge.wrap_Func_void_CesiumMetrics(__unwrapped)
+            return { (__metrics: CesiumMetrics) -> Void in
+              __wrappedFunction.call(__metrics)
+            }
+          }()
+        } else {
+          return nil
+        }
+      }()
     }
   }
 
@@ -269,6 +433,47 @@ open class HybridCesiumViewSpec_cxx {
   public final func onTouchEnd(pointerId: Double) -> bridge.Result_void_ {
     do {
       try self.__implementation.onTouchEnd(pointerId: pointerId)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func getCameraState() -> bridge.Result_std__shared_ptr_Promise_CameraState___ {
+    do {
+      let __result = try self.__implementation.getCameraState()
+      let __resultCpp = { () -> bridge.std__shared_ptr_Promise_CameraState__ in
+        let __promise = bridge.create_std__shared_ptr_Promise_CameraState__()
+        let __promiseHolder = bridge.wrap_std__shared_ptr_Promise_CameraState__(__promise)
+        __result
+          .then({ __result in __promiseHolder.resolve(__result) })
+          .catch({ __error in __promiseHolder.reject(__error.toCpp()) })
+        return __promise
+      }()
+      return bridge.create_Result_std__shared_ptr_Promise_CameraState___(__resultCpp)
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_std__shared_ptr_Promise_CameraState___(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func flyTo(latitude: Double, longitude: Double, altitude: Double, heading: Double, pitch: Double, roll: Double, durationSeconds: Double) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.flyTo(latitude: latitude, longitude: longitude, altitude: altitude, heading: heading, pitch: pitch, roll: roll, durationSeconds: durationSeconds)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func lookAt(targetLatitude: Double, targetLongitude: Double, targetAltitude: Double, durationSeconds: Double) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.lookAt(targetLatitude: targetLatitude, targetLongitude: targetLongitude, targetAltitude: targetAltitude, durationSeconds: durationSeconds)
       return bridge.create_Result_void_()
     } catch (let __error) {
       let __exceptionPtr = __error.toCpp()

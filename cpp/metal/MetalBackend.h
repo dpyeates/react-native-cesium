@@ -28,7 +28,12 @@ public:
   // (retained id<MTLTexture>) that must be CFRelease'd when no longer needed.
   void* createRasterTexture(const uint8_t* pixels, int32_t width, int32_t height);
 
+  /// 1 = off; 2 or 4 = MSAA when the device supports it. May block briefly
+  /// to drain in-flight frames before rebuilding pipelines.
+  void setMsaaSampleCount(int sampleCount);
+
 private:
+  void buildRenderPipelines();
   void createDepthTexture();
   void createFallbackTexture();
 
@@ -49,6 +54,7 @@ private:
 
   int viewportWidth_  = 0;
   int viewportHeight_ = 0;
+  int sampleCount_    = 1; // MSAA: 1, 2, or 4
 
   // ── Triple-buffered persistent vertex / index / UV buffers ────────────────
   // Using kMaxFramesInFlight slots avoids CPU-GPU data hazards without

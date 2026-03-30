@@ -36,6 +36,8 @@ const LAYER_OPTIONS: LayerOption[] = [
 const JOYSTICK_RADIUS = 52;
 const THUMB_RADIUS    = 20;
 const DEAD_ZONE_PX    = 8;
+/** Space above the home indicator for the native Cesium credits UILabel inside the map view. */
+const NATIVE_CREDITS_FOOTER_RESERVE = 44;
 /** Max commanded rate (deg/s) at full stick deflection — same for pitch and roll. */
 const JOYSTICK_MAX_RATE_DEG_S = 110;
 
@@ -243,12 +245,28 @@ function AppContent() {
         cameraHeading={220}
         cameraPitch={-20}
         cameraRoll={0}
+        cameraVerticalFovDeg={60}
         debugOverlay={false}
+        pauseRendering={false}
+        gesturePanEnabled
+        gesturePinchZoomEnabled
+        gesturePinchRotateEnabled
+        gesturePanSensitivity={1}
+        gesturePinchSensitivity={1}
+        maximumScreenSpaceError={32}
+        maximumSimultaneousTileLoads={12}
+        loadingDescendantLimit={20}
+        msaaSampleCount={1}
+        showCreditsFooter
         ionImageryAssetId={imageryAssetId}
       />
 
-      {/* Joystick + layer picker — bottom centre, stacked */}
-      <View style={[styles.bottomCenter, { bottom: insets.bottom + 16 }]}>
+      {/* Joystick + layer picker — above native attribution footer drawn on the map */}
+      <View
+        style={[
+          styles.bottomCenter,
+          { bottom: insets.bottom + 16 + NATIVE_CREDITS_FOOTER_RESERVE },
+        ]}>
         <Text style={styles.joystickLabel}>Pitch / Roll</Text>
         <Joystick onRateChange={handleJoystickRates} />
         <LayerPicker

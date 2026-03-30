@@ -20,10 +20,12 @@ Pod::Spec.new do |s|
   s.vendored_frameworks = "vendor/ios/CesiumNative.xcframework"
 
   cpp_include = File.join(__dir__, "cpp")
+  nitro_cpp = File.join(__dir__, "nitrogen", "generated", "shared", "c++")
   s.pod_target_xcconfig = {
     # cpp/ must precede XCFramework Headers for <fmt/format.h>; CocoaPods merges $(inherited)
     # first, so apps should call react_native_cesium_post_install from ios/react_native_cesium_post_install.rb.
-    "HEADER_SEARCH_PATHS" => "$(inherited) \"#{cpp_include}\"",
+    # nitrogen/shared/c++ holds HybridCesiumViewSpec.hpp includes (CesiumMetrics.hpp, CameraState.hpp).
+    "HEADER_SEARCH_PATHS" => "$(inherited) \"#{cpp_include}\" \"#{nitro_cpp}\"",
     "CLANG_CXX_LANGUAGE_STANDARD" => "c++20",
     "GCC_PREPROCESSOR_DEFINITIONS" => "$(inherited) GLM_FORCE_DEPTH_ZERO_TO_ONE=1",
   }

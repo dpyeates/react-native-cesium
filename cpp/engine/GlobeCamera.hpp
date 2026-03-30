@@ -25,17 +25,21 @@ public:
   void setParams(const CameraParams& params);
   CameraParams getParams() const;
 
-  // Cesium tile-selection view state (double precision, full position + FOV).
+  void setVerticalFovDegrees(double degrees);
+  double getVerticalFovDegrees() const;
+
+  /// Bearing / tilt to look from the current camera position toward |target*| (degrees).
+  void computeHeadingPitchToward(double targetLatDeg,
+                                 double targetLonDeg,
+                                 double targetAltMeters,
+                                 double& outHeadingDeg,
+                                 double& outPitchDeg) const;
+
   Cesium3DTilesSelection::ViewState
   computeViewState(double viewportWidth, double viewportHeight) const;
 
-  // Camera ECEF position (double, used for eye-relative vertex computation).
   glm::dvec3 getECEFPosition() const;
 
-  // View-projection matrix for the GPU:
-  //   flipY(reversedZProjection) * rotationOnlyViewMatrix
-  // Rotation-only view + reversed-Z infinite projection (near=1, far=50M km).
-  // Combined here so CesiumBridge only needs one matrix.
   glm::mat4 computeVPMatrix(double viewportWidth, double viewportHeight) const;
 
 private:
@@ -44,10 +48,12 @@ private:
   mutable std::mutex mutex_;
   CameraParams params_;
 
-  mutable bool      dirty_        = true;
+  double verticalFovDeg_ = 60.0;
+
+  mutable bool       dirty_        = true;
   mutable glm::dvec3 ecefPosition_{0.0};
-  mutable glm::dvec3 direction_  {0.0, 1.0, 0.0};
-  mutable glm::dvec3 up_         {0.0, 0.0, 1.0};
+  mutable glm::dvec3 direction_{0.0, 1.0, 0.0};
+  mutable glm::dvec3 up_{0.0, 0.0, 1.0};
 };
 
 } // namespace reactnativecesium

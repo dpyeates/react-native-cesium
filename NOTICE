@@ -1,7 +1,7 @@
 Third-party notices
 ===================
 
-This package may ship prebuilt static libraries and headers produced from
+This package uses libraries and headers produced from
 Cesium Native (https://github.com/CesiumGS/cesium-native).
 
 Cesium Native is licensed under the Apache License, Version 2.0.

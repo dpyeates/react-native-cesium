@@ -66,10 +66,36 @@ namespace margelo::nitro::reactnativecesium {
     void setCameraPitch(double cameraPitch) override;
     double getCameraRoll() override;
     void setCameraRoll(double cameraRoll) override;
+    double getCameraVerticalFovDeg() override;
+    void setCameraVerticalFovDeg(double cameraVerticalFovDeg) override;
     bool getDebugOverlay() override;
     void setDebugOverlay(bool debugOverlay) override;
+    bool getPauseRendering() override;
+    void setPauseRendering(bool pauseRendering) override;
+    bool getGesturePanEnabled() override;
+    void setGesturePanEnabled(bool gesturePanEnabled) override;
+    bool getGesturePinchZoomEnabled() override;
+    void setGesturePinchZoomEnabled(bool gesturePinchZoomEnabled) override;
+    bool getGesturePinchRotateEnabled() override;
+    void setGesturePinchRotateEnabled(bool gesturePinchRotateEnabled) override;
+    double getGesturePanSensitivity() override;
+    void setGesturePanSensitivity(double gesturePanSensitivity) override;
+    double getGesturePinchSensitivity() override;
+    void setGesturePinchSensitivity(double gesturePinchSensitivity) override;
+    double getMaximumScreenSpaceError() override;
+    void setMaximumScreenSpaceError(double maximumScreenSpaceError) override;
+    double getMaximumSimultaneousTileLoads() override;
+    void setMaximumSimultaneousTileLoads(double maximumSimultaneousTileLoads) override;
+    double getLoadingDescendantLimit() override;
+    void setLoadingDescendantLimit(double loadingDescendantLimit) override;
+    double getMsaaSampleCount() override;
+    void setMsaaSampleCount(double msaaSampleCount) override;
+    bool getShowCreditsFooter() override;
+    void setShowCreditsFooter(bool showCreditsFooter) override;
     double getIonImageryAssetId() override;
     void setIonImageryAssetId(double ionImageryAssetId) override;
+    std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() override;
+    void setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) override;
 
   public:
     // Methods
@@ -77,6 +103,9 @@ namespace margelo::nitro::reactnativecesium {
     void onTouchStart(double pointerId, double x, double y) override;
     void onTouchChange(double pointerId, double x, double y) override;
     void onTouchEnd(double pointerId) override;
+    std::shared_ptr<Promise<CameraState>> getCameraState() override;
+    void flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) override;
+    void lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) override;
 
   private:
     jni::global_ref<JHybridCesiumViewSpec::JavaPart> _javaPart;

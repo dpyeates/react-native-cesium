@@ -2,6 +2,7 @@
 
 #include "../engine/GlobeCamera.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 
@@ -25,6 +26,12 @@ public:
   void applyToCamera(GlobeCamera& camera) const;
 
   void resetDeltas();
+
+  void setPanEnabled(bool v) { panEnabled_ = v; }
+  void setPinchZoomEnabled(bool v) { pinchZoomEnabled_ = v; }
+  void setPinchRotateEnabled(bool v) { pinchRotateEnabled_ = v; }
+  void setPanSensitivity(double v) { panSensitivity_ = std::max(v, 0.0); }
+  void setPinchSensitivity(double v) { pinchSensitivity_ = std::max(v, 0.0); }
 
 private:
   void updateGestureState();
@@ -55,6 +62,12 @@ private:
   double deltaPanY_          = 0.0; // downward screen pixels
   double deltaAltitudeScale_ = 1.0;
   double deltaHeading_       = 0.0;
+
+  bool   panEnabled_         = true;
+  bool   pinchZoomEnabled_   = true;
+  bool   pinchRotateEnabled_ = true;
+  double panSensitivity_     = 1.0;
+  double pinchSensitivity_   = 1.0;
 };
 
 } // namespace reactnativecesium

@@ -16,6 +16,7 @@
 #include <NitroModules/HybridObjectRegistry.hpp>
 
 #include "JHybridCesiumViewSpec.hpp"
+#include "JFunc_void_CesiumMetrics.hpp"
 #include "views/JHybridCesiumViewStateUpdater.hpp"
 #include <NitroModules/DefaultConstructableObject.hpp>
 
@@ -28,7 +29,7 @@ int initialize(JavaVM* vm) {
 }
 
 struct JHybridCesiumViewSpecImpl: public jni::JavaClass<JHybridCesiumViewSpecImpl, JHybridCesiumViewSpec::JavaPart> {
-  static constexpr auto kJavaDescriptor = "Lcom/margelo/nitro/reactnativecesium/HybridCesiumView;";
+  static constexpr auto kJavaDescriptor = "Lcom/reactnativecesium/HybridCesiumView;";
   static std::shared_ptr<JHybridCesiumViewSpec> create() {
     static const auto constructorFn = javaClassStatic()->getConstructor<JHybridCesiumViewSpecImpl::javaobject()>();
     jni::local_ref<JHybridCesiumViewSpec::JavaPart> javaPart = javaClassStatic()->newObject(constructorFn);
@@ -42,6 +43,7 @@ void registerAllNatives() {
 
   // Register native JNI methods
   margelo::nitro::reactnativecesium::JHybridCesiumViewSpec::CxxPart::registerNatives();
+  margelo::nitro::reactnativecesium::JFunc_void_CesiumMetrics_cxx::registerNatives();
   margelo::nitro::reactnativecesium::views::JHybridCesiumViewStateUpdater::registerNatives();
 
   // Register Nitro Hybrid Objects

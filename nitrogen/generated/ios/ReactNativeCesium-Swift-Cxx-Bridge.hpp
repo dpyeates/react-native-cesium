@@ -8,6 +8,10 @@
 #pragma once
 
 // Forward declarations of C++ defined types
+// Forward declaration of `CameraState` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CameraState; }
+// Forward declaration of `CesiumMetrics` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 // Forward declaration of `HybridCesiumViewSpec` to properly resolve imports.
 namespace margelo::nitro::reactnativecesium { class HybridCesiumViewSpec; }
 
@@ -16,10 +20,17 @@ namespace margelo::nitro::reactnativecesium { class HybridCesiumViewSpec; }
 namespace ReactNativeCesium { class HybridCesiumViewSpec_cxx; }
 
 // Include C++ defined types
+#include "CameraState.hpp"
+#include "CesiumMetrics.hpp"
 #include "HybridCesiumViewSpec.hpp"
+#include <NitroModules/Promise.hpp>
+#include <NitroModules/PromiseHolder.hpp>
 #include <NitroModules/Result.hpp>
 #include <exception>
+#include <functional>
 #include <memory>
+#include <optional>
+#include <string>
 
 /**
  * Contains specialized versions of C++ templated types so they can be accessed from Swift,
@@ -27,6 +38,99 @@ namespace ReactNativeCesium { class HybridCesiumViewSpec_cxx; }
  */
 namespace margelo::nitro::reactnativecesium::bridge::swift {
 
+  // pragma MARK: std::function<void(const CesiumMetrics& /* metrics */)>
+  /**
+   * Specialized version of `std::function<void(const CesiumMetrics&)>`.
+   */
+  using Func_void_CesiumMetrics = std::function<void(const CesiumMetrics& /* metrics */)>;
+  /**
+   * Wrapper class for a `std::function<void(const CesiumMetrics& / * metrics * /)>`, this can be used from Swift.
+   */
+  class Func_void_CesiumMetrics_Wrapper final {
+  public:
+    explicit Func_void_CesiumMetrics_Wrapper(std::function<void(const CesiumMetrics& /* metrics */)>&& func): _function(std::make_unique<std::function<void(const CesiumMetrics& /* metrics */)>>(std::move(func))) {}
+    inline void call(CesiumMetrics metrics) const noexcept {
+      _function->operator()(metrics);
+    }
+  private:
+    std::unique_ptr<std::function<void(const CesiumMetrics& /* metrics */)>> _function;
+  } SWIFT_NONCOPYABLE;
+  Func_void_CesiumMetrics create_Func_void_CesiumMetrics(void* NON_NULL swiftClosureWrapper) noexcept;
+  inline Func_void_CesiumMetrics_Wrapper wrap_Func_void_CesiumMetrics(Func_void_CesiumMetrics value) noexcept {
+    return Func_void_CesiumMetrics_Wrapper(std::move(value));
+  }
+  
+  // pragma MARK: std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>
+  /**
+   * Specialized version of `std::optional<std::function<void(const CesiumMetrics& / * metrics * /)>>`.
+   */
+  using std__optional_std__function_void_const_CesiumMetrics_____metrics______ = std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>;
+  inline std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> create_std__optional_std__function_void_const_CesiumMetrics_____metrics______(const std::function<void(const CesiumMetrics& /* metrics */)>& value) noexcept {
+    return std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>(value);
+  }
+  inline bool has_value_std__optional_std__function_void_const_CesiumMetrics_____metrics______(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& optional) noexcept {
+    return optional.has_value();
+  }
+  inline std::function<void(const CesiumMetrics& /* metrics */)> get_std__optional_std__function_void_const_CesiumMetrics_____metrics______(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& optional) noexcept {
+    return optional.value();
+  }
+  
+  // pragma MARK: std::shared_ptr<Promise<CameraState>>
+  /**
+   * Specialized version of `std::shared_ptr<Promise<CameraState>>`.
+   */
+  using std__shared_ptr_Promise_CameraState__ = std::shared_ptr<Promise<CameraState>>;
+  inline std::shared_ptr<Promise<CameraState>> create_std__shared_ptr_Promise_CameraState__() noexcept {
+    return Promise<CameraState>::create();
+  }
+  inline PromiseHolder<CameraState> wrap_std__shared_ptr_Promise_CameraState__(std::shared_ptr<Promise<CameraState>> promise) noexcept {
+    return PromiseHolder<CameraState>(std::move(promise));
+  }
+  
+  // pragma MARK: std::function<void(const CameraState& /* result */)>
+  /**
+   * Specialized version of `std::function<void(const CameraState&)>`.
+   */
+  using Func_void_CameraState = std::function<void(const CameraState& /* result */)>;
+  /**
+   * Wrapper class for a `std::function<void(const CameraState& / * result * /)>`, this can be used from Swift.
+   */
+  class Func_void_CameraState_Wrapper final {
+  public:
+    explicit Func_void_CameraState_Wrapper(std::function<void(const CameraState& /* result */)>&& func): _function(std::make_unique<std::function<void(const CameraState& /* result */)>>(std::move(func))) {}
+    inline void call(CameraState result) const noexcept {
+      _function->operator()(result);
+    }
+  private:
+    std::unique_ptr<std::function<void(const CameraState& /* result */)>> _function;
+  } SWIFT_NONCOPYABLE;
+  Func_void_CameraState create_Func_void_CameraState(void* NON_NULL swiftClosureWrapper) noexcept;
+  inline Func_void_CameraState_Wrapper wrap_Func_void_CameraState(Func_void_CameraState value) noexcept {
+    return Func_void_CameraState_Wrapper(std::move(value));
+  }
+  
+  // pragma MARK: std::function<void(const std::exception_ptr& /* error */)>
+  /**
+   * Specialized version of `std::function<void(const std::exception_ptr&)>`.
+   */
+  using Func_void_std__exception_ptr = std::function<void(const std::exception_ptr& /* error */)>;
+  /**
+   * Wrapper class for a `std::function<void(const std::exception_ptr& / * error * /)>`, this can be used from Swift.
+   */
+  class Func_void_std__exception_ptr_Wrapper final {
+  public:
+    explicit Func_void_std__exception_ptr_Wrapper(std::function<void(const std::exception_ptr& /* error */)>&& func): _function(std::make_unique<std::function<void(const std::exception_ptr& /* error */)>>(std::move(func))) {}
+    inline void call(std::exception_ptr error) const noexcept {
+      _function->operator()(error);
+    }
+  private:
+    std::unique_ptr<std::function<void(const std::exception_ptr& /* error */)>> _function;
+  } SWIFT_NONCOPYABLE;
+  Func_void_std__exception_ptr create_Func_void_std__exception_ptr(void* NON_NULL swiftClosureWrapper) noexcept;
+  inline Func_void_std__exception_ptr_Wrapper wrap_Func_void_std__exception_ptr(Func_void_std__exception_ptr value) noexcept {
+    return Func_void_std__exception_ptr_Wrapper(std::move(value));
+  }
+  
   // pragma MARK: std::shared_ptr<HybridCesiumViewSpec>
   /**
    * Specialized version of `std::shared_ptr<HybridCesiumViewSpec>`.
@@ -46,6 +150,15 @@ namespace margelo::nitro::reactnativecesium::bridge::swift {
   }
   inline Result_void_ create_Result_void_(const std::exception_ptr& error) noexcept {
     return Result<void>::withError(error);
+  }
+  
+  // pragma MARK: Result<std::shared_ptr<Promise<CameraState>>>
+  using Result_std__shared_ptr_Promise_CameraState___ = Result<std::shared_ptr<Promise<CameraState>>>;
+  inline Result_std__shared_ptr_Promise_CameraState___ create_Result_std__shared_ptr_Promise_CameraState___(const std::shared_ptr<Promise<CameraState>>& value) noexcept {
+    return Result<std::shared_ptr<Promise<CameraState>>>::withValue(value);
+  }
+  inline Result_std__shared_ptr_Promise_CameraState___ create_Result_std__shared_ptr_Promise_CameraState___(const std::exception_ptr& error) noexcept {
+    return Result<std::shared_ptr<Promise<CameraState>>>::withError(error);
   }
 
 } // namespace margelo::nitro::reactnativecesium::bridge::swift

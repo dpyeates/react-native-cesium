@@ -14,6 +14,30 @@
 
 namespace margelo::nitro::reactnativecesium::bridge::swift {
 
+  // pragma MARK: std::function<void(const CesiumMetrics& /* metrics */)>
+  Func_void_CesiumMetrics create_Func_void_CesiumMetrics(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = ReactNativeCesium::Func_void_CesiumMetrics::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)](const CesiumMetrics& metrics) mutable -> void {
+      swiftClosure.call(metrics);
+    };
+  }
+  
+  // pragma MARK: std::function<void(const CameraState& /* result */)>
+  Func_void_CameraState create_Func_void_CameraState(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = ReactNativeCesium::Func_void_CameraState::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)](const CameraState& result) mutable -> void {
+      swiftClosure.call(result);
+    };
+  }
+  
+  // pragma MARK: std::function<void(const std::exception_ptr& /* error */)>
+  Func_void_std__exception_ptr create_Func_void_std__exception_ptr(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = ReactNativeCesium::Func_void_std__exception_ptr::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)](const std::exception_ptr& error) mutable -> void {
+      swiftClosure.call(error);
+    };
+  }
+  
   // pragma MARK: std::shared_ptr<HybridCesiumViewSpec>
   std::shared_ptr<HybridCesiumViewSpec> create_std__shared_ptr_HybridCesiumViewSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
     ReactNativeCesium::HybridCesiumViewSpec_cxx swiftPart = ReactNativeCesium::HybridCesiumViewSpec_cxx::fromUnsafe(swiftUnsafePointer);

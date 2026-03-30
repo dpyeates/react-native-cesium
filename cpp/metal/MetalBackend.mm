@@ -254,10 +254,28 @@ void MetalBackend::initialize(void* nativeSurface, int width, int height) {
   layer.device        = dev;
   layer.framebufferOnly = YES;
 
+  buildRenderPipelines();
+  createDepthTexture();
+  createFallbackTexture();
+}
+
+void MetalBackend::buildRenderPipelines() {
+  if (!device_) return;
+  id<MTLDevice> dev = (__bridge id<MTLDevice>)device_;
+  CAMetalLayer* layer = (__bridge CAMetalLayer*)metalLayer_;
   const MTLPixelFormat colorFmt = layer.pixelFormat;
 
-  // ── Terrain pipeline ──────────────────────────────────────────────────────
   NSError* err = nil;
+
+  if (terrainPipeline_) {
+    CFRelease(terrainPipeline_);
+    terrainPipeline_ = nullptr;
+  }
+  if (skyPipeline_) {
+    CFRelease(skyPipeline_);
+    skyPipeline_ = nullptr;
+  }
+
   id<MTLLibrary> tLib = [dev newLibraryWithSource:kTerrainShaderSrc
                                           options:nil error:&err];
   if (err) NSLog(@"[MetalBackend] terrain shader error: %@", err);
@@ -267,11 +285,11 @@ void MetalBackend::initialize(void* nativeSurface, int width, int height) {
   tDesc.fragmentFunction = [tLib newFunctionWithName:@"terrainFragment"];
   tDesc.colorAttachments[0].pixelFormat = colorFmt;
   tDesc.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
+  tDesc.rasterSampleCount               = (NSUInteger)std::max(1, sampleCount_);
   terrainPipeline_ = (__bridge_retained void*)
       [dev newRenderPipelineStateWithDescriptor:tDesc error:&err];
   if (err) NSLog(@"[MetalBackend] terrain pipeline error: %@", err);
 
-  // ── Sky pipeline ──────────────────────────────────────────────────────────
   id<MTLLibrary> sLib = [dev newLibraryWithSource:kSkyShaderSrc
                                           options:nil error:&err];
   if (err) NSLog(@"[MetalBackend] sky shader error: %@", err);
@@ -281,25 +299,51 @@ void MetalBackend::initialize(void* nativeSurface, int width, int height) {
   sDesc.fragmentFunction = [sLib newFunctionWithName:@"skyFragment"];
   sDesc.colorAttachments[0].pixelFormat = colorFmt;
   sDesc.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
+  sDesc.rasterSampleCount               = (NSUInteger)std::max(1, sampleCount_);
   skyPipeline_ = (__bridge_retained void*)
       [dev newRenderPipelineStateWithDescriptor:sDesc error:&err];
   if (err) NSLog(@"[MetalBackend] sky pipeline error: %@", err);
 
-  // ── Depth states ──────────────────────────────────────────────────────────
-  MTLDepthStencilDescriptor* dd = [MTLDepthStencilDescriptor new];
-  dd.depthCompareFunction = MTLCompareFunctionGreater; // reversed-Z
-  dd.depthWriteEnabled    = YES;
-  terrainDepthState_ = (__bridge_retained void*)
-      [dev newDepthStencilStateWithDescriptor:dd];
+  if (!terrainDepthState_) {
+    MTLDepthStencilDescriptor* dd = [MTLDepthStencilDescriptor new];
+    dd.depthCompareFunction = MTLCompareFunctionGreater;
+    dd.depthWriteEnabled    = YES;
+    terrainDepthState_ = (__bridge_retained void*)
+        [dev newDepthStencilStateWithDescriptor:dd];
+  }
+  if (!skyDepthState_) {
+    MTLDepthStencilDescriptor* sd = [MTLDepthStencilDescriptor new];
+    sd.depthCompareFunction = MTLCompareFunctionAlways;
+    sd.depthWriteEnabled    = NO;
+    skyDepthState_ = (__bridge_retained void*)
+        [dev newDepthStencilStateWithDescriptor:sd];
+  }
+}
 
-  MTLDepthStencilDescriptor* sd = [MTLDepthStencilDescriptor new];
-  sd.depthCompareFunction = MTLCompareFunctionAlways;
-  sd.depthWriteEnabled    = NO;
-  skyDepthState_ = (__bridge_retained void*)
-      [dev newDepthStencilStateWithDescriptor:sd];
+void MetalBackend::setMsaaSampleCount(int sc) {
+  int n = sc;
+  if (n != 2 && n != 4) n = 1;
+  id<MTLDevice> dev = (__bridge id<MTLDevice>)device_;
+  if (dev && n > 1 && ![dev supportsTextureSampleCount:(NSUInteger)n]) n = 1;
+  if (n == sampleCount_) return;
 
+  if (frameSemaphore_) {
+    dispatch_semaphore_t sem = (__bridge dispatch_semaphore_t)frameSemaphore_;
+    for (int i = 0; i < kMaxFramesInFlight; ++i) {
+      dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+    }
+  }
+
+  sampleCount_ = n;
+  buildRenderPipelines();
   createDepthTexture();
-  createFallbackTexture();
+
+  if (frameSemaphore_) {
+    dispatch_semaphore_t sem = (__bridge dispatch_semaphore_t)frameSemaphore_;
+    for (int i = 0; i < kMaxFramesInFlight; ++i) {
+      dispatch_semaphore_signal(sem);
+    }
+  }
 }
 
 void MetalBackend::resize(int width, int height) {
@@ -348,6 +392,11 @@ void MetalBackend::createDepthTexture() {
                                                          width:viewportWidth_
                                                         height:viewportHeight_
                                                      mipmapped:NO];
+  const int sc = std::max(1, sampleCount_);
+  if (sc > 1) {
+    dd.textureType = MTLTextureType2DMultisample;
+    dd.sampleCount = (NSUInteger)sc;
+  }
   dd.storageMode = MTLStorageModePrivate;
   dd.usage       = MTLTextureUsageRenderTarget;
   depthTexture_  = (__bridge_retained void*)[dev newTextureWithDescriptor:dd];
@@ -419,7 +468,8 @@ void MetalBackend::beginFrame(const FrameParams& /*params*/) {
     bool needsCreate = !depthTexture_;
     if (depthTexture_) {
       id<MTLTexture> dt = (__bridge id<MTLTexture>)depthTexture_;
-      needsCreate = ((int)dt.width != dw || (int)dt.height != dh);
+      needsCreate = ((int)dt.width != dw || (int)dt.height != dh ||
+                     (int)dt.sampleCount != std::max(1, sampleCount_));
     }
     if (needsCreate) {
       viewportWidth_  = dw;

@@ -12,9 +12,17 @@
 // Forward declaration of `HybridCesiumViewSpec_cxx` to properly resolve imports.
 namespace ReactNativeCesium { class HybridCesiumViewSpec_cxx; }
 
-
+// Forward declaration of `CesiumMetrics` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
+// Forward declaration of `CameraState` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CameraState; }
 
 #include <string>
+#include "CesiumMetrics.hpp"
+#include <functional>
+#include <optional>
+#include "CameraState.hpp"
+#include <NitroModules/Promise.hpp>
 
 #include "ReactNativeCesium-Swift-Cxx-Umbrella.hpp"
 
@@ -111,17 +119,96 @@ namespace margelo::nitro::reactnativecesium {
     inline void setCameraRoll(double cameraRoll) noexcept override {
       _swiftPart.setCameraRoll(std::forward<decltype(cameraRoll)>(cameraRoll));
     }
+    inline double getCameraVerticalFovDeg() noexcept override {
+      return _swiftPart.getCameraVerticalFovDeg();
+    }
+    inline void setCameraVerticalFovDeg(double cameraVerticalFovDeg) noexcept override {
+      _swiftPart.setCameraVerticalFovDeg(std::forward<decltype(cameraVerticalFovDeg)>(cameraVerticalFovDeg));
+    }
     inline bool getDebugOverlay() noexcept override {
       return _swiftPart.getDebugOverlay();
     }
     inline void setDebugOverlay(bool debugOverlay) noexcept override {
       _swiftPart.setDebugOverlay(std::forward<decltype(debugOverlay)>(debugOverlay));
     }
+    inline bool getPauseRendering() noexcept override {
+      return _swiftPart.getPauseRendering();
+    }
+    inline void setPauseRendering(bool pauseRendering) noexcept override {
+      _swiftPart.setPauseRendering(std::forward<decltype(pauseRendering)>(pauseRendering));
+    }
+    inline bool getGesturePanEnabled() noexcept override {
+      return _swiftPart.getGesturePanEnabled();
+    }
+    inline void setGesturePanEnabled(bool gesturePanEnabled) noexcept override {
+      _swiftPart.setGesturePanEnabled(std::forward<decltype(gesturePanEnabled)>(gesturePanEnabled));
+    }
+    inline bool getGesturePinchZoomEnabled() noexcept override {
+      return _swiftPart.getGesturePinchZoomEnabled();
+    }
+    inline void setGesturePinchZoomEnabled(bool gesturePinchZoomEnabled) noexcept override {
+      _swiftPart.setGesturePinchZoomEnabled(std::forward<decltype(gesturePinchZoomEnabled)>(gesturePinchZoomEnabled));
+    }
+    inline bool getGesturePinchRotateEnabled() noexcept override {
+      return _swiftPart.getGesturePinchRotateEnabled();
+    }
+    inline void setGesturePinchRotateEnabled(bool gesturePinchRotateEnabled) noexcept override {
+      _swiftPart.setGesturePinchRotateEnabled(std::forward<decltype(gesturePinchRotateEnabled)>(gesturePinchRotateEnabled));
+    }
+    inline double getGesturePanSensitivity() noexcept override {
+      return _swiftPart.getGesturePanSensitivity();
+    }
+    inline void setGesturePanSensitivity(double gesturePanSensitivity) noexcept override {
+      _swiftPart.setGesturePanSensitivity(std::forward<decltype(gesturePanSensitivity)>(gesturePanSensitivity));
+    }
+    inline double getGesturePinchSensitivity() noexcept override {
+      return _swiftPart.getGesturePinchSensitivity();
+    }
+    inline void setGesturePinchSensitivity(double gesturePinchSensitivity) noexcept override {
+      _swiftPart.setGesturePinchSensitivity(std::forward<decltype(gesturePinchSensitivity)>(gesturePinchSensitivity));
+    }
+    inline double getMaximumScreenSpaceError() noexcept override {
+      return _swiftPart.getMaximumScreenSpaceError();
+    }
+    inline void setMaximumScreenSpaceError(double maximumScreenSpaceError) noexcept override {
+      _swiftPart.setMaximumScreenSpaceError(std::forward<decltype(maximumScreenSpaceError)>(maximumScreenSpaceError));
+    }
+    inline double getMaximumSimultaneousTileLoads() noexcept override {
+      return _swiftPart.getMaximumSimultaneousTileLoads();
+    }
+    inline void setMaximumSimultaneousTileLoads(double maximumSimultaneousTileLoads) noexcept override {
+      _swiftPart.setMaximumSimultaneousTileLoads(std::forward<decltype(maximumSimultaneousTileLoads)>(maximumSimultaneousTileLoads));
+    }
+    inline double getLoadingDescendantLimit() noexcept override {
+      return _swiftPart.getLoadingDescendantLimit();
+    }
+    inline void setLoadingDescendantLimit(double loadingDescendantLimit) noexcept override {
+      _swiftPart.setLoadingDescendantLimit(std::forward<decltype(loadingDescendantLimit)>(loadingDescendantLimit));
+    }
+    inline double getMsaaSampleCount() noexcept override {
+      return _swiftPart.getMsaaSampleCount();
+    }
+    inline void setMsaaSampleCount(double msaaSampleCount) noexcept override {
+      _swiftPart.setMsaaSampleCount(std::forward<decltype(msaaSampleCount)>(msaaSampleCount));
+    }
+    inline bool getShowCreditsFooter() noexcept override {
+      return _swiftPart.getShowCreditsFooter();
+    }
+    inline void setShowCreditsFooter(bool showCreditsFooter) noexcept override {
+      _swiftPart.setShowCreditsFooter(std::forward<decltype(showCreditsFooter)>(showCreditsFooter));
+    }
     inline double getIonImageryAssetId() noexcept override {
       return _swiftPart.getIonImageryAssetId();
     }
     inline void setIonImageryAssetId(double ionImageryAssetId) noexcept override {
       _swiftPart.setIonImageryAssetId(std::forward<decltype(ionImageryAssetId)>(ionImageryAssetId));
+    }
+    inline std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() noexcept override {
+      auto __result = _swiftPart.getOnMetrics();
+      return __result;
+    }
+    inline void setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) noexcept override {
+      _swiftPart.setOnMetrics(onMetrics);
     }
 
   public:
@@ -146,6 +233,26 @@ namespace margelo::nitro::reactnativecesium {
     }
     inline void onTouchEnd(double pointerId) override {
       auto __result = _swiftPart.onTouchEnd(std::forward<decltype(pointerId)>(pointerId));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline std::shared_ptr<Promise<CameraState>> getCameraState() override {
+      auto __result = _swiftPart.getCameraState();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
+    inline void flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) override {
+      auto __result = _swiftPart.flyTo(std::forward<decltype(latitude)>(latitude), std::forward<decltype(longitude)>(longitude), std::forward<decltype(altitude)>(altitude), std::forward<decltype(heading)>(heading), std::forward<decltype(pitch)>(pitch), std::forward<decltype(roll)>(roll), std::forward<decltype(durationSeconds)>(durationSeconds));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline void lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) override {
+      auto __result = _swiftPart.lookAt(std::forward<decltype(targetLatitude)>(targetLatitude), std::forward<decltype(targetLongitude)>(targetLongitude), std::forward<decltype(targetAltitude)>(targetAltitude), std::forward<decltype(durationSeconds)>(durationSeconds));
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }

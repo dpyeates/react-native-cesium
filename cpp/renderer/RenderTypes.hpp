@@ -56,6 +56,12 @@ struct FrameResult {
   double cameraLat   = 0.0;
   double cameraLon   = 0.0;
   double cameraAlt   = 0.0;
+
+  // Debug / overlay / metrics (filled by CesiumEngine::updateFrame).
+  bool                     ionTokenConfigured = false;
+  bool                     tilesetActive      = false;
+  double                   verticalFovDeg     = 60.0;
+  std::vector<std::string> creditHtmlLines; // raw HTML from Cesium CreditSystem
 };
 
 // ── Frame setup ─────────────────────────────────────────────────────────────

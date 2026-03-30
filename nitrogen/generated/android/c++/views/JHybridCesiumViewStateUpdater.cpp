@@ -69,13 +69,65 @@ void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     hybridView->setCameraRoll(props->cameraRoll.value);
     props->cameraRoll.isDirty = false;
   }
+  if (props->cameraVerticalFovDeg.isDirty) {
+    hybridView->setCameraVerticalFovDeg(props->cameraVerticalFovDeg.value);
+    props->cameraVerticalFovDeg.isDirty = false;
+  }
   if (props->debugOverlay.isDirty) {
     hybridView->setDebugOverlay(props->debugOverlay.value);
     props->debugOverlay.isDirty = false;
   }
+  if (props->pauseRendering.isDirty) {
+    hybridView->setPauseRendering(props->pauseRendering.value);
+    props->pauseRendering.isDirty = false;
+  }
+  if (props->gesturePanEnabled.isDirty) {
+    hybridView->setGesturePanEnabled(props->gesturePanEnabled.value);
+    props->gesturePanEnabled.isDirty = false;
+  }
+  if (props->gesturePinchZoomEnabled.isDirty) {
+    hybridView->setGesturePinchZoomEnabled(props->gesturePinchZoomEnabled.value);
+    props->gesturePinchZoomEnabled.isDirty = false;
+  }
+  if (props->gesturePinchRotateEnabled.isDirty) {
+    hybridView->setGesturePinchRotateEnabled(props->gesturePinchRotateEnabled.value);
+    props->gesturePinchRotateEnabled.isDirty = false;
+  }
+  if (props->gesturePanSensitivity.isDirty) {
+    hybridView->setGesturePanSensitivity(props->gesturePanSensitivity.value);
+    props->gesturePanSensitivity.isDirty = false;
+  }
+  if (props->gesturePinchSensitivity.isDirty) {
+    hybridView->setGesturePinchSensitivity(props->gesturePinchSensitivity.value);
+    props->gesturePinchSensitivity.isDirty = false;
+  }
+  if (props->maximumScreenSpaceError.isDirty) {
+    hybridView->setMaximumScreenSpaceError(props->maximumScreenSpaceError.value);
+    props->maximumScreenSpaceError.isDirty = false;
+  }
+  if (props->maximumSimultaneousTileLoads.isDirty) {
+    hybridView->setMaximumSimultaneousTileLoads(props->maximumSimultaneousTileLoads.value);
+    props->maximumSimultaneousTileLoads.isDirty = false;
+  }
+  if (props->loadingDescendantLimit.isDirty) {
+    hybridView->setLoadingDescendantLimit(props->loadingDescendantLimit.value);
+    props->loadingDescendantLimit.isDirty = false;
+  }
+  if (props->msaaSampleCount.isDirty) {
+    hybridView->setMsaaSampleCount(props->msaaSampleCount.value);
+    props->msaaSampleCount.isDirty = false;
+  }
+  if (props->showCreditsFooter.isDirty) {
+    hybridView->setShowCreditsFooter(props->showCreditsFooter.value);
+    props->showCreditsFooter.isDirty = false;
+  }
   if (props->ionImageryAssetId.isDirty) {
     hybridView->setIonImageryAssetId(props->ionImageryAssetId.value);
     props->ionImageryAssetId.isDirty = false;
+  }
+  if (props->onMetrics.isDirty) {
+    hybridView->setOnMetrics(props->onMetrics.value);
+    props->onMetrics.isDirty = false;
   }
 
   // Update hybridRef if it changed

@@ -119,15 +119,80 @@ using namespace margelo::nitro::reactnativecesium::views;
     swiftPart.setCameraRoll(newViewProps.cameraRoll.value);
     newViewProps.cameraRoll.isDirty = false;
   }
+  // cameraVerticalFovDeg: number
+  if (newViewProps.cameraVerticalFovDeg.isDirty) {
+    swiftPart.setCameraVerticalFovDeg(newViewProps.cameraVerticalFovDeg.value);
+    newViewProps.cameraVerticalFovDeg.isDirty = false;
+  }
   // debugOverlay: boolean
   if (newViewProps.debugOverlay.isDirty) {
     swiftPart.setDebugOverlay(newViewProps.debugOverlay.value);
     newViewProps.debugOverlay.isDirty = false;
   }
+  // pauseRendering: boolean
+  if (newViewProps.pauseRendering.isDirty) {
+    swiftPart.setPauseRendering(newViewProps.pauseRendering.value);
+    newViewProps.pauseRendering.isDirty = false;
+  }
+  // gesturePanEnabled: boolean
+  if (newViewProps.gesturePanEnabled.isDirty) {
+    swiftPart.setGesturePanEnabled(newViewProps.gesturePanEnabled.value);
+    newViewProps.gesturePanEnabled.isDirty = false;
+  }
+  // gesturePinchZoomEnabled: boolean
+  if (newViewProps.gesturePinchZoomEnabled.isDirty) {
+    swiftPart.setGesturePinchZoomEnabled(newViewProps.gesturePinchZoomEnabled.value);
+    newViewProps.gesturePinchZoomEnabled.isDirty = false;
+  }
+  // gesturePinchRotateEnabled: boolean
+  if (newViewProps.gesturePinchRotateEnabled.isDirty) {
+    swiftPart.setGesturePinchRotateEnabled(newViewProps.gesturePinchRotateEnabled.value);
+    newViewProps.gesturePinchRotateEnabled.isDirty = false;
+  }
+  // gesturePanSensitivity: number
+  if (newViewProps.gesturePanSensitivity.isDirty) {
+    swiftPart.setGesturePanSensitivity(newViewProps.gesturePanSensitivity.value);
+    newViewProps.gesturePanSensitivity.isDirty = false;
+  }
+  // gesturePinchSensitivity: number
+  if (newViewProps.gesturePinchSensitivity.isDirty) {
+    swiftPart.setGesturePinchSensitivity(newViewProps.gesturePinchSensitivity.value);
+    newViewProps.gesturePinchSensitivity.isDirty = false;
+  }
+  // maximumScreenSpaceError: number
+  if (newViewProps.maximumScreenSpaceError.isDirty) {
+    swiftPart.setMaximumScreenSpaceError(newViewProps.maximumScreenSpaceError.value);
+    newViewProps.maximumScreenSpaceError.isDirty = false;
+  }
+  // maximumSimultaneousTileLoads: number
+  if (newViewProps.maximumSimultaneousTileLoads.isDirty) {
+    swiftPart.setMaximumSimultaneousTileLoads(newViewProps.maximumSimultaneousTileLoads.value);
+    newViewProps.maximumSimultaneousTileLoads.isDirty = false;
+  }
+  // loadingDescendantLimit: number
+  if (newViewProps.loadingDescendantLimit.isDirty) {
+    swiftPart.setLoadingDescendantLimit(newViewProps.loadingDescendantLimit.value);
+    newViewProps.loadingDescendantLimit.isDirty = false;
+  }
+  // msaaSampleCount: number
+  if (newViewProps.msaaSampleCount.isDirty) {
+    swiftPart.setMsaaSampleCount(newViewProps.msaaSampleCount.value);
+    newViewProps.msaaSampleCount.isDirty = false;
+  }
+  // showCreditsFooter: boolean
+  if (newViewProps.showCreditsFooter.isDirty) {
+    swiftPart.setShowCreditsFooter(newViewProps.showCreditsFooter.value);
+    newViewProps.showCreditsFooter.isDirty = false;
+  }
   // ionImageryAssetId: number
   if (newViewProps.ionImageryAssetId.isDirty) {
     swiftPart.setIonImageryAssetId(newViewProps.ionImageryAssetId.value);
     newViewProps.ionImageryAssetId.isDirty = false;
+  }
+  // onMetrics: optional
+  if (newViewProps.onMetrics.isDirty) {
+    swiftPart.setOnMetrics(newViewProps.onMetrics.value);
+    newViewProps.onMetrics.isDirty = false;
   }
 
   swiftPart.afterUpdate();

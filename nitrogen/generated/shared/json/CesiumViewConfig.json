@@ -12,8 +12,21 @@
     "cameraHeading": true,
     "cameraPitch": true,
     "cameraRoll": true,
+    "cameraVerticalFovDeg": true,
     "debugOverlay": true,
+    "pauseRendering": true,
+    "gesturePanEnabled": true,
+    "gesturePinchZoomEnabled": true,
+    "gesturePinchRotateEnabled": true,
+    "gesturePanSensitivity": true,
+    "gesturePinchSensitivity": true,
+    "maximumScreenSpaceError": true,
+    "maximumSimultaneousTileLoads": true,
+    "loadingDescendantLimit": true,
+    "msaaSampleCount": true,
+    "showCreditsFooter": true,
     "ionImageryAssetId": true,
+    "onMetrics": true,
     "hybridRef": true
   }
 }

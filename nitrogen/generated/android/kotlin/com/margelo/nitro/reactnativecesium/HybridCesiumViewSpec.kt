@@ -10,6 +10,7 @@ package com.margelo.nitro.reactnativecesium
 import androidx.annotation.Keep
 import com.facebook.jni.HybridData
 import com.facebook.proguard.annotations.DoNotStrip
+import com.margelo.nitro.core.Promise
 import com.margelo.nitro.core.HybridObject
 import com.margelo.nitro.views.HybridView
 
@@ -78,13 +79,99 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @get:Keep
   @set:DoNotStrip
   @set:Keep
+  abstract var cameraVerticalFovDeg: Double
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
   abstract var debugOverlay: Boolean
   
   @get:DoNotStrip
   @get:Keep
   @set:DoNotStrip
   @set:Keep
+  abstract var pauseRendering: Boolean
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var gesturePanEnabled: Boolean
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var gesturePinchZoomEnabled: Boolean
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var gesturePinchRotateEnabled: Boolean
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var gesturePanSensitivity: Double
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var gesturePinchSensitivity: Double
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var maximumScreenSpaceError: Double
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var maximumSimultaneousTileLoads: Double
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var loadingDescendantLimit: Double
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var msaaSampleCount: Double
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var showCreditsFooter: Boolean
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
   abstract var ionImageryAssetId: Double
+  
+  abstract var onMetrics: ((metrics: CesiumMetrics) -> Unit)?
+  
+  private var onMetrics_cxx: Func_void_CesiumMetrics?
+    @Keep
+    @DoNotStrip
+    get() {
+      return onMetrics?.let { Func_void_CesiumMetrics_java(it) }
+    }
+    @Keep
+    @DoNotStrip
+    set(value) {
+      onMetrics = value?.let { it }
+    }
 
   // Methods
   @DoNotStrip
@@ -102,6 +189,18 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @DoNotStrip
   @Keep
   abstract fun onTouchEnd(pointerId: Double): Unit
+  
+  @DoNotStrip
+  @Keep
+  abstract fun getCameraState(): Promise<CameraState>
+  
+  @DoNotStrip
+  @Keep
+  abstract fun flyTo(latitude: Double, longitude: Double, altitude: Double, heading: Double, pitch: Double, roll: Double, durationSeconds: Double): Unit
+  
+  @DoNotStrip
+  @Keep
+  abstract fun lookAt(targetLatitude: Double, targetLongitude: Double, targetAltitude: Double, durationSeconds: Double): Unit
 
   // Default implementation of `HybridObject.toString()`
   override fun toString(): String {

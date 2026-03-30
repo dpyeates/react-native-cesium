@@ -8,14 +8,23 @@
 #pragma once
 
 // Forward declarations of C++ defined types
+// Forward declaration of `CameraState` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CameraState; }
+// Forward declaration of `CesiumMetrics` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 // Forward declaration of `HybridCesiumViewSpec` to properly resolve imports.
 namespace margelo::nitro::reactnativecesium { class HybridCesiumViewSpec; }
 
 // Include C++ defined types
+#include "CameraState.hpp"
+#include "CesiumMetrics.hpp"
 #include "HybridCesiumViewSpec.hpp"
+#include <NitroModules/Promise.hpp>
 #include <NitroModules/Result.hpp>
 #include <exception>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 // C++ helpers for Swift

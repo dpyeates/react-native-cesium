@@ -17,12 +17,20 @@ namespace Cesium3DTilesSelection {
 class Tileset;
 }
 
+namespace CesiumUtility {
+class CreditSystem;
+}
+
 namespace reactnativecesium {
 
 struct EngineConfig {
   std::string ionAccessToken;
-  int64_t     ionAssetId         = 1;
+  int64_t     ionAssetId = 1;
   std::string cacheDatabasePath;
+  // TilesetOptions (see CesiumEngine::createTileset).
+  double maximumScreenSpaceError      = 32.0;
+  int32_t maximumSimultaneousTileLoads = 12;
+  int32_t loadingDescendantLimit       = 20;
 };
 
 class CesiumEngine {
@@ -37,14 +45,8 @@ public:
   void shutdown();
   void updateConfig(const EngineConfig& config);
 
-  // Fills |result| with merged eye-relative geometry + matrices for one frame.
-  // Passing a persistent FrameResult from the caller avoids per-frame heap
-  // allocation: clear() keeps the vector capacity, so after the first frame
-  // the internal std::vectors never reallocate.
   void updateFrame(double viewportWidth, double viewportHeight, FrameResult& result);
 
-  // Switch the active imagery overlay. assetId==1 means terrain-only (no overlay).
-  // Tears down and recreates the tileset so the overlay is applied cleanly.
   void setImageryAssetId(int64_t assetId);
 
   GlobeCamera&       camera()       { return camera_; }
@@ -58,6 +60,8 @@ private:
                      int64_t            imageryAssetId = 1);
   void destroyTileset();
 
+  bool tilesetOptionsMatch(const EngineConfig& a, const EngineConfig& b) const;
+
   IGPUBackend* gpu_ = nullptr;
   EngineConfig config_;
 
@@ -65,11 +69,10 @@ private:
   std::shared_ptr<CesiumAsync::IAssetAccessor> assetAccessor_;
   CesiumAsync::AsyncSystem                     asyncSystem_;
   std::shared_ptr<ResourcePreparer>            resourcePreparer_;
+  std::shared_ptr<CesiumUtility::CreditSystem> creditSystem_;
 
   std::unique_ptr<Cesium3DTilesSelection::Tileset> tileset_;
 
-  // Asset ID of the active raster overlay (1 = terrain-only, no overlay).
-  // Stored so it can be re-applied when the tileset is rebuilt.
   int64_t currentImageryAssetId_ = 1;
 
   GlobeCamera          camera_;

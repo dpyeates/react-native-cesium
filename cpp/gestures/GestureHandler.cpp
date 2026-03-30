@@ -1,5 +1,7 @@
 #include "GestureHandler.hpp"
 
+#include <glm/gtc/constants.hpp>
+
 #include <cmath>
 
 namespace reactnativecesium {
@@ -30,27 +32,33 @@ void GestureHandler::onTouchMove(int pointerId, float x, float y) {
   if (idx < 0) return;
   touches_[idx].pt = {x, y};
 
-  if (state_ == GestureState::Pan && touchCount_ == 1) {
-    deltaPanX_ += x - prevPanPoint_.x;
-    deltaPanY_ += y - prevPanPoint_.y;
+  if (state_ == GestureState::Pan && touchCount_ == 1 && panEnabled_) {
+    deltaPanX_ += (x - prevPanPoint_.x) * panSensitivity_;
+    deltaPanY_ += (y - prevPanPoint_.y) * panSensitivity_;
     prevPanPoint_ = {x, y};
 
   } else if (state_ == GestureState::Pinch && touchCount_ >= 2) {
     float currentDist = pinchDistance();
-    if (prevPinchDist_ > 1.0f && currentDist > 1.0f) {
+    if (pinchZoomEnabled_ && prevPinchDist_ > 1.0f && currentDist > 1.0f) {
       double ratio = static_cast<double>(currentDist) / prevPinchDist_;
-      deltaAltitudeScale_ *= ratio;
+      // Remap ratio through sensitivity: 1 + (ratio - 1) * s
+      double adj = 1.0 + (ratio - 1.0) * pinchSensitivity_;
+      deltaAltitudeScale_ *= std::max(adj, 1e-6);
     }
     prevPinchDist_ = currentDist;
 
-    // Two-finger rotation: always use the first two active touches (stable ordering).
-    const auto& p0 = touches_[0].pt;
-    const auto& p1 = touches_[1].pt;
-    float angle = std::atan2(p1.y - p0.y, p1.x - p0.x);
-    if (prevRotationAngle_ != 0.0f) {
-      deltaHeading_ += glm::degrees(static_cast<double>(angle - prevRotationAngle_));
+    if (pinchRotateEnabled_) {
+      const auto& p0 = touches_[0].pt;
+      const auto& p1 = touches_[1].pt;
+      float angle = std::atan2(p1.y - p0.y, p1.x - p0.x);
+      if (prevRotationAngle_ != 0.0f) {
+        deltaHeading_ += pinchSensitivity_ *
+            glm::degrees(static_cast<double>(angle - prevRotationAngle_));
+      }
+      prevRotationAngle_ = angle;
+    } else {
+      prevRotationAngle_ = 0.0f;
     }
-    prevRotationAngle_ = angle;
   }
 }
 
