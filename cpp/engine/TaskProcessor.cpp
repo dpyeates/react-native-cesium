@@ -27,16 +27,6 @@ void TaskProcessor::startTask(std::function<void()> f) {
   cv_.notify_one();
 }
 
-uint32_t TaskProcessor::getActiveTaskCount() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return activeTasks_;
-}
-
-uint32_t TaskProcessor::getQueuedTaskCount() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return static_cast<uint32_t>(tasks_.size());
-}
-
 void TaskProcessor::waitUntilIdle() {
   std::unique_lock<std::mutex> lock(mutex_);
   idleCv_.wait(lock, [this] {

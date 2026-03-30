@@ -54,18 +54,11 @@
   return self;
 }
 
-// Tear down and completely rebuild _engine using the currently stored config.
-// Resetting the unique_ptr calls ~CesiumEngine() which calls shutdown()
-// (destroyTileset + waitUntilIdle), ensuring all worker tasks finish and all
-// resources are freed before the fresh engine is created.
+// Tear down and rebuild _engine using the currently stored config.
+// The destructor calls shutdown() → destroyTileset() → waitUntilIdle().
 // Call on the main thread only.
 - (void)buildEngine {
-  NSLog(@"[CesiumBridge] buildEngine: isMainThread=%d",
-        (int)[NSThread isMainThread]);
-  // Destructor handles shutdown() + waitUntilIdle() for the old engine.
   _engine.reset();
-  NSLog(@"[CesiumBridge] buildEngine: old engine destroyed");
-
   _engine = std::make_unique<reactnativecesium::CesiumEngine>();
 
   reactnativecesium::EngineConfig config;
@@ -77,9 +70,7 @@
       ? std::string([_cacheDir UTF8String]) + "/cesium_cache.db"
       : "";
 
-  NSLog(@"[CesiumBridge] buildEngine: initialising new engine");
   _engine->initialize(*_metalBackend, config);
-  NSLog(@"[CesiumBridge] buildEngine: engine initialised");
 
   auto* backendPtr = _metalBackend.get();
   _engine->getResourcePreparer()->setMetalTextureCreator(
@@ -100,33 +91,7 @@
 
 - (void)updateImageryAssetId:(int64_t)assetId {
   if (!_initialized) return;
-
-  NSLog(@"[CesiumBridge] updateImageryAssetId: assetId=%lld isMainThread=%d",
-        (long long)assetId, (int)[NSThread isMainThread]);
-
-  // Save camera state so the view position survives the restart.
-  const auto camParams = _engine->camera().getParams();
-
-  // Completely rebuild the engine from scratch.  This is the only reliable
-  // way to ensure no stale async callbacks or IntrusivePointer references
-  // from the previous overlay survive into the new one.  ~CesiumEngine()
-  // calls shutdown() → destroyTileset() → waitUntilIdle(), so worker threads
-  // are fully joined before the new engine is created.
-  [self buildEngine];
-
-  // Restore the camera to where it was before the restart.
-  _engine->camera().setParams(camParams);
-
-  NSLog(@"[CesiumBridge] calling setImageryAssetId: isMainThread=%d",
-        (int)[NSThread isMainThread]);
-
-  // Add the imagery overlay.  setImageryAssetId() destroys and recreates the
-  // (just-created, empty) tileset and adds the overlay INLINE inside
-  // createTileset(), before the async pipeline has started — the only safe
-  // window to do this on a completely fresh engine.
   _engine->setImageryAssetId(assetId);
-
-  NSLog(@"[CesiumBridge] setImageryAssetId returned — no crash yet");
 }
 
 - (void)updateCameraLatitude:(double)lat

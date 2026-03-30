@@ -28,17 +28,12 @@ public:
   // so this does not deadlock when called from the main thread.
   void waitUntilIdle();
 
-  // Returns the number of tasks currently executing on worker threads.
-  // Queued-but-not-yet-started tasks are not counted.
-  uint32_t getActiveTaskCount() const;
-  uint32_t getQueuedTaskCount() const;
-
 private:
   void workerLoop();
 
   std::vector<std::thread>           workers_;
   std::queue<std::function<void()>>  tasks_;
-  mutable std::mutex                 mutex_; // mutable: const getters may lock
+  std::mutex                         mutex_;
   std::condition_variable            cv_;
   std::condition_variable            idleCv_;   // signalled when queue + active reach 0
   std::atomic<bool>                  shutdown_{false};
