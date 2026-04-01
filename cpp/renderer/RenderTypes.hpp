@@ -22,21 +22,26 @@ struct TileGPUResources {
   std::vector<TilePrimitive> primitives;
   uint64_t lastUsedFrame  = 0;
   void*    overlayTexture = nullptr; // id<MTLTexture>; set by attachRasterInMainThread (main thread only)
+  glm::vec2 overlayTranslation{0.0f, 0.0f};
+  glm::vec2 overlayScale{1.0f, 1.0f};
 };
 
 // ── Per-frame result passed from engine to renderer ─────────────────────────
 
 struct DrawPrimitive {
-  uint32_t indexByteOffset = 0;
-  uint32_t indexCount      = 0;
-  bool     hasUVs          = false;  // true if this primitive has valid overlay UVs
-  void*    overlayTexture  = nullptr; // id<MTLTexture> or nullptr
+  uint32_t  indexByteOffset = 0;
+  uint32_t  indexCount      = 0;
+  bool      hasUVs          = false;
+  void*     overlayTexture  = nullptr; // id<MTLTexture> or nullptr
+  glm::vec2 overlayTranslation{0.0f, 0.0f};
+  glm::vec2 overlayScale{1.0f, 1.0f};
 };
 
 struct FrameResult {
   // Merged geometry — one flat buffer, globally-offset indices.
   std::vector<float>    eyeRelPositions; // xyz per vertex (camera-relative float)
   std::vector<float>    uvs;             // uv per vertex (2 floats); parallel to eyeRelPositions
+  std::vector<float>    altitudes;       // geodetic altitude per vertex (1 float); computed in double on CPU
   std::vector<uint32_t> indices;
 
   // One entry per tile primitive — indices into the merged index buffer.

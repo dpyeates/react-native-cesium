@@ -1,4 +1,5 @@
 #import "CesiumBridge.h"
+#import <CoreFoundation/CoreFoundation.h>
 
 #include "engine/CesiumEngine.hpp"
 #include "gestures/GestureHandler.hpp"
@@ -102,6 +103,10 @@ struct CamAnim {
   config.ionAssetId = _ionTilesetAssetId;
   config.cacheDatabasePath =
       _cacheDir ? std::string([_cacheDir UTF8String]) + "/cesium_cache.db" : "";
+  NSString* caPem = [[NSBundle mainBundle] pathForResource:@"cacert" ofType:@"pem"];
+  if (caPem.length > 0) {
+    config.tlsCaBundlePath = std::string([caPem fileSystemRepresentation]);
+  }
   config.maximumScreenSpaceError = std::max(1.0, _maxSSE);
   config.maximumSimultaneousTileLoads =
       static_cast<int32_t>(std::max(1.0, std::round(_maxSimLoads)));
@@ -152,14 +157,24 @@ struct CamAnim {
 }
 
 - (void)buildEngine {
+  reactnativecesium::EngineConfig cfg = [self makeEngineConfig];
+  static std::atomic<int> caWarned{0};
+  if (cfg.tlsCaBundlePath.empty() && caWarned.fetch_add(1) == 0) {
+    NSLog(@"[ReactNativeCesium] cacert.pem not in main bundle — libcurl may fail TLS to "
+          @"api.cesium.com on device. Ensure the pod includes ios/cacert.pem (run pod install).");
+  }
   _engine.reset();
   _engine = std::make_unique<reactnativecesium::CesiumEngine>();
-  _engine->initialize(*_metalBackend, [self makeEngineConfig]);
+  _engine->initialize(*_metalBackend, cfg);
 
   auto* backendPtr = _metalBackend.get();
-  _engine->getResourcePreparer()->setMetalTextureCreator(
+  _engine->getResourcePreparer()->setGPUTextureCreator(
       [backendPtr](const uint8_t* pixels, int32_t w, int32_t h) -> void* {
         return backendPtr->createRasterTexture(pixels, w, h);
+      });
+  _engine->getResourcePreparer()->setGPUTextureDeleter(
+      [](void* tex) {
+        if (tex) CFRelease(tex); // release retained id<MTLTexture>
       });
 }
 

@@ -68,9 +68,11 @@ private:
   void*  vtxBufs_[kMaxFramesInFlight]; // id<MTLBuffer> — packed_float3 positions
   void*  idxBufs_[kMaxFramesInFlight]; // id<MTLBuffer> — uint32 indices
   void*  uvBufs_[kMaxFramesInFlight];  // id<MTLBuffer> — packed_float2 UVs
+  void*  altBufs_[kMaxFramesInFlight]; // id<MTLBuffer> — float altitudes
   size_t vtxCaps_[kMaxFramesInFlight]; // allocated byte capacities
   size_t idxCaps_[kMaxFramesInFlight];
   size_t uvCaps_[kMaxFramesInFlight];
+  size_t altCaps_[kMaxFramesInFlight];
 };
 
 } // namespace reactnativecesium

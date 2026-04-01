@@ -27,7 +27,7 @@ struct EngineConfig {
   std::string ionAccessToken;
   int64_t     ionAssetId = 1;
   std::string cacheDatabasePath;
-  // TilesetOptions (see CesiumEngine::createTileset).
+  std::string tlsCaBundlePath;
   double maximumScreenSpaceError      = 32.0;
   int32_t maximumSimultaneousTileLoads = 12;
   int32_t loadingDescendantLimit       = 20;

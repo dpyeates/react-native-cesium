@@ -6,11 +6,6 @@
 
 #include <cstring>
 
-// CoreFoundation is a pure-C API available on Apple platforms; we use
-// CFRelease to release ARC-retained Metal objects stored as void*.
-#ifdef __APPLE__
-#include <CoreFoundation/CoreFoundation.h>
-#endif
 
 namespace reactnativecesium {
 
@@ -111,13 +106,13 @@ void* ResourcePreparer::prepareRasterInMainThread(
   if (!pixelData) return nullptr;
 
   void* texture = nullptr;
-  if (metalTextureCreator_) {
-    texture = metalTextureCreator_(
+  if (gpuTextureCreator_) {
+    texture = gpuTextureCreator_(
         pixelData->pixels.data(), pixelData->width, pixelData->height);
   }
 
   delete pixelData;
-  return texture; // retained id<MTLTexture> as void*
+  return texture; // platform GPU texture handle as void*
 }
 
 void ResourcePreparer::freeRaster(
@@ -128,12 +123,10 @@ void ResourcePreparer::freeRaster(
   if (pLoadThreadResult) {
     delete static_cast<RasterPixelData*>(pLoadThreadResult);
   }
-  // Release the retained Metal texture.
-#ifdef __APPLE__
-  if (pMainThreadResult) {
-    CFRelease(pMainThreadResult);
+  // Release the GPU texture via the platform-supplied deleter.
+  if (pMainThreadResult && gpuTextureDeleter_) {
+    gpuTextureDeleter_(pMainThreadResult);
   }
-#endif
 }
 
 void ResourcePreparer::attachRasterInMainThread(
@@ -141,16 +134,15 @@ void ResourcePreparer::attachRasterInMainThread(
     int32_t /*overlayTextureCoordinateID*/,
     const CesiumRasterOverlays::RasterOverlayTile& /*rasterTile*/,
     void* pMainThreadRendererResources,
-    const glm::dvec2& /*translation*/,
-    const glm::dvec2& /*scale*/) {
+    const glm::dvec2& translation,
+    const glm::dvec2& scale) {
   const auto* renderContent = tile.getContent().getRenderContent();
   if (!renderContent) return;
-  // getRenderResources() returns the void* we set in prepareInMainThread.
-  // The underlying TileGPUResources object is mutable even though the tile is const.
-  // getRenderResources() returns void* even on const TileRenderContent.
   auto* res = static_cast<TileGPUResources*>(renderContent->getRenderResources());
   if (res) {
-    res->overlayTexture = pMainThreadRendererResources;
+    res->overlayTexture     = pMainThreadRendererResources;
+    res->overlayTranslation = glm::vec2(translation);
+    res->overlayScale       = glm::vec2(scale);
   }
 }
 
@@ -163,7 +155,9 @@ void ResourcePreparer::detachRasterInMainThread(
   if (!renderContent) return;
   auto* res = static_cast<TileGPUResources*>(renderContent->getRenderResources());
   if (res) {
-    res->overlayTexture = nullptr;
+    res->overlayTexture     = nullptr;
+    res->overlayTranslation = {0.0f, 0.0f};
+    res->overlayScale       = {1.0f, 1.0f};
   }
 }
 

@@ -98,9 +98,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
       applyMtkViewMsaa(Int(s))
     }
   }
-  var showCreditsFooter: Bool = true {
-    didSet { creditsLabel.isHidden = !showCreditsFooter }
-  }
+
   var ionImageryAssetId: Double = 1 {
     didSet { bridge?.updateImageryAssetId(Int64(ionImageryAssetId)) }
   }
@@ -184,7 +182,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
 
   private let metalView: CesiumMTKView
   private let debugLabel: UILabel
-  private let creditsLabel: UILabel
   private var bridge: CesiumBridge?
   private var displayLink: CADisplayLink?
   private var layoutPollTimer: Timer?
@@ -213,19 +210,10 @@ class HybridCesiumView: HybridCesiumViewSpec {
     debugLabel.clipsToBounds = true
     debugLabel.isHidden = true
 
-    creditsLabel = UILabel()
-    creditsLabel.numberOfLines = 0
-    creditsLabel.font = .systemFont(ofSize: 10, weight: .regular)
-    creditsLabel.textColor = UIColor.white.withAlphaComponent(0.85)
-    creditsLabel.backgroundColor = UIColor.black.withAlphaComponent(0.45)
-    creditsLabel.textAlignment = .center
-    creditsLabel.isHidden = false
-
     super.init()
 
     metalView.layer.isOpaque = true
     metalView.addSubview(debugLabel)
-    metalView.addSubview(creditsLabel)
   }
 
   // MARK: - Lifecycle
@@ -310,7 +298,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
     bridge?.setMaximumSimultaneousTileLoads(Int32(maximumSimultaneousTileLoads))
     bridge?.setLoadingDescendantLimit(Int32(loadingDescendantLimit))
     bridge?.setDebugOverlay(debugOverlay)
-    creditsLabel.isHidden = !showCreditsFooter
   }
 
   private func pushCameraParams() {
@@ -340,18 +327,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
     df.size.height = min(max(df.size.height + 8, 44), h * 0.4)
     debugLabel.frame = df
 
-    creditsLabel.preferredMaxLayoutWidth = w - 16 - safe.left - safe.right
-    creditsLabel.frame = CGRect(
-      x: 8 + safe.left,
-      y: h - 72 - safe.bottom,
-      width: max(w - 16 - safe.left - safe.right, 0),
-      height: 64
-    )
-    creditsLabel.sizeToFit()
-    var cf = creditsLabel.frame
-    cf.origin.y = h - cf.size.height - 8 - safe.bottom
-    cf.size.width = w - 16 - safe.left - safe.right
-    creditsLabel.frame = cf
   }
 
   // MARK: - Render Loop
@@ -392,13 +367,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
       debugLabel.isHidden = true
     }
 
-    if showCreditsFooter, let t = bridge?.creditsPlainText, !t.isEmpty {
-      creditsLabel.isHidden = false
-      creditsLabel.text = t
-    } else {
-      creditsLabel.isHidden = true
-    }
-
     layoutOverlayLabels()
 
     metricsFrameCounter += 1
@@ -410,8 +378,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
         tilesLoading: Double(b.metricsTilesLoading),
         tilesVisited: Double(b.metricsTilesVisited),
         ionTokenConfigured: b.metricsIonTokenConfigured,
-        tilesetReady: b.metricsTilesetReady,
-        creditsPlainText: b.metricsCreditsPlainText
+        tilesetReady: b.metricsTilesetReady
       )
       cb(m)
     }

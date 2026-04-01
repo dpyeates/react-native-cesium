@@ -12,18 +12,22 @@
 namespace reactnativecesium {
 
 // Raw decoded pixel data produced on the background load thread.
-// Converted to a platform texture on the main thread via MetalTextureCreator.
+// Converted to a platform texture on the main thread via GPUTextureCreator.
 struct RasterPixelData {
   std::vector<uint8_t> pixels; // RGBA8 decoded image
   int32_t width  = 0;
   int32_t height = 0;
 };
 
-// Factory: called on the MAIN THREAD to create a native Metal texture
-// (id<MTLTexture> retained as void*) from decoded RGBA8 pixels.
-// Set from CesiumBridge.mm before any overlays are activated.
-using MetalTextureCreator =
+// Factory: called on the MAIN THREAD to create a native GPU texture
+// (id<MTLTexture> on iOS, VulkanTexture* on Android) from decoded RGBA8 pixels.
+// Set from the platform bridge before any overlays are activated.
+using GPUTextureCreator =
     std::function<void*(const uint8_t* pixels, int32_t width, int32_t height)>;
+
+// Destructor: called to free a GPU texture previously created by GPUTextureCreator.
+// On iOS: CFRelease(tex). On Android: VulkanBackend::freeRasterTexture(tex).
+using GPUTextureDeleter = std::function<void(void* tex)>;
 
 class ResourcePreparer
     : public Cesium3DTilesSelection::IPrepareRendererResources {
@@ -31,8 +35,11 @@ public:
   explicit ResourcePreparer(TileLifecycleManager& lifecycle);
   ~ResourcePreparer() override = default;
 
-  void setMetalTextureCreator(MetalTextureCreator creator) {
-    metalTextureCreator_ = std::move(creator);
+  void setGPUTextureCreator(GPUTextureCreator creator) {
+    gpuTextureCreator_ = std::move(creator);
+  }
+  void setGPUTextureDeleter(GPUTextureDeleter deleter) {
+    gpuTextureDeleter_ = std::move(deleter);
   }
 
   CesiumAsync::Future<Cesium3DTilesSelection::TileLoadResultAndRenderResources>
@@ -71,7 +78,8 @@ public:
 
 private:
   TileLifecycleManager& lifecycle_;
-  MetalTextureCreator   metalTextureCreator_;
+  GPUTextureCreator     gpuTextureCreator_;
+  GPUTextureDeleter     gpuTextureDeleter_;
 };
 
 } // namespace reactnativecesium

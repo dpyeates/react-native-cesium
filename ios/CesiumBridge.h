@@ -49,8 +49,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Updated each frame when debug overlay is on — read after `renderFrameWithDt`.
 @property (nonatomic, copy, nullable) NSString *debugOverlayText;
-/// Plain-text attribution from last frame (HTML stripped).
-@property (nonatomic, copy, nullable) NSString *creditsPlainText;
 
 /// Throttled metrics (updated ~every 20 frames inside `renderFrameWithDt`).
 @property (nonatomic, readonly) double metricsFps;
@@ -59,7 +57,6 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) NSInteger metricsTilesVisited;
 @property (nonatomic, readonly) BOOL metricsIonTokenConfigured;
 @property (nonatomic, readonly) BOOL metricsTilesetReady;
-@property (nonatomic, readonly, copy) NSString *metricsCreditsPlainText;
 
 - (double)readCameraLatitude;
 - (double)readCameraLongitude;
