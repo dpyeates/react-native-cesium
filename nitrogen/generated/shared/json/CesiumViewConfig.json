@@ -24,7 +24,7 @@
     "maximumSimultaneousTileLoads": true,
     "loadingDescendantLimit": true,
     "msaaSampleCount": true,
-    "showCreditsFooter": true,
+    "showCredits": true,
     "ionImageryAssetId": true,
     "onMetrics": true,
     "hybridRef": true

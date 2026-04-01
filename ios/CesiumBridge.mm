@@ -12,6 +12,25 @@
 
 namespace {
 
+// Strips HTML tags and collapses whitespace to produce plain-text attribution.
+static NSString* stripHtmlToPlain(NSString* html) {
+  if (html.length == 0) return @"";
+  NSError* err = nil;
+  NSRegularExpression* tagRx =
+      [NSRegularExpression regularExpressionWithPattern:@"<[^>]+>" options:0 error:&err];
+  NSString* plain = [tagRx stringByReplacingMatchesInString:html
+                                                    options:0
+                                                      range:NSMakeRange(0, html.length)
+                                               withTemplate:@" "];
+  NSRegularExpression* wsRx =
+      [NSRegularExpression regularExpressionWithPattern:@"\\s+" options:0 error:&err];
+  plain = [wsRx stringByReplacingMatchesInString:plain
+                                         options:0
+                                           range:NSMakeRange(0, plain.length)
+                                    withTemplate:@" "];
+  return [plain stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+}
+
 double smoothstep01(double t) {
   if (t <= 0.0) return 0.0;
   if (t >= 1.0) return 1.0;
@@ -57,6 +76,7 @@ struct CamAnim {
   std::atomic<double> _rollRate;
 
   BOOL _debugOverlay;
+  BOOL _showCredits;
 
   CamAnim _camAnim;
 
@@ -112,6 +132,7 @@ struct CamAnim {
     _pitchRate.store(0.0);
     _rollRate.store(0.0);
     _debugOverlay      = NO;
+    _showCredits       = YES;
     _suspended         = NO;
     _fpsEma            = 0.0;
     _metricsTick       = 0;
@@ -206,6 +227,11 @@ struct CamAnim {
 - (void)setDebugOverlay:(BOOL)enabled {
   _debugOverlay = enabled;
   if (!enabled) self.debugOverlayText = nil;
+}
+
+- (void)setShowCredits:(BOOL)enabled {
+  _showCredits = enabled;
+  if (!enabled) _metricsCreditsPlainText = @"";
 }
 
 - (void)resize:(int)width height:(int)height {
@@ -379,7 +405,19 @@ struct CamAnim {
       _metricsTilesVisited       = _frameResult.tilesVisited;
       _metricsIonTokenConfigured = _frameResult.ionTokenConfigured;
       _metricsTilesetReady       = _frameResult.tilesetActive;
-      _metricsCreditsPlainText   = @"";
+      if (_showCredits && !_frameResult.creditHtmlLines.empty()) {
+        NSMutableString* credits = [NSMutableString string];
+        for (const auto& html : _frameResult.creditHtmlLines) {
+          NSString* chunk = stripHtmlToPlain(
+              [NSString stringWithUTF8String:html.c_str()]);
+          if (chunk.length == 0) continue;
+          if (credits.length > 0) [credits appendString:@" · "];
+          [credits appendString:chunk];
+        }
+        _metricsCreditsPlainText = [credits copy];
+      } else {
+        _metricsCreditsPlainText = @"";
+      }
     }
 
     reactnativecesium::FrameParams params;

@@ -341,14 +341,14 @@ open class HybridCesiumViewSpec_cxx {
     }
   }
   
-  public final var showCreditsFooter: Bool {
+  public final var showCredits: Bool {
     @inline(__always)
     get {
-      return self.__implementation.showCreditsFooter
+      return self.__implementation.showCredits
     }
     @inline(__always)
     set {
-      self.__implementation.showCreditsFooter = newValue
+      self.__implementation.showCredits = newValue
     }
   }
   

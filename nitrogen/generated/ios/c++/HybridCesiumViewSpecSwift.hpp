@@ -191,11 +191,11 @@ namespace margelo::nitro::reactnativecesium {
     inline void setMsaaSampleCount(double msaaSampleCount) noexcept override {
       _swiftPart.setMsaaSampleCount(std::forward<decltype(msaaSampleCount)>(msaaSampleCount));
     }
-    inline bool getShowCreditsFooter() noexcept override {
-      return _swiftPart.getShowCreditsFooter();
+    inline bool getShowCredits() noexcept override {
+      return _swiftPart.getShowCredits();
     }
-    inline void setShowCreditsFooter(bool showCreditsFooter) noexcept override {
-      _swiftPart.setShowCreditsFooter(std::forward<decltype(showCreditsFooter)>(showCreditsFooter));
+    inline void setShowCredits(bool showCredits) noexcept override {
+      _swiftPart.setShowCredits(std::forward<decltype(showCredits)>(showCredits));
     }
     inline double getIonImageryAssetId() noexcept override {
       return _swiftPart.getIonImageryAssetId();

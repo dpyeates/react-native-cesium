@@ -19,6 +19,7 @@ NS_ASSUME_NONNULL_BEGIN
                        pitch:(double)pitch
                         roll:(double)roll;
 - (void)setDebugOverlay:(BOOL)enabled;
+- (void)setShowCredits:(BOOL)enabled;
 - (void)resize:(int)width height:(int)height;
 - (void)renderFrameWithDt:(double)dt;
 - (void)shutdown;
@@ -57,6 +58,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) NSInteger metricsTilesVisited;
 @property (nonatomic, readonly) BOOL metricsIonTokenConfigured;
 @property (nonatomic, readonly) BOOL metricsTilesetReady;
+@property (nonatomic, readonly) NSString *metricsCreditsPlainText;
 
 - (double)readCameraLatitude;
 - (double)readCameraLongitude;

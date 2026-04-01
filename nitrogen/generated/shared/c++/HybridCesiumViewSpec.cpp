@@ -54,8 +54,8 @@ namespace margelo::nitro::reactnativecesium {
       prototype.registerHybridSetter("loadingDescendantLimit", &HybridCesiumViewSpec::setLoadingDescendantLimit);
       prototype.registerHybridGetter("msaaSampleCount", &HybridCesiumViewSpec::getMsaaSampleCount);
       prototype.registerHybridSetter("msaaSampleCount", &HybridCesiumViewSpec::setMsaaSampleCount);
-      prototype.registerHybridGetter("showCreditsFooter", &HybridCesiumViewSpec::getShowCreditsFooter);
-      prototype.registerHybridSetter("showCreditsFooter", &HybridCesiumViewSpec::setShowCreditsFooter);
+      prototype.registerHybridGetter("showCredits", &HybridCesiumViewSpec::getShowCredits);
+      prototype.registerHybridSetter("showCredits", &HybridCesiumViewSpec::setShowCredits);
       prototype.registerHybridGetter("ionImageryAssetId", &HybridCesiumViewSpec::getIonImageryAssetId);
       prototype.registerHybridSetter("ionImageryAssetId", &HybridCesiumViewSpec::setIonImageryAssetId);
       prototype.registerHybridGetter("onMetrics", &HybridCesiumViewSpec::getOnMetrics);

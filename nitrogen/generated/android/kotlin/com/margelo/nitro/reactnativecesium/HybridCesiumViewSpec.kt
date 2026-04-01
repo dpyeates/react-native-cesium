@@ -151,7 +151,7 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @get:Keep
   @set:DoNotStrip
   @set:Keep
-  abstract var showCreditsFooter: Boolean
+  abstract var showCredits: Boolean
   
   @get:DoNotStrip
   @get:Keep

@@ -23,7 +23,6 @@ export interface CesiumMetrics {
   tilesVisited: number
   ionTokenConfigured: boolean
   tilesetReady: boolean
-  /** Plain-text credits summary (HTML stripped) for optional JS UI. */
   creditsPlainText: string
 }
 
@@ -36,29 +35,21 @@ export interface CesiumViewProps extends HybridViewProps {
   cameraHeading: number
   cameraPitch: number
   cameraRoll: number
-  /** Vertical field of view in degrees (clamped natively, typically 20–100). */
   cameraVerticalFovDeg: number
   debugOverlay: boolean
-  /** When true, CADisplayLink does not run (saves battery when off-screen). */
   pauseRendering: boolean
   gesturePanEnabled: boolean
   gesturePinchZoomEnabled: boolean
   gesturePinchRotateEnabled: boolean
-  /** Multiplier on pan pixel deltas (default 1). */
   gesturePanSensitivity: number
-  /** Multiplier on pinch zoom ratio per frame (default 1). */
   gesturePinchSensitivity: number
-  /** Cesium tileset `maximumScreenSpaceError` (higher = coarser / faster). */
   maximumScreenSpaceError: number
   maximumSimultaneousTileLoads: number
   loadingDescendantLimit: number
   /** 1 = off; 2 or 4 = MSAA when supported. */
   msaaSampleCount: number
-  /** Show ion/imagery attribution in a native footer label. */
-  showCreditsFooter: boolean
-  /** Asset ID of the raster overlay. 1 = terrain-only (hypsometric). */
+  showCredits: boolean
   ionImageryAssetId: number
-  /** Optional; called ~2×/s with fps and tile stats. */
   onMetrics?: (metrics: CesiumMetrics) => void
 }
 

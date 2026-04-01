@@ -117,9 +117,9 @@ void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     hybridView->setMsaaSampleCount(props->msaaSampleCount.value);
     props->msaaSampleCount.isDirty = false;
   }
-  if (props->showCreditsFooter.isDirty) {
-    hybridView->setShowCreditsFooter(props->showCreditsFooter.value);
-    props->showCreditsFooter.isDirty = false;
+  if (props->showCredits.isDirty) {
+    hybridView->setShowCreditsFooter(props->showCredits.value);
+    props->showCredits.isDirty = false;
   }
   if (props->ionImageryAssetId.isDirty) {
     hybridView->setIonImageryAssetId(props->ionImageryAssetId.value);

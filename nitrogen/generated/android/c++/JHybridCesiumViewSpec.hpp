@@ -91,7 +91,7 @@ namespace margelo::nitro::reactnativecesium {
     double getMsaaSampleCount() override;
     void setMsaaSampleCount(double msaaSampleCount) override;
     bool getShowCreditsFooter() override;
-    void setShowCreditsFooter(bool showCreditsFooter) override;
+    void setShowCredits(bool showCredits) override;
     double getIonImageryAssetId() override;
     void setIonImageryAssetId(double ionImageryAssetId) override;
     std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() override;

@@ -63,7 +63,7 @@ namespace margelo::nitro::reactnativecesium::views {
     CachedProp<double> maximumSimultaneousTileLoads;
     CachedProp<double> loadingDescendantLimit;
     CachedProp<double> msaaSampleCount;
-    CachedProp<bool> showCreditsFooter;
+    CachedProp<bool> showCredits;
     CachedProp<double> ionImageryAssetId;
     CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> onMetrics;
     CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>> hybridRef;

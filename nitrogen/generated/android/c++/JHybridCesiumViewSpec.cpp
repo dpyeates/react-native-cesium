@@ -239,9 +239,9 @@ namespace margelo::nitro::reactnativecesium {
     auto __result = method(_javaPart);
     return static_cast<bool>(__result);
   }
-  void JHybridCesiumViewSpec::setShowCreditsFooter(bool showCreditsFooter) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* showCreditsFooter */)>("setShowCreditsFooter");
-    method(_javaPart, showCreditsFooter);
+  void JHybridCesiumViewSpec::setShowCreditsFooter(bool showCredits) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* showCredits */)>("setShowCreditsFooter");
+    method(_javaPart, showCredits);
   }
   double JHybridCesiumViewSpec::getIonImageryAssetId() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getIonImageryAssetId");

@@ -92,8 +92,8 @@ namespace margelo::nitro::reactnativecesium {
       virtual void setLoadingDescendantLimit(double loadingDescendantLimit) = 0;
       virtual double getMsaaSampleCount() = 0;
       virtual void setMsaaSampleCount(double msaaSampleCount) = 0;
-      virtual bool getShowCreditsFooter() = 0;
-      virtual void setShowCreditsFooter(bool showCreditsFooter) = 0;
+      virtual bool getShowCredits() = 0;
+      virtual void setShowCredits(bool showCredits) = 0;
       virtual double getIonImageryAssetId() = 0;
       virtual void setIonImageryAssetId(double ionImageryAssetId) = 0;
       virtual std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() = 0;

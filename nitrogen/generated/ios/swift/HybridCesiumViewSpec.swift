@@ -30,7 +30,7 @@ public protocol HybridCesiumViewSpec_protocol: HybridObject, HybridView {
   var maximumSimultaneousTileLoads: Double { get set }
   var loadingDescendantLimit: Double { get set }
   var msaaSampleCount: Double { get set }
-  var showCreditsFooter: Bool { get set }
+  var showCredits: Bool { get set }
   var ionImageryAssetId: Double { get set }
   var onMetrics: ((_ metrics: CesiumMetrics) -> Void)? { get set }
 

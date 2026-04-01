@@ -64,6 +64,9 @@ class HybridCesiumView: HybridCesiumViewSpec {
   var debugOverlay: Bool = false {
     didSet { bridge?.setDebugOverlay(debugOverlay) }
   }
+  var showCredits: Bool = true {
+    didSet { bridge?.setShowCredits(showCredits) }
+  }
   var pauseRendering: Bool = false {
     didSet { displayLink?.isPaused = pauseRendering }
   }
@@ -181,7 +184,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
   // MARK: - View
 
   private let metalView: CesiumMTKView
-  private let debugLabel: UILabel
   private var bridge: CesiumBridge?
   private var displayLink: CADisplayLink?
   private var layoutPollTimer: Timer?
@@ -201,19 +203,9 @@ class HybridCesiumView: HybridCesiumViewSpec {
     metalView.enableSetNeedsDisplay = false
     metalView.isMultipleTouchEnabled = true
 
-    debugLabel = UILabel()
-    debugLabel.numberOfLines = 0
-    debugLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-    debugLabel.textColor = .white
-    debugLabel.backgroundColor = UIColor.black.withAlphaComponent(0.55)
-    debugLabel.layer.cornerRadius = 4
-    debugLabel.clipsToBounds = true
-    debugLabel.isHidden = true
-
     super.init()
 
     metalView.layer.isOpaque = true
-    metalView.addSubview(debugLabel)
   }
 
   // MARK: - Lifecycle
@@ -232,6 +224,9 @@ class HybridCesiumView: HybridCesiumViewSpec {
       }
     }
     ensureInitialized()
+    // Fabric applies props before `afterUpdate`; re-sync in case `didSet` ran while bridge was nil
+    // or the C++/Swift bridge did not invoke observers for `showCredits`.
+    bridge?.setShowCredits(showCredits)
   }
 
   private func ensureInitialized() {
@@ -271,7 +266,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
 
     startRenderLoop()
     setupGestures()
-    layoutOverlayLabels()
   }
 
   private func applyMtkViewMsaa(_ s: Int) {
@@ -298,6 +292,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
     bridge?.setMaximumSimultaneousTileLoads(Int32(maximumSimultaneousTileLoads))
     bridge?.setLoadingDescendantLimit(Int32(loadingDescendantLimit))
     bridge?.setDebugOverlay(debugOverlay)
+    bridge?.setShowCredits(showCredits)
   }
 
   private func pushCameraParams() {
@@ -309,24 +304,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
       pitch: cameraPitch,
       roll: cameraRoll
     )
-  }
-
-  private func layoutOverlayLabels() {
-    let safe = metalView.safeAreaInsets
-    let w = metalView.bounds.width
-    let h = metalView.bounds.height
-    debugLabel.frame = CGRect(
-      x: 8 + safe.left,
-      y: 8 + safe.top,
-      width: max(w - 16 - safe.left - safe.right, 0),
-      height: 120
-    )
-    debugLabel.sizeToFit()
-    var df = debugLabel.frame
-    df.size.width = min(df.size.width + 12, w - 16 - safe.left - safe.right)
-    df.size.height = min(max(df.size.height + 8, 44), h * 0.4)
-    debugLabel.frame = df
-
   }
 
   // MARK: - Render Loop
@@ -360,25 +337,18 @@ class HybridCesiumView: HybridCesiumViewSpec {
 
     bridge?.renderFrame(withDt: dt)
 
-    if debugOverlay {
-      debugLabel.isHidden = false
-      debugLabel.text = bridge?.debugOverlayText
-    } else {
-      debugLabel.isHidden = true
-    }
-
-    layoutOverlayLabels()
-
     metricsFrameCounter += 1
     if metricsFrameCounter >= 20, let b = bridge, let cb = onMetrics {
       metricsFrameCounter = 0
+      // Contract: when `showCredits` is false, JS never receives attribution text via onMetrics.
       let m = CesiumMetrics(
         fps: b.metricsFps,
         tilesRendered: Double(b.metricsTilesRendered),
         tilesLoading: Double(b.metricsTilesLoading),
         tilesVisited: Double(b.metricsTilesVisited),
         ionTokenConfigured: b.metricsIonTokenConfigured,
-        tilesetReady: b.metricsTilesetReady
+        tilesetReady: b.metricsTilesetReady,
+        creditsPlainText: showCredits ? b.metricsCreditsPlainText : ""
       )
       cb(m)
     }

@@ -179,10 +179,10 @@ using namespace margelo::nitro::reactnativecesium::views;
     swiftPart.setMsaaSampleCount(newViewProps.msaaSampleCount.value);
     newViewProps.msaaSampleCount.isDirty = false;
   }
-  // showCreditsFooter: boolean
-  if (newViewProps.showCreditsFooter.isDirty) {
-    swiftPart.setShowCreditsFooter(newViewProps.showCreditsFooter.value);
-    newViewProps.showCreditsFooter.isDirty = false;
+  // showCredits: boolean
+  if (newViewProps.showCredits.isDirty) {
+    swiftPart.setShowCredits(newViewProps.showCredits.value);
+    newViewProps.showCredits.isDirty = false;
   }
   // ionImageryAssetId: number
   if (newViewProps.ionImageryAssetId.isDirty) {

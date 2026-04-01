@@ -226,14 +226,14 @@ namespace margelo::nitro::reactnativecesium::views {
         throw std::runtime_error(std::string("CesiumView.msaaSampleCount: ") + exc.what());
       }
     }()),
-    showCreditsFooter([&]() -> CachedProp<bool> {
+    showCredits([&]() -> CachedProp<bool> {
       try {
-        const react::RawValue* rawValue = rawProps.at("showCreditsFooter", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.showCreditsFooter;
+        const react::RawValue* rawValue = rawProps.at("showCredits", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.showCredits;
         const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.showCreditsFooter);
+        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.showCredits);
       } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.showCreditsFooter: ") + exc.what());
+        throw std::runtime_error(std::string("CesiumView.showCredits: ") + exc.what());
       }
     }()),
     ionImageryAssetId([&]() -> CachedProp<double> {
@@ -289,7 +289,7 @@ namespace margelo::nitro::reactnativecesium::views {
       case hashString("maximumSimultaneousTileLoads"): return true;
       case hashString("loadingDescendantLimit"): return true;
       case hashString("msaaSampleCount"): return true;
-      case hashString("showCreditsFooter"): return true;
+      case hashString("showCredits"): return true;
       case hashString("ionImageryAssetId"): return true;
       case hashString("onMetrics"): return true;
       case hashString("hybridRef"): return true;
