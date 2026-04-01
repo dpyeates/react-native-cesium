@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../renderer/IGPUBackend.hpp"
+#include "renderer/IGPUBackend.hpp"
 
 #ifdef __OBJC__
 #import <Metal/Metal.h>

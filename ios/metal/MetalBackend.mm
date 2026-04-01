@@ -1,4 +1,4 @@
-// MetalBackend.mm — Metal rendering backend.
+// MetalBackend.mm — iOS Metal rendering backend
 //
 // Architecture:
 //   • Eye-relative float positions computed on CPU (double precision).

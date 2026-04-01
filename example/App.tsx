@@ -17,8 +17,8 @@ import {
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  runOnJS,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { callback } from 'react-native-nitro-modules';
 import { CesiumView } from 'react-native-cesium';
 import type { CesiumViewMethods, CesiumMetrics } from 'react-native-cesium';
@@ -104,14 +104,14 @@ function Joystick({ onRateChange }: JoystickProps) {
             thumbX.value = 0;
             thumbY.value = 0;
           }
-          runOnJS(emitRates)(tx, ty);
+          scheduleOnRN(emitRates, tx, ty);
         })
         // Single cleanup path (runs on end, cancel, and interrupt).
         .onFinalize(() => {
           'worklet';
           thumbX.value = 0;
           thumbY.value = 0;
-          runOnJS(stopRates)();
+          scheduleOnRN(stopRates);
         }),
     [emitRates, stopRates],
   );
