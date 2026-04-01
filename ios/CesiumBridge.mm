@@ -25,29 +25,6 @@ double lerpAngleDeg(double a, double b, double t) {
   return a + diff * t;
 }
 
-NSString* stripHtmlToPlain(NSString* html) {
-  if (html.length == 0) return @"";
-  NSError* err = nil;
-  NSRegularExpression* rx = [NSRegularExpression regularExpressionWithPattern:@"<[^>]+>"
-                                                                        options:0
-                                                                          error:&err];
-  NSString* plain =
-      [rx stringByReplacingMatchesInString:html
-                                   options:0
-                                     range:NSMakeRange(0, html.length)
-                              withTemplate:@" "];
-  NSRegularExpression* wsRx =
-      [NSRegularExpression regularExpressionWithPattern:@"\\s+"
-                                                options:0
-                                                  error:&err];
-  plain = [wsRx stringByReplacingMatchesInString:plain
-                                         options:0
-                                           range:NSMakeRange(0, plain.length)
-                                    withTemplate:@" "];
-  NSCharacterSet* ws = [NSCharacterSet whitespaceAndNewlineCharacterSet];
-  return [plain stringByTrimmingCharactersInSet:ws];
-}
-
 struct CamAnim {
   reactnativecesium::CameraParams start{};
   reactnativecesium::CameraParams end{};
@@ -82,6 +59,8 @@ struct CamAnim {
   BOOL _debugOverlay;
 
   CamAnim _camAnim;
+
+  BOOL _suspended;
 
   double _fpsEma;
   int    _metricsTick;
@@ -133,6 +112,7 @@ struct CamAnim {
     _pitchRate.store(0.0);
     _rollRate.store(0.0);
     _debugOverlay      = NO;
+    _suspended         = NO;
     _fpsEma            = 0.0;
     _metricsTick       = 0;
     _metricsFps        = 0.0;
@@ -152,8 +132,23 @@ struct CamAnim {
 
     [self buildEngine];
     _initialized = YES;
+
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self selector:@selector(appWillResignActive:)
+               name:UIApplicationWillResignActiveNotification object:nil];
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self selector:@selector(appDidBecomeActive:)
+               name:UIApplicationDidBecomeActiveNotification object:nil];
   }
   return self;
+}
+
+- (void)appWillResignActive:(NSNotification *)note {
+  _suspended = YES;
+}
+
+- (void)appDidBecomeActive:(NSNotification *)note {
+  _suspended = NO;
 }
 
 - (void)buildEngine {
@@ -335,7 +330,7 @@ struct CamAnim {
 }
 
 - (void)renderFrameWithDt:(double)dt {
-  if (!_initialized) return;
+  if (!_initialized || _suspended) return;
 
   @autoreleasepool {
     if (_camAnim.active) {
@@ -373,16 +368,6 @@ struct CamAnim {
               _engine->camera().getParams().roll];
     }
 
-    NSMutableString* credits = [NSMutableString string];
-    for (const auto& html : _frameResult.creditHtmlLines) {
-      NSString* chunk = stripHtmlToPlain(
-          [NSString stringWithUTF8String:html.c_str()]);
-      if (chunk.length == 0) continue;
-      if (credits.length > 0) [credits appendString:@" · "];
-      [credits appendString:chunk];
-    }
-    self.creditsPlainText = credits.length > 0 ? [credits copy] : @"";
-
     const double instFps = (dt > 1e-6) ? (1.0 / dt) : 0.0;
     _fpsEma = (_fpsEma <= 1e-6) ? instFps : (_fpsEma * 0.85 + instFps * 0.15);
 
@@ -394,7 +379,7 @@ struct CamAnim {
       _metricsTilesVisited       = _frameResult.tilesVisited;
       _metricsIonTokenConfigured = _frameResult.ionTokenConfigured;
       _metricsTilesetReady       = _frameResult.tilesetActive;
-      _metricsCreditsPlainText   = self.creditsPlainText ?: @"";
+      _metricsCreditsPlainText   = @"";
     }
 
     reactnativecesium::FrameParams params;
@@ -449,6 +434,7 @@ struct CamAnim {
 }
 
 - (void)shutdown {
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
   if (_engine) _engine->shutdown();
   if (_metalBackend) _metalBackend->shutdown();
   _initialized = NO;
