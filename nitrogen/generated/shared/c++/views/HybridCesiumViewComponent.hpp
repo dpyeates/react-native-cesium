@@ -54,11 +54,6 @@ namespace margelo::nitro::reactnativecesium::views {
     CachedProp<double> cameraVerticalFovDeg;
     CachedProp<bool> debugOverlay;
     CachedProp<bool> pauseRendering;
-    CachedProp<bool> gesturePanEnabled;
-    CachedProp<bool> gesturePinchZoomEnabled;
-    CachedProp<bool> gesturePinchRotateEnabled;
-    CachedProp<double> gesturePanSensitivity;
-    CachedProp<double> gesturePinchSensitivity;
     CachedProp<double> maximumScreenSpaceError;
     CachedProp<double> maximumSimultaneousTileLoads;
     CachedProp<double> loadingDescendantLimit;

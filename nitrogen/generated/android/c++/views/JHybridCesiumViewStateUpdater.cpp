@@ -81,26 +81,6 @@ void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     hybridView->setPauseRendering(props->pauseRendering.value);
     props->pauseRendering.isDirty = false;
   }
-  if (props->gesturePanEnabled.isDirty) {
-    hybridView->setGesturePanEnabled(props->gesturePanEnabled.value);
-    props->gesturePanEnabled.isDirty = false;
-  }
-  if (props->gesturePinchZoomEnabled.isDirty) {
-    hybridView->setGesturePinchZoomEnabled(props->gesturePinchZoomEnabled.value);
-    props->gesturePinchZoomEnabled.isDirty = false;
-  }
-  if (props->gesturePinchRotateEnabled.isDirty) {
-    hybridView->setGesturePinchRotateEnabled(props->gesturePinchRotateEnabled.value);
-    props->gesturePinchRotateEnabled.isDirty = false;
-  }
-  if (props->gesturePanSensitivity.isDirty) {
-    hybridView->setGesturePanSensitivity(props->gesturePanSensitivity.value);
-    props->gesturePanSensitivity.isDirty = false;
-  }
-  if (props->gesturePinchSensitivity.isDirty) {
-    hybridView->setGesturePinchSensitivity(props->gesturePinchSensitivity.value);
-    props->gesturePinchSensitivity.isDirty = false;
-  }
   if (props->maximumScreenSpaceError.isDirty) {
     hybridView->setMaximumScreenSpaceError(props->maximumScreenSpaceError.value);
     props->maximumScreenSpaceError.isDirty = false;
@@ -118,7 +98,7 @@ void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     props->msaaSampleCount.isDirty = false;
   }
   if (props->showCredits.isDirty) {
-    hybridView->setShowCreditsFooter(props->showCredits.value);
+    hybridView->setShowCredits(props->showCredits.value);
     props->showCredits.isDirty = false;
   }
   if (props->ionImageryAssetId.isDirty) {

@@ -134,31 +134,6 @@ using namespace margelo::nitro::reactnativecesium::views;
     swiftPart.setPauseRendering(newViewProps.pauseRendering.value);
     newViewProps.pauseRendering.isDirty = false;
   }
-  // gesturePanEnabled: boolean
-  if (newViewProps.gesturePanEnabled.isDirty) {
-    swiftPart.setGesturePanEnabled(newViewProps.gesturePanEnabled.value);
-    newViewProps.gesturePanEnabled.isDirty = false;
-  }
-  // gesturePinchZoomEnabled: boolean
-  if (newViewProps.gesturePinchZoomEnabled.isDirty) {
-    swiftPart.setGesturePinchZoomEnabled(newViewProps.gesturePinchZoomEnabled.value);
-    newViewProps.gesturePinchZoomEnabled.isDirty = false;
-  }
-  // gesturePinchRotateEnabled: boolean
-  if (newViewProps.gesturePinchRotateEnabled.isDirty) {
-    swiftPart.setGesturePinchRotateEnabled(newViewProps.gesturePinchRotateEnabled.value);
-    newViewProps.gesturePinchRotateEnabled.isDirty = false;
-  }
-  // gesturePanSensitivity: number
-  if (newViewProps.gesturePanSensitivity.isDirty) {
-    swiftPart.setGesturePanSensitivity(newViewProps.gesturePanSensitivity.value);
-    newViewProps.gesturePanSensitivity.isDirty = false;
-  }
-  // gesturePinchSensitivity: number
-  if (newViewProps.gesturePinchSensitivity.isDirty) {
-    swiftPart.setGesturePinchSensitivity(newViewProps.gesturePinchSensitivity.value);
-    newViewProps.gesturePinchSensitivity.isDirty = false;
-  }
   // maximumScreenSpaceError: number
   if (newViewProps.maximumScreenSpaceError.isDirty) {
     swiftPart.setMaximumScreenSpaceError(newViewProps.maximumScreenSpaceError.value);

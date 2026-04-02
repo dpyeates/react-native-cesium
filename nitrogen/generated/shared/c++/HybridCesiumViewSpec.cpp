@@ -36,16 +36,6 @@ namespace margelo::nitro::reactnativecesium {
       prototype.registerHybridSetter("debugOverlay", &HybridCesiumViewSpec::setDebugOverlay);
       prototype.registerHybridGetter("pauseRendering", &HybridCesiumViewSpec::getPauseRendering);
       prototype.registerHybridSetter("pauseRendering", &HybridCesiumViewSpec::setPauseRendering);
-      prototype.registerHybridGetter("gesturePanEnabled", &HybridCesiumViewSpec::getGesturePanEnabled);
-      prototype.registerHybridSetter("gesturePanEnabled", &HybridCesiumViewSpec::setGesturePanEnabled);
-      prototype.registerHybridGetter("gesturePinchZoomEnabled", &HybridCesiumViewSpec::getGesturePinchZoomEnabled);
-      prototype.registerHybridSetter("gesturePinchZoomEnabled", &HybridCesiumViewSpec::setGesturePinchZoomEnabled);
-      prototype.registerHybridGetter("gesturePinchRotateEnabled", &HybridCesiumViewSpec::getGesturePinchRotateEnabled);
-      prototype.registerHybridSetter("gesturePinchRotateEnabled", &HybridCesiumViewSpec::setGesturePinchRotateEnabled);
-      prototype.registerHybridGetter("gesturePanSensitivity", &HybridCesiumViewSpec::getGesturePanSensitivity);
-      prototype.registerHybridSetter("gesturePanSensitivity", &HybridCesiumViewSpec::setGesturePanSensitivity);
-      prototype.registerHybridGetter("gesturePinchSensitivity", &HybridCesiumViewSpec::getGesturePinchSensitivity);
-      prototype.registerHybridSetter("gesturePinchSensitivity", &HybridCesiumViewSpec::setGesturePinchSensitivity);
       prototype.registerHybridGetter("maximumScreenSpaceError", &HybridCesiumViewSpec::getMaximumScreenSpaceError);
       prototype.registerHybridSetter("maximumScreenSpaceError", &HybridCesiumViewSpec::setMaximumScreenSpaceError);
       prototype.registerHybridGetter("maximumSimultaneousTileLoads", &HybridCesiumViewSpec::getMaximumSimultaneousTileLoads);
@@ -61,9 +51,6 @@ namespace margelo::nitro::reactnativecesium {
       prototype.registerHybridGetter("onMetrics", &HybridCesiumViewSpec::getOnMetrics);
       prototype.registerHybridSetter("onMetrics", &HybridCesiumViewSpec::setOnMetrics);
       prototype.registerHybridMethod("setJoystickRates", &HybridCesiumViewSpec::setJoystickRates);
-      prototype.registerHybridMethod("onTouchStart", &HybridCesiumViewSpec::onTouchStart);
-      prototype.registerHybridMethod("onTouchChange", &HybridCesiumViewSpec::onTouchChange);
-      prototype.registerHybridMethod("onTouchEnd", &HybridCesiumViewSpec::onTouchEnd);
       prototype.registerHybridMethod("getCameraState", &HybridCesiumViewSpec::getCameraState);
       prototype.registerHybridMethod("flyTo", &HybridCesiumViewSpec::flyTo);
       prototype.registerHybridMethod("lookAt", &HybridCesiumViewSpec::lookAt);

@@ -4,33 +4,6 @@ import MetalKit
 import NitroModules
 import UIKit
 
-private final class CesiumMTKView: MTKView {
-  var onTouchesBegan: ((Set<UITouch>) -> Void)?
-  var onTouchesMoved: ((Set<UITouch>) -> Void)?
-  var onTouchesEnded: ((Set<UITouch>) -> Void)?
-  var onTouchesCancelled: ((Set<UITouch>) -> Void)?
-
-  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-    onTouchesBegan?(touches)
-    super.touchesBegan(touches, with: event)
-  }
-
-  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-    onTouchesMoved?(touches)
-    super.touchesMoved(touches, with: event)
-  }
-
-  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-    onTouchesEnded?(touches)
-    super.touchesEnded(touches, with: event)
-  }
-
-  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-    onTouchesCancelled?(touches)
-    super.touchesCancelled(touches, with: event)
-  }
-}
-
 class HybridCesiumView: HybridCesiumViewSpec {
   // MARK: - Props
 
@@ -40,24 +13,29 @@ class HybridCesiumView: HybridCesiumViewSpec {
   var ionAssetId: Double = 1 {
     didSet { bridge?.updateIonAccessToken(ionAccessToken, assetId: Int64(ionAssetId)) }
   }
+
+  // Position/heading: preserve native pitch/roll so the joystick isn't overridden.
   var cameraLatitude: Double = 46.15 {
-    didSet { pushCameraParams() }
+    didSet { pushCameraPositionAndHeading() }
   }
   var cameraLongitude: Double = 7.35 {
-    didSet { pushCameraParams() }
+    didSet { pushCameraPositionAndHeading() }
   }
   var cameraAltitude: Double = 12_000 {
-    didSet { pushCameraParams() }
+    didSet { pushCameraPositionAndHeading() }
   }
   var cameraHeading: Double = 129 {
-    didSet { pushCameraParams() }
+    didSet { pushCameraPositionAndHeading() }
   }
+
+  // Pitch/roll: always use prop values (overrides native state).
   var cameraPitch: Double = -45 {
     didSet { pushCameraParams() }
   }
   var cameraRoll: Double = 0 {
     didSet { pushCameraParams() }
   }
+
   var cameraVerticalFovDeg: Double = 60 {
     didSet { bridge?.setVerticalFovDeg(cameraVerticalFovDeg) }
   }
@@ -70,21 +48,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
   var pauseRendering: Bool = false {
     didSet { displayLink?.isPaused = pauseRendering }
   }
-  var gesturePanEnabled: Bool = true {
-    didSet { bridge?.setGesturePanEnabled(gesturePanEnabled) }
-  }
-  var gesturePinchZoomEnabled: Bool = true {
-    didSet { bridge?.setGesturePinchZoomEnabled(gesturePinchZoomEnabled) }
-  }
-  var gesturePinchRotateEnabled: Bool = true {
-    didSet { bridge?.setGesturePinchRotateEnabled(gesturePinchRotateEnabled) }
-  }
-  var gesturePanSensitivity: Double = 1 {
-    didSet { bridge?.setGesturePanSensitivity(gesturePanSensitivity) }
-  }
-  var gesturePinchSensitivity: Double = 1 {
-    didSet { bridge?.setGesturePinchSensitivity(gesturePinchSensitivity) }
-  }
+
   var maximumScreenSpaceError: Double = 32 {
     didSet { bridge?.setMaximumScreenSpaceError(maximumScreenSpaceError) }
   }
@@ -101,7 +65,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
       applyMtkViewMsaa(Int(s))
     }
   }
-
   var ionImageryAssetId: Double = 1 {
     didSet { bridge?.updateImageryAssetId(Int64(ionImageryAssetId)) }
   }
@@ -111,18 +74,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
 
   func setJoystickRates(pitchRate: Double, rollRate: Double) throws {
     bridge?.setJoystickPitchRate(pitchRate, rollRate: rollRate)
-  }
-
-  func onTouchStart(pointerId: Double, x: Double, y: Double) throws {
-    bridge?.onTouchDown(Int32(pointerId), x: Float(x), y: Float(y))
-  }
-
-  func onTouchChange(pointerId: Double, x: Double, y: Double) throws {
-    bridge?.onTouchMove(Int32(pointerId), x: Float(x), y: Float(y))
-  }
-
-  func onTouchEnd(pointerId: Double) throws {
-    bridge?.onTouchUp(Int32(pointerId))
   }
 
   func getCameraState() throws -> Promise<CameraState> {
@@ -183,20 +134,17 @@ class HybridCesiumView: HybridCesiumViewSpec {
 
   // MARK: - View
 
-  private let metalView: CesiumMTKView
+  private let metalView: MTKView
   private var bridge: CesiumBridge?
   private var displayLink: CADisplayLink?
   private var layoutPollTimer: Timer?
-  private var activeTouchIds: [ObjectIdentifier: Int32] = [:]
-  private var nextTouchId: Int32 = 1
   private var metricsFrameCounter: Int = 0
 
   var view: UIView { metalView }
 
   override init() {
     let device = MTLCreateSystemDefaultDevice()!
-    metalView = CesiumMTKView(frame: .zero, device: device)
-    metalView.device = device
+    metalView = MTKView(frame: .zero, device: device)
     metalView.colorPixelFormat = .bgra8Unorm_srgb
     metalView.depthStencilPixelFormat = .depth32Float
     metalView.isPaused = true
@@ -224,8 +172,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
       }
     }
     ensureInitialized()
-    // Fabric applies props before `afterUpdate`; re-sync in case `didSet` ran while bridge was nil
-    // or the C++/Swift bridge did not invoke observers for `showCredits`.
     bridge?.setShowCredits(showCredits)
   }
 
@@ -254,6 +200,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
     if !ionAccessToken.isEmpty {
       bridge?.updateIonAccessToken(ionAccessToken, assetId: Int64(ionAssetId))
     }
+    // Use the full 6-param push for initial setup so pitch/roll props take effect.
     pushCameraParams()
     bridge?.setVerticalFovDeg(cameraVerticalFovDeg)
     if ionImageryAssetId != 1 {
@@ -265,7 +212,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
     applyMtkViewMsaa(Int(sc))
 
     startRenderLoop()
-    setupGestures()
   }
 
   private func applyMtkViewMsaa(_ s: Int) {
@@ -283,11 +229,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
   }
 
   private func syncBridgeOptionsFromProps() {
-    bridge?.setGesturePanEnabled(gesturePanEnabled)
-    bridge?.setGesturePinchZoomEnabled(gesturePinchZoomEnabled)
-    bridge?.setGesturePinchRotateEnabled(gesturePinchRotateEnabled)
-    bridge?.setGesturePanSensitivity(gesturePanSensitivity)
-    bridge?.setGesturePinchSensitivity(gesturePinchSensitivity)
     bridge?.setMaximumScreenSpaceError(maximumScreenSpaceError)
     bridge?.setMaximumSimultaneousTileLoads(Int32(maximumSimultaneousTileLoads))
     bridge?.setLoadingDescendantLimit(Int32(loadingDescendantLimit))
@@ -295,6 +236,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
     bridge?.setShowCredits(showCredits)
   }
 
+  /// Full 6-param push — used on initial setup and when pitch/roll props change.
   private func pushCameraParams() {
     bridge?.updateCameraLatitude(
       cameraLatitude,
@@ -303,6 +245,20 @@ class HybridCesiumView: HybridCesiumViewSpec {
       heading: cameraHeading,
       pitch: cameraPitch,
       roll: cameraRoll
+    )
+  }
+
+  /// Position-only push — reads current native pitch/roll so joystick-driven
+  /// pitch isn't overridden on every gesture frame.
+  private func pushCameraPositionAndHeading() {
+    guard let b = bridge else { return }
+    b.updateCameraLatitude(
+      cameraLatitude,
+      longitude: cameraLongitude,
+      altitude: cameraAltitude,
+      heading: cameraHeading,
+      pitch: b.readCameraPitch(),
+      roll: b.readCameraRoll()
     )
   }
 
@@ -340,7 +296,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
     metricsFrameCounter += 1
     if metricsFrameCounter >= 20, let b = bridge, let cb = onMetrics {
       metricsFrameCounter = 0
-      // Contract: when `showCredits` is false, JS never receives attribution text via onMetrics.
       let m = CesiumMetrics(
         fps: b.metricsFps,
         tilesRendered: Double(b.metricsTilesRendered),
@@ -348,65 +303,10 @@ class HybridCesiumView: HybridCesiumViewSpec {
         tilesVisited: Double(b.metricsTilesVisited),
         ionTokenConfigured: b.metricsIonTokenConfigured,
         tilesetReady: b.metricsTilesetReady,
-        creditsPlainText: showCredits ? b.metricsCreditsPlainText : ""
+        creditsPlainText: showCredits ? b.metricsCreditsPlainText : "",
+        terrainHeightBelowCamera: b.metricsTerrainHeight
       )
       cb(m)
-    }
-  }
-
-  // MARK: - Touch Gestures
-
-  private func touchId(for touch: UITouch) -> Int32 {
-    let key = ObjectIdentifier(touch)
-    if let existing = activeTouchIds[key] {
-      return existing
-    }
-    let id = nextTouchId
-    nextTouchId &+= 1
-    if nextTouchId <= 0 {
-      nextTouchId = 1
-    }
-    activeTouchIds[key] = id
-    return id
-  }
-
-  private func releaseTouchId(for touch: UITouch) {
-    activeTouchIds.removeValue(forKey: ObjectIdentifier(touch))
-  }
-
-  private func setupGestures() {
-    metalView.isUserInteractionEnabled = true
-    metalView.onTouchesBegan = { [weak self] touches in
-      guard let self = self else { return }
-      for touch in touches {
-        let loc = touch.location(in: self.metalView)
-        let id = self.touchId(for: touch)
-        self.bridge?.onTouchDown(id, x: Float(loc.x), y: Float(loc.y))
-      }
-    }
-    metalView.onTouchesMoved = { [weak self] touches in
-      guard let self = self else { return }
-      for touch in touches {
-        let loc = touch.location(in: self.metalView)
-        let id = self.touchId(for: touch)
-        self.bridge?.onTouchMove(id, x: Float(loc.x), y: Float(loc.y))
-      }
-    }
-    metalView.onTouchesEnded = { [weak self] touches in
-      guard let self = self else { return }
-      for touch in touches {
-        let id = self.touchId(for: touch)
-        self.bridge?.onTouchUp(id)
-        self.releaseTouchId(for: touch)
-      }
-    }
-    metalView.onTouchesCancelled = { [weak self] touches in
-      guard let self = self else { return }
-      for touch in touches {
-        let id = self.touchId(for: touch)
-        self.bridge?.onTouchUp(id)
-        self.releaseTouchId(for: touch)
-      }
     }
   }
 

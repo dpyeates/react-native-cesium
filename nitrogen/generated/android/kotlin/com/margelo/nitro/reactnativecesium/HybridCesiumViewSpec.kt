@@ -97,36 +97,6 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @get:Keep
   @set:DoNotStrip
   @set:Keep
-  abstract var gesturePanEnabled: Boolean
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
-  abstract var gesturePinchZoomEnabled: Boolean
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
-  abstract var gesturePinchRotateEnabled: Boolean
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
-  abstract var gesturePanSensitivity: Double
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
-  abstract var gesturePinchSensitivity: Double
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
   abstract var maximumScreenSpaceError: Double
   
   @get:DoNotStrip
@@ -177,18 +147,6 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @DoNotStrip
   @Keep
   abstract fun setJoystickRates(pitchRate: Double, rollRate: Double): Unit
-  
-  @DoNotStrip
-  @Keep
-  abstract fun onTouchStart(pointerId: Double, x: Double, y: Double): Unit
-  
-  @DoNotStrip
-  @Keep
-  abstract fun onTouchChange(pointerId: Double, x: Double, y: Double): Unit
-  
-  @DoNotStrip
-  @Keep
-  abstract fun onTouchEnd(pointerId: Double): Unit
   
   @DoNotStrip
   @Keep

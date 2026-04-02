@@ -24,6 +24,7 @@ export interface CesiumMetrics {
   ionTokenConfigured: boolean
   tilesetReady: boolean
   creditsPlainText: string
+  terrainHeightBelowCamera: number
 }
 
 export interface CesiumViewProps extends HybridViewProps {
@@ -38,11 +39,6 @@ export interface CesiumViewProps extends HybridViewProps {
   cameraVerticalFovDeg: number
   debugOverlay: boolean
   pauseRendering: boolean
-  gesturePanEnabled: boolean
-  gesturePinchZoomEnabled: boolean
-  gesturePinchRotateEnabled: boolean
-  gesturePanSensitivity: number
-  gesturePinchSensitivity: number
   maximumScreenSpaceError: number
   maximumSimultaneousTileLoads: number
   loadingDescendantLimit: number
@@ -55,9 +51,6 @@ export interface CesiumViewProps extends HybridViewProps {
 
 export interface CesiumViewMethods extends HybridViewMethods {
   setJoystickRates(pitchRate: number, rollRate: number): void
-  onTouchStart(pointerId: number, x: number, y: number): void
-  onTouchChange(pointerId: number, x: number, y: number): void
-  onTouchEnd(pointerId: number): void
   getCameraState(): Promise<CameraState>
   flyTo(
     latitude: number,

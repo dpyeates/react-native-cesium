@@ -31,7 +31,7 @@ Pod::Spec.new do |s|
     "GCC_PREPROCESSOR_DEFINITIONS" => "$(inherited) GLM_FORCE_DEPTH_ZERO_TO_ONE=1",
   }
 
-  s.frameworks   = "Metal", "MetalKit", "QuartzCore"
+  s.frameworks   = "Metal", "MetalKit", "Network", "QuartzCore"
 
   s.source_files = [
     "ios/**/*.{swift}",
@@ -47,6 +47,11 @@ Pod::Spec.new do |s|
   s.resource_bundles = {
     "ReactNativeCesiumShaders" => ["ios/metal/*.metal"],
   }
+
+  # cacert.pem must land in the app's main bundle so that
+  # [NSBundle mainBundle] pathForResource:@"cacert" ofType:@"pem"] resolves it.
+  # resource_bundles would put it in a sub-bundle; s.resources copies it to root.
+  s.resources = ["ios/cacert.pem"]
 
   load 'nitrogen/generated/ios/ReactNativeCesium+autolinking.rb'
   add_nitrogen_files(s)

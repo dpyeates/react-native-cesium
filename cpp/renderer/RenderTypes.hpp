@@ -29,10 +29,11 @@ struct TileGPUResources {
 // ── Per-frame result passed from engine to renderer ─────────────────────────
 
 struct DrawPrimitive {
-  uint32_t  indexByteOffset = 0;
-  uint32_t  indexCount      = 0;
-  bool      hasUVs          = false;
-  void*     overlayTexture  = nullptr; // id<MTLTexture> or nullptr
+  uint32_t  indexByteOffset      = 0;
+  uint32_t  indexCount           = 0;
+  bool      hasUVs               = false;
+  bool      isEllipsoidFallback  = false; // true for the synthetic flat-globe mesh
+  void*     overlayTexture       = nullptr; // id<MTLTexture> or nullptr
   glm::vec2 overlayTranslation{0.0f, 0.0f};
   glm::vec2 overlayScale{1.0f, 1.0f};
 };

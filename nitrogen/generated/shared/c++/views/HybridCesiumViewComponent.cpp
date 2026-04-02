@@ -136,56 +136,6 @@ namespace margelo::nitro::reactnativecesium::views {
         throw std::runtime_error(std::string("CesiumView.pauseRendering: ") + exc.what());
       }
     }()),
-    gesturePanEnabled([&]() -> CachedProp<bool> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("gesturePanEnabled", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.gesturePanEnabled;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.gesturePanEnabled);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.gesturePanEnabled: ") + exc.what());
-      }
-    }()),
-    gesturePinchZoomEnabled([&]() -> CachedProp<bool> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("gesturePinchZoomEnabled", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.gesturePinchZoomEnabled;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.gesturePinchZoomEnabled);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.gesturePinchZoomEnabled: ") + exc.what());
-      }
-    }()),
-    gesturePinchRotateEnabled([&]() -> CachedProp<bool> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("gesturePinchRotateEnabled", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.gesturePinchRotateEnabled;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.gesturePinchRotateEnabled);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.gesturePinchRotateEnabled: ") + exc.what());
-      }
-    }()),
-    gesturePanSensitivity([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("gesturePanSensitivity", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.gesturePanSensitivity;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.gesturePanSensitivity);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.gesturePanSensitivity: ") + exc.what());
-      }
-    }()),
-    gesturePinchSensitivity([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("gesturePinchSensitivity", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.gesturePinchSensitivity;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.gesturePinchSensitivity);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.gesturePinchSensitivity: ") + exc.what());
-      }
-    }()),
     maximumScreenSpaceError([&]() -> CachedProp<double> {
       try {
         const react::RawValue* rawValue = rawProps.at("maximumScreenSpaceError", nullptr, nullptr);
@@ -280,11 +230,6 @@ namespace margelo::nitro::reactnativecesium::views {
       case hashString("cameraVerticalFovDeg"): return true;
       case hashString("debugOverlay"): return true;
       case hashString("pauseRendering"): return true;
-      case hashString("gesturePanEnabled"): return true;
-      case hashString("gesturePinchZoomEnabled"): return true;
-      case hashString("gesturePinchRotateEnabled"): return true;
-      case hashString("gesturePanSensitivity"): return true;
-      case hashString("gesturePinchSensitivity"): return true;
       case hashString("maximumScreenSpaceError"): return true;
       case hashString("maximumSimultaneousTileLoads"): return true;
       case hashString("loadingDescendantLimit"): return true;

@@ -24,22 +24,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)renderFrameWithDt:(double)dt;
 - (void)shutdown;
 
-- (void)onTouchDown:(int)pointerId x:(float)x y:(float)y;
-- (void)onTouchMove:(int)pointerId x:(float)x y:(float)y;
-- (void)onTouchUp:(int)pointerId;
-- (void)setViewportSize:(float)width height:(float)height;
-
 - (void)setJoystickPitchRate:(double)pitchRate rollRate:(double)rollRate;
 
 // Camera / globe
 - (void)setVerticalFovDeg:(double)degrees;
-
-// Gestures
-- (void)setGesturePanEnabled:(BOOL)enabled;
-- (void)setGesturePinchZoomEnabled:(BOOL)enabled;
-- (void)setGesturePinchRotateEnabled:(BOOL)enabled;
-- (void)setGesturePanSensitivity:(double)s;
-- (void)setGesturePinchSensitivity:(double)s;
 
 // Tileset tuning (triggers rebuild when changed)
 - (void)setMaximumScreenSpaceError:(double)v;
@@ -59,6 +47,12 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) BOOL metricsIonTokenConfigured;
 @property (nonatomic, readonly) BOOL metricsTilesetReady;
 @property (nonatomic, readonly) NSString *metricsCreditsPlainText;
+/// Estimated terrain altitude (m above WGS84 ellipsoid) below the camera.
+@property (nonatomic, readonly) double metricsTerrainHeight;
+/// YES when the device has a usable network path; updated by NWPathMonitor.
+/// When NO, tile requests are suspended (maximumSimultaneousTileLoads = 0)
+/// and the ellipsoid fallback mesh provides flat terrain for uncached areas.
+@property (nonatomic, readonly) BOOL metricsNetworkReachable;
 
 - (double)readCameraLatitude;
 - (double)readCameraLongitude;

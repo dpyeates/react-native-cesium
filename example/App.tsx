@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useState, useCallback, useMemo, memo } from 'react';
 import {
   Modal,
   Pressable,
@@ -17,6 +17,9 @@ import {
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedReaction,
+  withDecay,
+  withSpring,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { callback } from 'react-native-nitro-modules';
@@ -30,7 +33,22 @@ import {
 const ION_ACCESS_TOKEN =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJhZGIzMGE2My1iODU3LTRkMzYtOTBmOS0wOGFjMWFkZmZiODIiLCJpZCI6MTcxMDczLCJpYXQiOjE3NzM4MjU0Mjd9.cckmnJRd3YpQYQGs7Y7_2YwcVco5elP3Gqhpj1tnoHs';
 
-// ── Layer selector data ──────────────────────────────────────────────────────
+// ── Initial camera ────────────────────────────────────────────────────────────
+
+const INIT_LAT = 46.02;
+const INIT_LON = 7.6;
+const INIT_ALT = 5800;
+const INIT_HDG = 220;
+
+// ── Camera gesture constants ──────────────────────────────────────────────────
+
+// Degrees per pixel per metre of altitude — matches native GestureHandler scale.
+const PAN_SCALE = 1.55e-8;
+const MIN_ALT_ABOVE_TERRAIN = 3; // metres above terrain to clamp minimum altitude
+const MIN_ALT_ABSOLUTE = 3;      // absolute fallback before first terrain estimate arrives
+const MAX_ALT = 100_000_000;
+
+// ── Layer selector data ───────────────────────────────────────────────────────
 
 type LayerOption = { label: string; assetId: number };
 
@@ -41,7 +59,7 @@ const LAYER_OPTIONS: LayerOption[] = [
   { label: 'Contour', assetId: 3830186 },
 ];
 
-// ── Joystick constants ───────────────────────────────────────────────────────
+// ── Joystick constants ────────────────────────────────────────────────────────
 
 const JOYSTICK_RADIUS = 52;
 const THUMB_RADIUS = 20;
@@ -49,16 +67,14 @@ const DEAD_ZONE_PX = 8;
 const CREDITS_BAR_HEIGHT = 26;
 const JOYSTICK_MAX_RATE_DEG_S = 110;
 
-// ── Joystick ─────────────────────────────────────────────────────────────────
+// ── Joystick ──────────────────────────────────────────────────────────────────
 
 type JoystickProps = { onRateChange: (pitch: number, roll: number) => void };
 
-function Joystick({ onRateChange }: JoystickProps) {
+const Joystick = memo(function Joystick({ onRateChange }: JoystickProps) {
   const thumbX = useSharedValue(0);
   const thumbY = useSharedValue(0);
 
-  // Rates → JS thread only; thumb position runs entirely on the UI thread in the gesture worklet
-  // so the white circle tracks the finger/mouse without JS-frame stutter.
   const emitRates = useCallback(
     (tx: number, ty: number) => {
       const dist = Math.sqrt(tx * tx + ty * ty);
@@ -83,6 +99,9 @@ function Joystick({ onRateChange }: JoystickProps) {
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
+        .minPointers(1)
+        .maxPointers(1)
+        .enableTrackpadTwoFingerGesture(false)
         .minDistance(0)
         .onBegin(() => {
           'worklet';
@@ -96,21 +115,18 @@ function Joystick({ onRateChange }: JoystickProps) {
           const dist = Math.sqrt(tx * tx + ty * ty);
           const clamp = Math.min(dist, JOYSTICK_RADIUS);
           if (dist > 0) {
-            const nx = (tx / dist) * clamp;
-            const ny = (ty / dist) * clamp;
-            thumbX.value = nx;
-            thumbY.value = ny;
+            thumbX.value = (tx / dist) * clamp;
+            thumbY.value = (ty / dist) * clamp;
           } else {
             thumbX.value = 0;
             thumbY.value = 0;
           }
           scheduleOnRN(emitRates, tx, ty);
         })
-        // Single cleanup path (runs on end, cancel, and interrupt).
         .onFinalize(() => {
           'worklet';
-          thumbX.value = 0;
-          thumbY.value = 0;
+          thumbX.value = withSpring(0, { damping: 20, stiffness: 300 });
+          thumbY.value = withSpring(0, { damping: 20, stiffness: 300 });
           scheduleOnRN(stopRates);
         }),
     [emitRates, stopRates],
@@ -149,7 +165,7 @@ function Joystick({ onRateChange }: JoystickProps) {
       </View>
     </GestureDetector>
   );
-}
+});
 
 const joystickStyles = StyleSheet.create({
   base: {
@@ -199,9 +215,7 @@ function LayerPicker({ selected, onSelect }: LayerPickerProps) {
             onPress={() => onSelect(opt.assetId)}
             activeOpacity={0.75}
           >
-            <Text
-              style={[pickerStyles.label, active && pickerStyles.labelActive]}
-            >
+            <Text style={[pickerStyles.label, active && pickerStyles.labelActive]}>
               {opt.label}
             </Text>
           </TouchableOpacity>
@@ -229,13 +243,171 @@ const pickerStyles = StyleSheet.create({
 
 function AppContent() {
   const insets = useSafeAreaInsets();
-
   const nativeMethods = useRef<CesiumViewMethods | null>(null);
   const [imageryAssetId, setImageryAssetId] = useState(1);
   const [credits, setCredits] = useState('');
   const [creditsExpanded, setCreditsExpanded] = useState(false);
 
-  // ── Joystick handler ──────────────────────────────────────────────────────
+  // ── Terrain height shared value (updated from onMetrics ~3fps) ───────────
+  const terrainHeight = useSharedValue(0);
+
+  // ── Camera shared values (UI-thread, drives gestures + animations) ─────────
+  const camLat = useSharedValue(INIT_LAT);
+  const camLon = useSharedValue(INIT_LON);
+  const camAlt = useSharedValue(INIT_ALT);
+  const camHdg = useSharedValue(INIT_HDG);
+
+  // Snapshots taken at the start of each gesture to compute absolute deltas.
+  const snapLat = useSharedValue(INIT_LAT);
+  const snapLon = useSharedValue(INIT_LON);
+  const snapAlt = useSharedValue(INIT_ALT);
+  const snapHdg = useSharedValue(INIT_HDG);
+
+  // ── Camera React state — synced from shared values via useAnimatedReaction ─
+  // CesiumView props are driven from here; the sync runs on the JS thread
+  // one frame behind the UI-thread gesture, which is imperceptible at 60 fps.
+  const [camState, setCamState] = useState({
+    lat: INIT_LAT,
+    lon: INIT_LON,
+    alt: INIT_ALT,
+    hdg: INIT_HDG,
+  });
+
+  const applyCamera = useCallback(
+    (lat: number, lon: number, alt: number, hdg: number) => {
+      setCamState({ lat, lon, alt, hdg });
+    },
+    [],
+  );
+
+  useAnimatedReaction(
+    () => ({
+      lat: camLat.value,
+      lon: camLon.value,
+      alt: camAlt.value,
+      hdg: camHdg.value,
+    }),
+    (cur, prev) => {
+      if (
+        !prev ||
+        cur.lat !== prev.lat ||
+        cur.lon !== prev.lon ||
+        cur.alt !== prev.alt ||
+        cur.hdg !== prev.hdg
+      ) {
+        scheduleOnRN(applyCamera, cur.lat, cur.lon, cur.alt, cur.hdg);
+      }
+    },
+  );
+
+  // ── 1-finger pan: moves the camera laterally ──────────────────────────────
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .minPointers(1)
+        .maxPointers(1)
+        .onBegin(() => {
+          'worklet';
+          snapLat.value = camLat.value;
+          snapLon.value = camLon.value;
+        })
+        .onUpdate(e => {
+          'worklet';
+          const sens = camAlt.value * PAN_SCALE;
+          const H = (camHdg.value * Math.PI) / 180;
+          const cosH = Math.cos(H);
+          const sinH = Math.sin(H);
+          const latRad = (snapLat.value * Math.PI) / 180;
+          const fwd = e.translationY * sens;
+          const rgt = -e.translationX * sens;
+          camLat.value = Math.max(
+            -90,
+            Math.min(90, snapLat.value + cosH * fwd - sinH * rgt),
+          );
+          camLon.value =
+            snapLon.value +
+            (sinH * fwd + cosH * rgt) / Math.max(Math.cos(latRad), 0.01);
+        })
+        .onEnd(e => {
+          'worklet';
+          // Convert pixel velocity → degrees/second and apply decay animation.
+          const sens = camAlt.value * PAN_SCALE;
+          const H = (camHdg.value * Math.PI) / 180;
+          const cosH = Math.cos(H);
+          const sinH = Math.sin(H);
+          const latRad = (camLat.value * Math.PI) / 180;
+          const latVel = sens * (cosH * e.velocityY + sinH * e.velocityX);
+          const lonVel =
+            (sens * (sinH * e.velocityY - cosH * e.velocityX)) /
+            Math.max(Math.cos(latRad), 0.01);
+          camLat.value = withDecay({
+            velocity: latVel,
+            clamp: [-90, 90],
+            deceleration: 0.99,
+          });
+          camLon.value = withDecay({ velocity: lonVel, deceleration: 0.99 });
+        }),
+    [],
+  );
+
+  // ── 2-finger pinch: adjusts altitude (fingers apart = zoom in / lower alt) ─
+  const pinchGesture = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onBegin(() => {
+          'worklet';
+          // Clamp snap to current minAlt so the gesture never starts from
+          // a below-terrain baseline.
+          const minAlt = Math.max(
+            MIN_ALT_ABSOLUTE,
+            terrainHeight.value + MIN_ALT_ABOVE_TERRAIN,
+          );
+          snapAlt.value = Math.max(camAlt.value, minAlt);
+        })
+        .onUpdate(e => {
+          'worklet';
+          const newAlt = snapAlt.value / Math.max(e.scale, 1e-6);
+          const minAlt = Math.max(
+            MIN_ALT_ABSOLUTE,
+            terrainHeight.value + MIN_ALT_ABOVE_TERRAIN,
+          );
+          camAlt.value = Math.max(minAlt, Math.min(MAX_ALT, newAlt));
+        }),
+    [],
+  );
+
+  // ── 2-finger rotation: rotates the heading ───────────────────────────────
+  // e.rotation is in radians; positive = clockwise finger rotation.
+  // Clockwise fingers → map rotates CW under the camera → heading increases.
+  const rotationGesture = useMemo(
+    () =>
+      Gesture.Rotation()
+        .onBegin(() => {
+          'worklet';
+          snapHdg.value = camHdg.value;
+        })
+        .onUpdate(e => {
+          'worklet';
+          camHdg.value =
+            ((snapHdg.value + (e.rotation * 180) / Math.PI) % 360 + 360) %
+            360;
+        }),
+    [],
+  );
+
+  // Pinch and rotation fire simultaneously on two fingers.
+  const pinchRotateGesture = useMemo(
+    () => Gesture.Simultaneous(pinchGesture, rotationGesture),
+    [pinchGesture, rotationGesture],
+  );
+
+  // Pan (1-finger) is independent; it cannot activate while 2+ fingers are down.
+  const mapGesture = useMemo(
+    () => Gesture.Simultaneous(panGesture, pinchRotateGesture),
+    [panGesture, pinchRotateGesture],
+  );
+
+  // ── Joystick handler (pitch/roll via native rate mechanism) ───────────────
   const handleJoystickRates = useCallback(
     (pitchRate: number, rollRate: number) => {
       nativeMethods.current?.setJoystickRates(pitchRate, rollRate);
@@ -245,44 +417,42 @@ function AppContent() {
 
   const handleMetrics = useCallback((m: CesiumMetrics) => {
     setCredits(m.creditsPlainText);
+    terrainHeight.value = m.terrainHeightBelowCamera;
   }, []);
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <CesiumView
-        // Nitro: raw functions passed to native views become `true` unless wrapped
-        // with `callback()` — otherwise hybridRef never runs and native methods stay null.
-        hybridRef={callback((ref: CesiumViewMethods | null) => {
-          nativeMethods.current = ref;
-        })}
-        style={styles.map}
-        ionAccessToken={ION_ACCESS_TOKEN}
-        ionAssetId={1}
-        cameraLatitude={46.02}
-        cameraLongitude={7.6}
-        cameraAltitude={5800}
-        cameraHeading={220}
-        cameraPitch={-20}
-        cameraRoll={0}
-        cameraVerticalFovDeg={60}
-        debugOverlay={false}
-        pauseRendering={false}
-        gesturePanEnabled
-        gesturePinchZoomEnabled
-        gesturePinchRotateEnabled
-        gesturePanSensitivity={1}
-        gesturePinchSensitivity={1}
-        maximumScreenSpaceError={32}
-        maximumSimultaneousTileLoads={12}
-        loadingDescendantLimit={20}
-        msaaSampleCount={1}
-        showCredits={true}
-        ionImageryAssetId={imageryAssetId}
-        onMetrics={callback(handleMetrics)}
-      />
 
-      {/* Joystick + layer picker — shift up when credits bar is visible */}
+      {/* Map with gesture overlay */}
+      <GestureDetector gesture={mapGesture}>
+        <CesiumView
+          hybridRef={callback((ref: CesiumViewMethods | null) => {
+            nativeMethods.current = ref;
+          })}
+          style={styles.map}
+          ionAccessToken={ION_ACCESS_TOKEN}
+          ionAssetId={1}
+          cameraLatitude={camState.lat}
+          cameraLongitude={camState.lon}
+          cameraAltitude={camState.alt}
+          cameraHeading={camState.hdg}
+          cameraPitch={-20}
+          cameraRoll={0}
+          cameraVerticalFovDeg={60}
+          debugOverlay={false}
+          pauseRendering={false}
+          maximumScreenSpaceError={32}
+          maximumSimultaneousTileLoads={12}
+          loadingDescendantLimit={20}
+          msaaSampleCount={1}
+          showCredits={true}
+          ionImageryAssetId={imageryAssetId}
+          onMetrics={callback(handleMetrics)}
+        />
+      </GestureDetector>
+
+      {/* Joystick + layer picker */}
       <View
         style={[
           styles.bottomCenter,
@@ -299,7 +469,7 @@ function AppContent() {
         <LayerPicker selected={imageryAssetId} onSelect={setImageryAssetId} />
       </View>
 
-      {/* Attribution credits from Cesium Native credit system */}
+      {/* Attribution credits */}
       {credits.length > 0 && (
         <TouchableOpacity
           style={[styles.creditsBar, { bottom: insets.bottom + 4 }]}
@@ -362,16 +532,9 @@ function App() {
 }
 
 const styles = StyleSheet.create({
-  rootFill: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  map: {
-    ...StyleSheet.absoluteFillObject,
-  },
+  rootFill: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#000' },
+  map: { ...StyleSheet.absoluteFillObject },
   bottomCenter: {
     position: 'absolute',
     alignSelf: 'center',
@@ -423,9 +586,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginBottom: 12,
   },
-  creditsDialogScroll: {
-    maxHeight: 220,
-  },
+  creditsDialogScroll: { maxHeight: 220 },
   creditsDialogBody: {
     fontSize: 13,
     lineHeight: 20,

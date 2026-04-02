@@ -37,7 +37,10 @@ data class CesiumMetrics(
   val tilesetReady: Boolean,
   @DoNotStrip
   @Keep
-  val creditsPlainText: String
+  val creditsPlainText: String,
+  @DoNotStrip
+  @Keep
+  val terrainHeightBelowCamera: Double
 ) {
   /* primary constructor */
 
@@ -49,8 +52,8 @@ data class CesiumMetrics(
     @Keep
     @Suppress("unused")
     @JvmStatic
-    private fun fromCpp(fps: Double, tilesRendered: Double, tilesLoading: Double, tilesVisited: Double, ionTokenConfigured: Boolean, tilesetReady: Boolean, creditsPlainText: String): CesiumMetrics {
-      return CesiumMetrics(fps, tilesRendered, tilesLoading, tilesVisited, ionTokenConfigured, tilesetReady, creditsPlainText)
+    private fun fromCpp(fps: Double, tilesRendered: Double, tilesLoading: Double, tilesVisited: Double, ionTokenConfigured: Boolean, tilesetReady: Boolean, creditsPlainText: String, terrainHeightBelowCamera: Double): CesiumMetrics {
+      return CesiumMetrics(fps, tilesRendered, tilesLoading, tilesVisited, ionTokenConfigured, tilesetReady, creditsPlainText, terrainHeightBelowCamera)
     }
   }
 }

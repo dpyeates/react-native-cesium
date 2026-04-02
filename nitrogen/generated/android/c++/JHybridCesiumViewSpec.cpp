@@ -153,51 +153,6 @@ namespace margelo::nitro::reactnativecesium {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* pauseRendering */)>("setPauseRendering");
     method(_javaPart, pauseRendering);
   }
-  bool JHybridCesiumViewSpec::getGesturePanEnabled() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getGesturePanEnabled");
-    auto __result = method(_javaPart);
-    return static_cast<bool>(__result);
-  }
-  void JHybridCesiumViewSpec::setGesturePanEnabled(bool gesturePanEnabled) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* gesturePanEnabled */)>("setGesturePanEnabled");
-    method(_javaPart, gesturePanEnabled);
-  }
-  bool JHybridCesiumViewSpec::getGesturePinchZoomEnabled() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getGesturePinchZoomEnabled");
-    auto __result = method(_javaPart);
-    return static_cast<bool>(__result);
-  }
-  void JHybridCesiumViewSpec::setGesturePinchZoomEnabled(bool gesturePinchZoomEnabled) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* gesturePinchZoomEnabled */)>("setGesturePinchZoomEnabled");
-    method(_javaPart, gesturePinchZoomEnabled);
-  }
-  bool JHybridCesiumViewSpec::getGesturePinchRotateEnabled() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getGesturePinchRotateEnabled");
-    auto __result = method(_javaPart);
-    return static_cast<bool>(__result);
-  }
-  void JHybridCesiumViewSpec::setGesturePinchRotateEnabled(bool gesturePinchRotateEnabled) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* gesturePinchRotateEnabled */)>("setGesturePinchRotateEnabled");
-    method(_javaPart, gesturePinchRotateEnabled);
-  }
-  double JHybridCesiumViewSpec::getGesturePanSensitivity() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getGesturePanSensitivity");
-    auto __result = method(_javaPart);
-    return __result;
-  }
-  void JHybridCesiumViewSpec::setGesturePanSensitivity(double gesturePanSensitivity) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* gesturePanSensitivity */)>("setGesturePanSensitivity");
-    method(_javaPart, gesturePanSensitivity);
-  }
-  double JHybridCesiumViewSpec::getGesturePinchSensitivity() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getGesturePinchSensitivity");
-    auto __result = method(_javaPart);
-    return __result;
-  }
-  void JHybridCesiumViewSpec::setGesturePinchSensitivity(double gesturePinchSensitivity) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* gesturePinchSensitivity */)>("setGesturePinchSensitivity");
-    method(_javaPart, gesturePinchSensitivity);
-  }
   double JHybridCesiumViewSpec::getMaximumScreenSpaceError() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getMaximumScreenSpaceError");
     auto __result = method(_javaPart);
@@ -234,13 +189,13 @@ namespace margelo::nitro::reactnativecesium {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* msaaSampleCount */)>("setMsaaSampleCount");
     method(_javaPart, msaaSampleCount);
   }
-  bool JHybridCesiumViewSpec::getShowCreditsFooter() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getShowCreditsFooter");
+  bool JHybridCesiumViewSpec::getShowCredits() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getShowCredits");
     auto __result = method(_javaPart);
     return static_cast<bool>(__result);
   }
-  void JHybridCesiumViewSpec::setShowCreditsFooter(bool showCredits) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* showCredits */)>("setShowCreditsFooter");
+  void JHybridCesiumViewSpec::setShowCredits(bool showCredits) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* showCredits */)>("setShowCredits");
     method(_javaPart, showCredits);
   }
   double JHybridCesiumViewSpec::getIonImageryAssetId() {
@@ -274,18 +229,6 @@ namespace margelo::nitro::reactnativecesium {
   void JHybridCesiumViewSpec::setJoystickRates(double pitchRate, double rollRate) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* pitchRate */, double /* rollRate */)>("setJoystickRates");
     method(_javaPart, pitchRate, rollRate);
-  }
-  void JHybridCesiumViewSpec::onTouchStart(double pointerId, double x, double y) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* pointerId */, double /* x */, double /* y */)>("onTouchStart");
-    method(_javaPart, pointerId, x, y);
-  }
-  void JHybridCesiumViewSpec::onTouchChange(double pointerId, double x, double y) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* pointerId */, double /* x */, double /* y */)>("onTouchChange");
-    method(_javaPart, pointerId, x, y);
-  }
-  void JHybridCesiumViewSpec::onTouchEnd(double pointerId) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* pointerId */)>("onTouchEnd");
-    method(_javaPart, pointerId);
   }
   std::shared_ptr<Promise<CameraState>> JHybridCesiumViewSpec::getCameraState() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>()>("getCameraState");

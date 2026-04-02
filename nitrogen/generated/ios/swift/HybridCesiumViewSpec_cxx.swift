@@ -242,61 +242,6 @@ open class HybridCesiumViewSpec_cxx {
     }
   }
   
-  public final var gesturePanEnabled: Bool {
-    @inline(__always)
-    get {
-      return self.__implementation.gesturePanEnabled
-    }
-    @inline(__always)
-    set {
-      self.__implementation.gesturePanEnabled = newValue
-    }
-  }
-  
-  public final var gesturePinchZoomEnabled: Bool {
-    @inline(__always)
-    get {
-      return self.__implementation.gesturePinchZoomEnabled
-    }
-    @inline(__always)
-    set {
-      self.__implementation.gesturePinchZoomEnabled = newValue
-    }
-  }
-  
-  public final var gesturePinchRotateEnabled: Bool {
-    @inline(__always)
-    get {
-      return self.__implementation.gesturePinchRotateEnabled
-    }
-    @inline(__always)
-    set {
-      self.__implementation.gesturePinchRotateEnabled = newValue
-    }
-  }
-  
-  public final var gesturePanSensitivity: Double {
-    @inline(__always)
-    get {
-      return self.__implementation.gesturePanSensitivity
-    }
-    @inline(__always)
-    set {
-      self.__implementation.gesturePanSensitivity = newValue
-    }
-  }
-  
-  public final var gesturePinchSensitivity: Double {
-    @inline(__always)
-    get {
-      return self.__implementation.gesturePinchSensitivity
-    }
-    @inline(__always)
-    set {
-      self.__implementation.gesturePinchSensitivity = newValue
-    }
-  }
-  
   public final var maximumScreenSpaceError: Double {
     @inline(__always)
     get {
@@ -400,39 +345,6 @@ open class HybridCesiumViewSpec_cxx {
   public final func setJoystickRates(pitchRate: Double, rollRate: Double) -> bridge.Result_void_ {
     do {
       try self.__implementation.setJoystickRates(pitchRate: pitchRate, rollRate: rollRate)
-      return bridge.create_Result_void_()
-    } catch (let __error) {
-      let __exceptionPtr = __error.toCpp()
-      return bridge.create_Result_void_(__exceptionPtr)
-    }
-  }
-  
-  @inline(__always)
-  public final func onTouchStart(pointerId: Double, x: Double, y: Double) -> bridge.Result_void_ {
-    do {
-      try self.__implementation.onTouchStart(pointerId: pointerId, x: x, y: y)
-      return bridge.create_Result_void_()
-    } catch (let __error) {
-      let __exceptionPtr = __error.toCpp()
-      return bridge.create_Result_void_(__exceptionPtr)
-    }
-  }
-  
-  @inline(__always)
-  public final func onTouchChange(pointerId: Double, x: Double, y: Double) -> bridge.Result_void_ {
-    do {
-      try self.__implementation.onTouchChange(pointerId: pointerId, x: x, y: y)
-      return bridge.create_Result_void_()
-    } catch (let __error) {
-      let __exceptionPtr = __error.toCpp()
-      return bridge.create_Result_void_(__exceptionPtr)
-    }
-  }
-  
-  @inline(__always)
-  public final func onTouchEnd(pointerId: Double) -> bridge.Result_void_ {
-    do {
-      try self.__implementation.onTouchEnd(pointerId: pointerId)
       return bridge.create_Result_void_()
     } catch (let __error) {
       let __exceptionPtr = __error.toCpp()

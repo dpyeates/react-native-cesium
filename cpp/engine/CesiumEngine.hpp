@@ -62,6 +62,12 @@ private:
 
   bool tilesetOptionsMatch(const EngineConfig& a, const EngineConfig& b) const;
 
+  // Builds a tessellated WGS84 ellipsoid mesh (inset ~50 m) used as a
+  // permanent background so flat terrain is always visible even when tiles
+  // are absent or not yet loaded.
+  void buildEllipsoidMesh();
+  void appendEllipsoidDraws(FrameResult& result) const;
+
   IGPUBackend* gpu_ = nullptr;
   EngineConfig config_;
 
@@ -79,6 +85,10 @@ private:
   TileLifecycleManager lifecycle_;
 
   uint64_t frameCount_ = 0;
+
+  // Pre-computed fallback ellipsoid geometry (ECEF, absolute).
+  std::vector<glm::dvec3> ellipsoidPositions_;
+  std::vector<uint32_t>   ellipsoidIndices_;
 };
 
 } // namespace reactnativecesium

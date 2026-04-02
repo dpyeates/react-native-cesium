@@ -1,8 +1,8 @@
 #import "CesiumBridge.h"
 #import <CoreFoundation/CoreFoundation.h>
+#import <Network/Network.h>
 
 #include "engine/CesiumEngine.hpp"
-#include "gestures/GestureHandler.hpp"
 #include "metal/MetalBackend.h"
 
 #include <atomic>
@@ -56,10 +56,9 @@ struct CamAnim {
 } // namespace
 
 @implementation CesiumBridge {
-  std::unique_ptr<reactnativecesium::MetalBackend>   _metalBackend;
-  std::unique_ptr<reactnativecesium::CesiumEngine>   _engine;
-  std::unique_ptr<reactnativecesium::GestureHandler> _gestureHandler;
-  reactnativecesium::FrameResult                     _frameResult;
+  std::unique_ptr<reactnativecesium::MetalBackend> _metalBackend;
+  std::unique_ptr<reactnativecesium::CesiumEngine> _engine;
+  reactnativecesium::FrameResult                   _frameResult;
   int   _viewportWidth;
   int   _viewportHeight;
   BOOL  _initialized;
@@ -85,13 +84,22 @@ struct CamAnim {
   double _fpsEma;
   int    _metricsTick;
 
-  double _metricsFps;
+  double    _metricsFps;
   NSInteger _metricsTilesRendered;
   NSInteger _metricsTilesLoading;
   NSInteger _metricsTilesVisited;
-  BOOL _metricsIonTokenConfigured;
-  BOOL _metricsTilesetReady;
+  BOOL      _metricsIonTokenConfigured;
+  BOOL      _metricsTilesetReady;
   NSString* _metricsCreditsPlainText;
+  double    _metricsTerrainHeight;
+
+  // Network reachability
+  nw_path_monitor_t _pathMonitor;
+  BOOL              _networkReachable;
+
+  // Estimated terrain altitude (m above WGS84) below the camera, derived from
+  // rendered tile vertex altitudes and updated every frame.
+  double _terrainHeightBelowCamera;
 }
 
 - (reactnativecesium::EngineConfig)makeEngineConfig {
@@ -108,7 +116,7 @@ struct CamAnim {
   }
   config.maximumScreenSpaceError = std::max(1.0, _maxSSE);
   config.maximumSimultaneousTileLoads =
-      static_cast<int32_t>(std::max(1.0, std::round(_maxSimLoads)));
+      static_cast<int32_t>(std::max(0.0, std::round(_maxSimLoads)));
   config.loadingDescendantLimit =
       static_cast<int32_t>(std::max(1.0, std::round(_loadDescLim)));
   return config;
@@ -147,10 +155,6 @@ struct CamAnim {
     _metalBackend = std::make_unique<reactnativecesium::MetalBackend>();
     _metalBackend->initialize((__bridge void*)layer, width, height);
 
-    _gestureHandler = std::make_unique<reactnativecesium::GestureHandler>();
-    _gestureHandler->setViewportSize(static_cast<float>(width),
-                                     static_cast<float>(height));
-
     [self buildEngine];
     _initialized = YES;
 
@@ -160,16 +164,30 @@ struct CamAnim {
     [[NSNotificationCenter defaultCenter]
         addObserver:self selector:@selector(appDidBecomeActive:)
                name:UIApplicationDidBecomeActiveNotification object:nil];
+
+    [self startNetworkMonitor];
   }
   return self;
 }
 
-- (void)appWillResignActive:(NSNotification *)note {
-  _suspended = YES;
-}
+- (void)appWillResignActive:(NSNotification *)note { _suspended = YES; }
+- (void)appDidBecomeActive:(NSNotification *)note  { _suspended = NO;  }
 
-- (void)appDidBecomeActive:(NSNotification *)note {
-  _suspended = NO;
+- (void)startNetworkMonitor {
+  _networkReachable = YES;
+  __weak CesiumBridge *weakSelf = self;
+  _pathMonitor = nw_path_monitor_create();
+  dispatch_queue_t q = dispatch_queue_create("com.reactnativecesium.netmonitor",
+                                              DISPATCH_QUEUE_SERIAL);
+  nw_path_monitor_set_queue(_pathMonitor, q);
+  nw_path_monitor_set_update_handler(_pathMonitor, ^(nw_path_t path) {
+    const BOOL reachable = nw_path_get_status(path) == nw_path_status_satisfied;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      CesiumBridge *strong = weakSelf;
+      if (strong) strong->_networkReachable = reachable;
+    });
+  });
+  nw_path_monitor_start(_pathMonitor);
 }
 
 - (void)buildEngine {
@@ -190,7 +208,7 @@ struct CamAnim {
       });
   _engine->getResourcePreparer()->setGPUTextureDeleter(
       [](void* tex) {
-        if (tex) CFRelease(tex); // release retained id<MTLTexture>
+        if (tex) CFRelease(tex);
       });
 }
 
@@ -238,10 +256,6 @@ struct CamAnim {
   _viewportWidth  = width;
   _viewportHeight = height;
   if (_metalBackend) _metalBackend->resize(width, height);
-  if (_gestureHandler) {
-    _gestureHandler->setViewportSize(static_cast<float>(width),
-                                     static_cast<float>(height));
-  }
 }
 
 - (void)setJoystickPitchRate:(double)pitchRate rollRate:(double)rollRate {
@@ -252,22 +266,6 @@ struct CamAnim {
 - (void)setVerticalFovDeg:(double)degrees {
   if (!_initialized) return;
   _engine->camera().setVerticalFovDegrees(degrees);
-}
-
-- (void)setGesturePanEnabled:(BOOL)enabled {
-  if (_gestureHandler) _gestureHandler->setPanEnabled(enabled);
-}
-- (void)setGesturePinchZoomEnabled:(BOOL)enabled {
-  if (_gestureHandler) _gestureHandler->setPinchZoomEnabled(enabled);
-}
-- (void)setGesturePinchRotateEnabled:(BOOL)enabled {
-  if (_gestureHandler) _gestureHandler->setPinchRotateEnabled(enabled);
-}
-- (void)setGesturePanSensitivity:(double)s {
-  if (_gestureHandler) _gestureHandler->setPanSensitivity(s);
-}
-- (void)setGesturePinchSensitivity:(double)s {
-  if (_gestureHandler) _gestureHandler->setPinchSensitivity(s);
 }
 
 - (void)setMaximumScreenSpaceError:(double)v {
@@ -296,16 +294,16 @@ struct CamAnim {
   double u = smoothstep01(_camAnim.duration > 1e-6 ? _camAnim.elapsed / _camAnim.duration : 1.0);
   reactnativecesium::CameraParams p;
   if (_camAnim.mode == CamAnim::FlyTo) {
-    p.latitude  = lerp(_camAnim.start.latitude, _camAnim.end.latitude, u);
+    p.latitude  = lerp(_camAnim.start.latitude,  _camAnim.end.latitude,  u);
     p.longitude = lerp(_camAnim.start.longitude, _camAnim.end.longitude, u);
-    p.altitude  = lerp(_camAnim.start.altitude, _camAnim.end.altitude, u);
+    p.altitude  = lerp(_camAnim.start.altitude,  _camAnim.end.altitude,  u);
     p.heading   = lerpAngleDeg(_camAnim.start.heading, _camAnim.end.heading, u);
-    p.pitch     = lerpAngleDeg(_camAnim.start.pitch, _camAnim.end.pitch, u);
-    p.roll      = lerpAngleDeg(_camAnim.start.roll, _camAnim.end.roll, u);
+    p.pitch     = lerpAngleDeg(_camAnim.start.pitch,   _camAnim.end.pitch,   u);
+    p.roll      = lerpAngleDeg(_camAnim.start.roll,    _camAnim.end.roll,    u);
   } else {
-    p           = _camAnim.start;
-    p.heading   = lerpAngleDeg(_camAnim.start.heading, _camAnim.end.heading, u);
-    p.pitch     = lerpAngleDeg(_camAnim.start.pitch, _camAnim.end.pitch, u);
+    p         = _camAnim.start;
+    p.heading = lerpAngleDeg(_camAnim.start.heading, _camAnim.end.heading, u);
+    p.pitch   = lerpAngleDeg(_camAnim.start.pitch,   _camAnim.end.pitch,   u);
   }
   _engine->camera().setParams(p);
   if (_camAnim.elapsed >= _camAnim.duration) {
@@ -313,12 +311,8 @@ struct CamAnim {
   }
 }
 
-- (void)flyToLatitude:(double)lat
-            longitude:(double)lon
-             altitude:(double)alt
-              heading:(double)heading
-                pitch:(double)pitch
-                 roll:(double)roll
+- (void)flyToLatitude:(double)lat longitude:(double)lon altitude:(double)alt
+              heading:(double)heading pitch:(double)pitch roll:(double)roll
      durationSeconds:(double)duration {
   if (!_initialized) return;
   _camAnim.start = _engine->camera().getParams();
@@ -334,26 +328,22 @@ struct CamAnim {
   _camAnim.active        = true;
 }
 
-- (void)lookAtTargetLatitude:(double)lat
-                   longitude:(double)lon
-                    altitude:(double)alt
+- (void)lookAtTargetLatitude:(double)lat longitude:(double)lon altitude:(double)alt
             durationSeconds:(double)duration {
   if (!_initialized) return;
   _camAnim.start = _engine->camera().getParams();
   double eh = 0, ep = 0;
   _engine->camera().computeHeadingPitchToward(lat, lon, alt, eh, ep);
-  _camAnim.end          = _camAnim.start;
-  _camAnim.end.heading  = eh;
-  _camAnim.end.pitch    = ep;
-  _camAnim.duration     = std::max(0.01, duration);
-  _camAnim.elapsed      = 0.0;
-  _camAnim.mode         = CamAnim::LookAt;
-  _camAnim.active       = true;
+  _camAnim.end         = _camAnim.start;
+  _camAnim.end.heading = eh;
+  _camAnim.end.pitch   = ep;
+  _camAnim.duration    = std::max(0.01, duration);
+  _camAnim.elapsed     = 0.0;
+  _camAnim.mode        = CamAnim::LookAt;
+  _camAnim.active      = true;
 }
 
-- (void)cancelCameraAnimation {
-  _camAnim.active = false;
-}
+- (void)cancelCameraAnimation { _camAnim.active = false; }
 
 - (void)renderFrameWithDt:(double)dt {
   if (!_initialized || _suspended) return;
@@ -362,23 +352,102 @@ struct CamAnim {
     if (_camAnim.active) {
       [self stepCameraAnimation:dt];
     } else {
-      _gestureHandler->applyToCamera(_engine->camera());
       const double pr = _pitchRate.load();
       const double rr = _rollRate.load();
       if (pr != 0.0 || rr != 0.0) {
         auto p = _engine->camera().getParams();
         p.pitch += pr * dt;
-        p.roll += rr * dt;
-        while (p.pitch > 180.0) p.pitch -= 360.0;
+        p.roll  += rr * dt;
+        while (p.pitch >  180.0) p.pitch -= 360.0;
         while (p.pitch < -180.0) p.pitch += 360.0;
-        while (p.roll > 180.0) p.roll -= 360.0;
-        while (p.roll < -180.0) p.roll += 360.0;
+        while (p.roll  >  180.0) p.roll  -= 360.0;
+        while (p.roll  < -180.0) p.roll  += 360.0;
         _engine->camera().setParams(p);
       }
     }
-    _gestureHandler->resetDeltas();
 
     _engine->updateFrame(_viewportWidth, _viewportHeight, _frameResult);
+
+    {
+      // Compute terrain height at the camera's nadir (lat/lon directly below).
+      // Approach: project each tile vertex onto the camera's nadir axis (unit
+      // vector from Earth centre through the camera).  Vertices whose horizontal
+      // distance from that axis is < camAlt/5 are "directly below" the camera;
+      // we take the maximum altitude among those.  This is the terrain height
+      // at the camera's lat/lon, not an average over the whole scene.
+      //
+      // We use isEllipsoidFallback (not hasUVs) to skip the synthetic flat
+      // globe, so terrain-only tiles (no imagery UVs) are still sampled.
+      {
+        const float camAlt = static_cast<float>(std::max(10.0, _frameResult.cameraAlt));
+
+        // Nadir unit vector (away from Earth centre, parallel to camera's "up").
+        const float ex  = _frameResult.cameraEcef.x;
+        const float ey  = _frameResult.cameraEcef.y;
+        const float ez  = _frameResult.cameraEcef.z;
+        const float elen = sqrtf(ex*ex + ey*ey + ez*ez);
+        const float nx  = (elen > 0) ? ex/elen : 0.f;
+        const float ny  = (elen > 0) ? ey/elen : 0.f;
+        const float nz  = (elen > 0) ? ez/elen : 0.f;
+
+        // Accept vertices within camAlt/5 horizontal metres of the nadir ray.
+        const float horizThresh  = camAlt / 5.0f;
+        const float horizThreshSq = horizThresh * horizThresh;
+
+        float maxNadirAlt = -1e9f;
+        float closestAlt  =  0.0f;
+        float minDistSq   =  FLT_MAX;
+        bool  anyNadir    = false;
+
+        for (const auto& draw : _frameResult.draws) {
+          if (draw.isEllipsoidFallback) continue;
+          const uint32_t first = draw.indexByteOffset / sizeof(uint32_t);
+          const uint32_t step  = std::max(1u, draw.indexCount / 30u);
+          for (uint32_t j = 0; j < draw.indexCount; j += step) {
+            const uint32_t idx = first + j;
+            if (idx >= _frameResult.indices.size()) break;
+            const uint32_t vIdx = _frameResult.indices[idx];
+            if (vIdx * 3 + 2 >= _frameResult.eyeRelPositions.size()) continue;
+            if (vIdx           >= _frameResult.altitudes.size())      continue;
+            const float x = _frameResult.eyeRelPositions[vIdx * 3 + 0];
+            const float y = _frameResult.eyeRelPositions[vIdx * 3 + 1];
+            const float z = _frameResult.eyeRelPositions[vIdx * 3 + 2];
+            const float alt = _frameResult.altitudes[vIdx];
+
+            // Horizontal component (perpendicular to nadir axis).
+            const float dot = x*nx + y*ny + z*nz;
+            const float hx  = x - dot*nx;
+            const float hy  = y - dot*ny;
+            const float hz  = z - dot*nz;
+            const float horizSq = hx*hx + hy*hy + hz*hz;
+
+            if (horizSq < horizThreshSq) {
+              if (alt > maxNadirAlt) maxNadirAlt = alt;
+              anyNadir = true;
+            }
+
+            // Always track the closest vertex as a fallback.
+            const float distSq = x*x + y*y + z*z;
+            if (distSq < minDistSq) {
+              minDistSq = distSq;
+              closestAlt = alt;
+            }
+          }
+        }
+
+        const double newEst = anyNadir ? static_cast<double>(maxNadirAlt)
+                                       : static_cast<double>(closestAlt);
+
+        // Snap up immediately (new terrain is higher = potential collision),
+        // decay down slowly (avoid releasing clamp as tiles scroll away).
+        if (newEst > _terrainHeightBelowCamera) {
+          _terrainHeightBelowCamera = newEst;
+        } else {
+          _terrainHeightBelowCamera = 0.95 * _terrainHeightBelowCamera + 0.05 * newEst;
+        }
+
+      }
+    }
 
     if (_debugOverlay) {
       self.debugOverlayText = [NSString
@@ -397,7 +466,7 @@ struct CamAnim {
     const double instFps = (dt > 1e-6) ? (1.0 / dt) : 0.0;
     _fpsEma = (_fpsEma <= 1e-6) ? instFps : (_fpsEma * 0.85 + instFps * 0.15);
 
-    if (++_metricsTick >= 20) {
+    if (++_metricsTick >= 30) {
       _metricsTick               = 0;
       _metricsFps                = _fpsEma;
       _metricsTilesRendered      = _frameResult.tilesRendered;
@@ -405,6 +474,7 @@ struct CamAnim {
       _metricsTilesVisited       = _frameResult.tilesVisited;
       _metricsIonTokenConfigured = _frameResult.ionTokenConfigured;
       _metricsTilesetReady       = _frameResult.tilesetActive;
+      _metricsTerrainHeight      = _terrainHeightBelowCamera;
       if (_showCredits && !_frameResult.creditHtmlLines.empty()) {
         NSMutableString* credits = [NSMutableString string];
         for (const auto& html : _frameResult.creditHtmlLines) {
@@ -427,71 +497,33 @@ struct CamAnim {
   }
 }
 
-- (double)metricsFps {
-  return _metricsFps;
-}
-- (NSInteger)metricsTilesRendered {
-  return _metricsTilesRendered;
-}
-- (NSInteger)metricsTilesLoading {
-  return _metricsTilesLoading;
-}
-- (NSInteger)metricsTilesVisited {
-  return _metricsTilesVisited;
-}
-- (BOOL)metricsIonTokenConfigured {
-  return _metricsIonTokenConfigured;
-}
-- (BOOL)metricsTilesetReady {
-  return _metricsTilesetReady;
-}
-- (NSString*)metricsCreditsPlainText {
-  return _metricsCreditsPlainText ?: @"";
-}
+- (double)metricsFps              { return _metricsFps; }
+- (NSInteger)metricsTilesRendered { return _metricsTilesRendered; }
+- (NSInteger)metricsTilesLoading  { return _metricsTilesLoading; }
+- (NSInteger)metricsTilesVisited  { return _metricsTilesVisited; }
+- (BOOL)metricsIonTokenConfigured { return _metricsIonTokenConfigured; }
+- (BOOL)metricsTilesetReady       { return _metricsTilesetReady; }
+- (NSString*)metricsCreditsPlainText { return _metricsCreditsPlainText ?: @""; }
+- (double)metricsTerrainHeight    { return _metricsTerrainHeight; }
+- (BOOL)metricsNetworkReachable   { return _networkReachable; }
 
-- (double)readCameraLatitude {
-  return _engine ? _engine->camera().getParams().latitude : 0.0;
-}
-- (double)readCameraLongitude {
-  return _engine ? _engine->camera().getParams().longitude : 0.0;
-}
-- (double)readCameraAltitude {
-  return _engine ? _engine->camera().getParams().altitude : 0.0;
-}
-- (double)readCameraHeading {
-  return _engine ? _engine->camera().getParams().heading : 0.0;
-}
-- (double)readCameraPitch {
-  return _engine ? _engine->camera().getParams().pitch : 0.0;
-}
-- (double)readCameraRoll {
-  return _engine ? _engine->camera().getParams().roll : 0.0;
-}
-- (double)readVerticalFovDeg {
-  return _engine ? _engine->camera().getVerticalFovDegrees() : 60.0;
-}
+- (double)readCameraLatitude  { return _engine ? _engine->camera().getParams().latitude  : 0.0; }
+- (double)readCameraLongitude { return _engine ? _engine->camera().getParams().longitude : 0.0; }
+- (double)readCameraAltitude  { return _engine ? _engine->camera().getParams().altitude  : 0.0; }
+- (double)readCameraHeading   { return _engine ? _engine->camera().getParams().heading   : 0.0; }
+- (double)readCameraPitch     { return _engine ? _engine->camera().getParams().pitch     : 0.0; }
+- (double)readCameraRoll      { return _engine ? _engine->camera().getParams().roll      : 0.0; }
+- (double)readVerticalFovDeg  { return _engine ? _engine->camera().getVerticalFovDegrees() : 60.0; }
 
 - (void)shutdown {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
+  if (_pathMonitor) {
+    nw_path_monitor_cancel(_pathMonitor);
+    _pathMonitor = nil;
+  }
   if (_engine) _engine->shutdown();
   if (_metalBackend) _metalBackend->shutdown();
   _initialized = NO;
-}
-
-- (void)onTouchDown:(int)pointerId x:(float)x y:(float)y {
-  if (_gestureHandler) _gestureHandler->onTouchDown(pointerId, x, y);
-}
-
-- (void)onTouchMove:(int)pointerId x:(float)x y:(float)y {
-  if (_gestureHandler) _gestureHandler->onTouchMove(pointerId, x, y);
-}
-
-- (void)onTouchUp:(int)pointerId {
-  if (_gestureHandler) _gestureHandler->onTouchUp(pointerId);
-}
-
-- (void)setViewportSize:(float)width height:(float)height {
-  if (_gestureHandler) _gestureHandler->setViewportSize(width, height);
 }
 
 @end

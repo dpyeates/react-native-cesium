@@ -72,16 +72,6 @@ namespace margelo::nitro::reactnativecesium {
     void setDebugOverlay(bool debugOverlay) override;
     bool getPauseRendering() override;
     void setPauseRendering(bool pauseRendering) override;
-    bool getGesturePanEnabled() override;
-    void setGesturePanEnabled(bool gesturePanEnabled) override;
-    bool getGesturePinchZoomEnabled() override;
-    void setGesturePinchZoomEnabled(bool gesturePinchZoomEnabled) override;
-    bool getGesturePinchRotateEnabled() override;
-    void setGesturePinchRotateEnabled(bool gesturePinchRotateEnabled) override;
-    double getGesturePanSensitivity() override;
-    void setGesturePanSensitivity(double gesturePanSensitivity) override;
-    double getGesturePinchSensitivity() override;
-    void setGesturePinchSensitivity(double gesturePinchSensitivity) override;
     double getMaximumScreenSpaceError() override;
     void setMaximumScreenSpaceError(double maximumScreenSpaceError) override;
     double getMaximumSimultaneousTileLoads() override;
@@ -90,7 +80,7 @@ namespace margelo::nitro::reactnativecesium {
     void setLoadingDescendantLimit(double loadingDescendantLimit) override;
     double getMsaaSampleCount() override;
     void setMsaaSampleCount(double msaaSampleCount) override;
-    bool getShowCreditsFooter() override;
+    bool getShowCredits() override;
     void setShowCredits(bool showCredits) override;
     double getIonImageryAssetId() override;
     void setIonImageryAssetId(double ionImageryAssetId) override;
@@ -100,9 +90,6 @@ namespace margelo::nitro::reactnativecesium {
   public:
     // Methods
     void setJoystickRates(double pitchRate, double rollRate) override;
-    void onTouchStart(double pointerId, double x, double y) override;
-    void onTouchChange(double pointerId, double x, double y) override;
-    void onTouchEnd(double pointerId) override;
     std::shared_ptr<Promise<CameraState>> getCameraState() override;
     void flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) override;
     void lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) override;

@@ -137,36 +137,6 @@ namespace margelo::nitro::reactnativecesium {
     inline void setPauseRendering(bool pauseRendering) noexcept override {
       _swiftPart.setPauseRendering(std::forward<decltype(pauseRendering)>(pauseRendering));
     }
-    inline bool getGesturePanEnabled() noexcept override {
-      return _swiftPart.getGesturePanEnabled();
-    }
-    inline void setGesturePanEnabled(bool gesturePanEnabled) noexcept override {
-      _swiftPart.setGesturePanEnabled(std::forward<decltype(gesturePanEnabled)>(gesturePanEnabled));
-    }
-    inline bool getGesturePinchZoomEnabled() noexcept override {
-      return _swiftPart.getGesturePinchZoomEnabled();
-    }
-    inline void setGesturePinchZoomEnabled(bool gesturePinchZoomEnabled) noexcept override {
-      _swiftPart.setGesturePinchZoomEnabled(std::forward<decltype(gesturePinchZoomEnabled)>(gesturePinchZoomEnabled));
-    }
-    inline bool getGesturePinchRotateEnabled() noexcept override {
-      return _swiftPart.getGesturePinchRotateEnabled();
-    }
-    inline void setGesturePinchRotateEnabled(bool gesturePinchRotateEnabled) noexcept override {
-      _swiftPart.setGesturePinchRotateEnabled(std::forward<decltype(gesturePinchRotateEnabled)>(gesturePinchRotateEnabled));
-    }
-    inline double getGesturePanSensitivity() noexcept override {
-      return _swiftPart.getGesturePanSensitivity();
-    }
-    inline void setGesturePanSensitivity(double gesturePanSensitivity) noexcept override {
-      _swiftPart.setGesturePanSensitivity(std::forward<decltype(gesturePanSensitivity)>(gesturePanSensitivity));
-    }
-    inline double getGesturePinchSensitivity() noexcept override {
-      return _swiftPart.getGesturePinchSensitivity();
-    }
-    inline void setGesturePinchSensitivity(double gesturePinchSensitivity) noexcept override {
-      _swiftPart.setGesturePinchSensitivity(std::forward<decltype(gesturePinchSensitivity)>(gesturePinchSensitivity));
-    }
     inline double getMaximumScreenSpaceError() noexcept override {
       return _swiftPart.getMaximumScreenSpaceError();
     }
@@ -215,24 +185,6 @@ namespace margelo::nitro::reactnativecesium {
     // Methods
     inline void setJoystickRates(double pitchRate, double rollRate) override {
       auto __result = _swiftPart.setJoystickRates(std::forward<decltype(pitchRate)>(pitchRate), std::forward<decltype(rollRate)>(rollRate));
-      if (__result.hasError()) [[unlikely]] {
-        std::rethrow_exception(__result.error());
-      }
-    }
-    inline void onTouchStart(double pointerId, double x, double y) override {
-      auto __result = _swiftPart.onTouchStart(std::forward<decltype(pointerId)>(pointerId), std::forward<decltype(x)>(x), std::forward<decltype(y)>(y));
-      if (__result.hasError()) [[unlikely]] {
-        std::rethrow_exception(__result.error());
-      }
-    }
-    inline void onTouchChange(double pointerId, double x, double y) override {
-      auto __result = _swiftPart.onTouchChange(std::forward<decltype(pointerId)>(pointerId), std::forward<decltype(x)>(x), std::forward<decltype(y)>(y));
-      if (__result.hasError()) [[unlikely]] {
-        std::rethrow_exception(__result.error());
-      }
-    }
-    inline void onTouchEnd(double pointerId) override {
-      auto __result = _swiftPart.onTouchEnd(std::forward<decltype(pointerId)>(pointerId));
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }

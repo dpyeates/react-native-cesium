@@ -74,16 +74,6 @@ namespace margelo::nitro::reactnativecesium {
       virtual void setDebugOverlay(bool debugOverlay) = 0;
       virtual bool getPauseRendering() = 0;
       virtual void setPauseRendering(bool pauseRendering) = 0;
-      virtual bool getGesturePanEnabled() = 0;
-      virtual void setGesturePanEnabled(bool gesturePanEnabled) = 0;
-      virtual bool getGesturePinchZoomEnabled() = 0;
-      virtual void setGesturePinchZoomEnabled(bool gesturePinchZoomEnabled) = 0;
-      virtual bool getGesturePinchRotateEnabled() = 0;
-      virtual void setGesturePinchRotateEnabled(bool gesturePinchRotateEnabled) = 0;
-      virtual double getGesturePanSensitivity() = 0;
-      virtual void setGesturePanSensitivity(double gesturePanSensitivity) = 0;
-      virtual double getGesturePinchSensitivity() = 0;
-      virtual void setGesturePinchSensitivity(double gesturePinchSensitivity) = 0;
       virtual double getMaximumScreenSpaceError() = 0;
       virtual void setMaximumScreenSpaceError(double maximumScreenSpaceError) = 0;
       virtual double getMaximumSimultaneousTileLoads() = 0;
@@ -102,9 +92,6 @@ namespace margelo::nitro::reactnativecesium {
     public:
       // Methods
       virtual void setJoystickRates(double pitchRate, double rollRate) = 0;
-      virtual void onTouchStart(double pointerId, double x, double y) = 0;
-      virtual void onTouchChange(double pointerId, double x, double y) = 0;
-      virtual void onTouchEnd(double pointerId) = 0;
       virtual std::shared_ptr<Promise<CameraState>> getCameraState() = 0;
       virtual void flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) = 0;
       virtual void lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) = 0;

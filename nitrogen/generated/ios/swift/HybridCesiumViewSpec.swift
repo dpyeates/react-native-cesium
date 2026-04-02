@@ -21,11 +21,6 @@ public protocol HybridCesiumViewSpec_protocol: HybridObject, HybridView {
   var cameraVerticalFovDeg: Double { get set }
   var debugOverlay: Bool { get set }
   var pauseRendering: Bool { get set }
-  var gesturePanEnabled: Bool { get set }
-  var gesturePinchZoomEnabled: Bool { get set }
-  var gesturePinchRotateEnabled: Bool { get set }
-  var gesturePanSensitivity: Double { get set }
-  var gesturePinchSensitivity: Double { get set }
   var maximumScreenSpaceError: Double { get set }
   var maximumSimultaneousTileLoads: Double { get set }
   var loadingDescendantLimit: Double { get set }
@@ -36,9 +31,6 @@ public protocol HybridCesiumViewSpec_protocol: HybridObject, HybridView {
 
   // Methods
   func setJoystickRates(pitchRate: Double, rollRate: Double) throws -> Void
-  func onTouchStart(pointerId: Double, x: Double, y: Double) throws -> Void
-  func onTouchChange(pointerId: Double, x: Double, y: Double) throws -> Void
-  func onTouchEnd(pointerId: Double) throws -> Void
   func getCameraState() throws -> Promise<CameraState>
   func flyTo(latitude: Double, longitude: Double, altitude: Double, heading: Double, pitch: Double, roll: Double, durationSeconds: Double) throws -> Void
   func lookAt(targetLatitude: Double, targetLongitude: Double, targetAltitude: Double, durationSeconds: Double) throws -> Void

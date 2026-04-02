@@ -27,6 +27,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace reactnativecesium {
 
@@ -43,6 +44,89 @@ bool CesiumEngine::tilesetOptionsMatch(const EngineConfig& a,
   return a.maximumScreenSpaceError == b.maximumScreenSpaceError &&
          a.maximumSimultaneousTileLoads == b.maximumSimultaneousTileLoads &&
          a.loadingDescendantLimit == b.loadingDescendantLimit;
+}
+
+void CesiumEngine::buildEllipsoidMesh() {
+  // Tessellate a WGS84 ellipsoid slightly inset so terrain tiles (at true
+  // surface height) reliably overdraw it via the reversed-Z depth test.
+  // 20 m is enough separation at Earth scale; larger insets only push the
+  // fallback mesh further “under” the real globe without much benefit.
+  constexpr int nLon = 128;
+  constexpr int nLat = 64;
+
+  constexpr double a_full = 6378137.0;
+  constexpr double b_full = 6356752.31424518;
+  constexpr double inset  = 20.0;
+  const double a = a_full - inset;
+  const double b = b_full - inset;
+
+  ellipsoidPositions_.clear();
+  ellipsoidIndices_.clear();
+  ellipsoidPositions_.reserve(static_cast<size_t>((nLat + 1) * nLon));
+  ellipsoidIndices_.reserve(static_cast<size_t>(nLat * nLon * 6));
+
+  for (int lat = 0; lat <= nLat; ++lat) {
+    const double phi = M_PI * (static_cast<double>(lat) / nLat - 0.5); // -π/2 … +π/2
+    const double cosPhi = std::cos(phi);
+    const double sinPhi = std::sin(phi);
+    for (int lon = 0; lon < nLon; ++lon) {
+      const double theta = 2.0 * M_PI * static_cast<double>(lon) / nLon;
+      ellipsoidPositions_.push_back({
+          a * cosPhi * std::cos(theta),
+          a * cosPhi * std::sin(theta),
+          b * sinPhi
+      });
+    }
+  }
+
+  for (int lat = 0; lat < nLat; ++lat) {
+    for (int lon = 0; lon < nLon; ++lon) {
+      const uint32_t v00 = static_cast<uint32_t>(lat       * nLon + lon);
+      const uint32_t v10 = static_cast<uint32_t>(lat       * nLon + (lon + 1) % nLon);
+      const uint32_t v01 = static_cast<uint32_t>((lat + 1) * nLon + lon);
+      const uint32_t v11 = static_cast<uint32_t>((lat + 1) * nLon + (lon + 1) % nLon);
+      // CCW winding when viewed from outside Earth.
+      ellipsoidIndices_.push_back(v00); ellipsoidIndices_.push_back(v10); ellipsoidIndices_.push_back(v11);
+      ellipsoidIndices_.push_back(v00); ellipsoidIndices_.push_back(v11); ellipsoidIndices_.push_back(v01);
+    }
+  }
+}
+
+void CesiumEngine::appendEllipsoidDraws(FrameResult& result) const {
+  if (ellipsoidPositions_.empty() || ellipsoidIndices_.empty()) return;
+
+  const glm::dvec3 cameraPos = camera_.getECEFPosition();
+  const size_t   baseVertex   = result.eyeRelPositions.size() / 3;
+  const uint32_t indexByteOff = static_cast<uint32_t>(result.indices.size() * sizeof(uint32_t));
+
+  for (const auto& posEcef : ellipsoidPositions_) {
+    const glm::dvec3 eyeRel = posEcef - cameraPos;
+    result.eyeRelPositions.push_back(static_cast<float>(eyeRel.x));
+    result.eyeRelPositions.push_back(static_cast<float>(eyeRel.y));
+    result.eyeRelPositions.push_back(static_cast<float>(eyeRel.z));
+
+    // Vertices sit on an ellipsoid inset below WGS84 for depth sorting; raw
+    // geodetic height would be slightly negative, which the terrain shader
+    // blue. For the no-tiles fallback we want nominal land (green) at sea
+    // level, not water — use 0 m for shading only.
+    result.altitudes.push_back(0.0f);
+
+    // No UVs — shader applies hypsometric-style tint from altitude.
+    result.uvs.push_back(0.5f);
+    result.uvs.push_back(0.5f);
+  }
+
+  for (uint32_t idx : ellipsoidIndices_) {
+    result.indices.push_back(static_cast<uint32_t>(baseVertex) + idx);
+  }
+
+  DrawPrimitive draw;
+  draw.indexByteOffset     = indexByteOff;
+  draw.indexCount          = static_cast<uint32_t>(ellipsoidIndices_.size());
+  draw.hasUVs              = false;
+  draw.isEllipsoidFallback = true;
+  draw.overlayTexture      = nullptr;
+  result.draws.push_back(draw);
 }
 
 void CesiumEngine::initialize(IGPUBackend& /*gpu*/, const EngineConfig& config) {
@@ -71,6 +155,7 @@ void CesiumEngine::initialize(IGPUBackend& /*gpu*/, const EngineConfig& config) 
     creditSystem_ = std::make_shared<CesiumUtility::CreditSystem>();
   }
 
+  buildEllipsoidMesh();
   createTileset(config.ionAccessToken, config.ionAssetId);
 }
 
@@ -113,7 +198,7 @@ void CesiumEngine::createTileset(const std::string& token,
   Cesium3DTilesSelection::TilesetOptions opts;
   opts.maximumCachedBytes = 256 * 1024 * 1024;
   opts.maximumSimultaneousTileLoads =
-      static_cast<uint32_t>(std::max(1, config_.maximumSimultaneousTileLoads));
+      static_cast<uint32_t>(std::max(0, config_.maximumSimultaneousTileLoads));
   opts.loadingDescendantLimit =
       static_cast<uint32_t>(std::max(1, config_.loadingDescendantLimit));
   opts.maximumScreenSpaceError =
@@ -159,6 +244,12 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   result.verticalFovDeg     = camera_.getVerticalFovDegrees();
 
   if (!tileset_) {
+    // No Ion tileset configured yet — still render the ellipsoid fallback so
+    // the globe is always visible.
+    result.vpMatrix   = camera_.computeVPMatrix(w, h);
+    result.invVP      = glm::inverse(result.vpMatrix);
+    result.cameraEcef = glm::vec3(camera_.getECEFPosition());
+    appendEllipsoidDraws(result);
     lifecycle_.advanceFrame();
     return;
   }
@@ -177,6 +268,10 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
 
   result.vpMatrix = camera_.computeVPMatrix(w, h);
   result.invVP    = glm::inverse(result.vpMatrix);
+
+  // Draw ellipsoid first so tile draws (appended below) overdraw it wherever
+  // terrain data is available (reversed-Z depth test: closer = higher value).
+  appendEllipsoidDraws(result);
 
   const auto viewState     = camera_.computeViewState(w, h);
   const auto& updateResult = tileset_->updateView({viewState});

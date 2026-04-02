@@ -22,28 +22,17 @@ class HybridCesiumView(context: Context) : HybridCesiumViewSpec() {
   override var cameraVerticalFovDeg: Double = 60.0
   override var debugOverlay: Boolean = false
   override var pauseRendering: Boolean = false
-  override var gesturePanEnabled: Boolean = true
-  override var gesturePinchZoomEnabled: Boolean = true
-  override var gesturePinchRotateEnabled: Boolean = true
-  override var gesturePanSensitivity: Double = 1.0
-  override var gesturePinchSensitivity: Double = 1.0
   override var maximumScreenSpaceError: Double = 32.0
   override var maximumSimultaneousTileLoads: Double = 12.0
   override var loadingDescendantLimit: Double = 20.0
   override var msaaSampleCount: Double = 1.0
-  override var showCreditsFooter: Boolean = true
+  override var showCredits: Boolean = true
   override var ionImageryAssetId: Double = 1.0
   override var onMetrics: ((metrics: CesiumMetrics) -> Unit)? = null
 
   override val view: View get() = surfaceView
 
   override fun setJoystickRates(pitchRate: Double, rollRate: Double) {}
-
-  override fun onTouchStart(pointerId: Double, x: Double, y: Double) {}
-
-  override fun onTouchChange(pointerId: Double, x: Double, y: Double) {}
-
-  override fun onTouchEnd(pointerId: Double) {}
 
   override fun getCameraState(): Promise<CameraState> {
     return Promise.resolved(
