@@ -50,7 +50,6 @@ namespace margelo::nitro::reactnativecesium {
       prototype.registerHybridSetter("ionImageryAssetId", &HybridCesiumViewSpec::setIonImageryAssetId);
       prototype.registerHybridGetter("onMetrics", &HybridCesiumViewSpec::getOnMetrics);
       prototype.registerHybridSetter("onMetrics", &HybridCesiumViewSpec::setOnMetrics);
-      prototype.registerHybridMethod("setJoystickRates", &HybridCesiumViewSpec::setJoystickRates);
       prototype.registerHybridMethod("getCameraState", &HybridCesiumViewSpec::getCameraState);
       prototype.registerHybridMethod("flyTo", &HybridCesiumViewSpec::flyTo);
       prototype.registerHybridMethod("lookAt", &HybridCesiumViewSpec::lookAt);

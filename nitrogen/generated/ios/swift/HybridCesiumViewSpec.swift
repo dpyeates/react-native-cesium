@@ -30,7 +30,6 @@ public protocol HybridCesiumViewSpec_protocol: HybridObject, HybridView {
   var onMetrics: ((_ metrics: CesiumMetrics) -> Void)? { get set }
 
   // Methods
-  func setJoystickRates(pitchRate: Double, rollRate: Double) throws -> Void
   func getCameraState() throws -> Promise<CameraState>
   func flyTo(latitude: Double, longitude: Double, altitude: Double, heading: Double, pitch: Double, roll: Double, durationSeconds: Double) throws -> Void
   func lookAt(targetLatitude: Double, targetLongitude: Double, targetAltitude: Double, durationSeconds: Double) throws -> Void

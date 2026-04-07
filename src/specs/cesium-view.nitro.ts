@@ -50,7 +50,6 @@ export interface CesiumViewProps extends HybridViewProps {
 }
 
 export interface CesiumViewMethods extends HybridViewMethods {
-  setJoystickRates(pitchRate: number, rollRate: number): void
   getCameraState(): Promise<CameraState>
   flyTo(
     latitude: number,

@@ -146,10 +146,6 @@ abstract class HybridCesiumViewSpec: HybridView() {
   // Methods
   @DoNotStrip
   @Keep
-  abstract fun setJoystickRates(pitchRate: Double, rollRate: Double): Unit
-  
-  @DoNotStrip
-  @Keep
   abstract fun getCameraState(): Promise<CameraState>
   
   @DoNotStrip

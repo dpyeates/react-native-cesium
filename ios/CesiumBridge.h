@@ -24,8 +24,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)renderFrameWithDt:(double)dt;
 - (void)shutdown;
 
-- (void)setJoystickPitchRate:(double)pitchRate rollRate:(double)rollRate;
-
 // Camera / globe
 - (void)setVerticalFovDeg:(double)degrees;
 
@@ -36,7 +34,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)setMsaaSampleCount:(int)samples;
 
-/// Updated each frame when debug overlay is on — read after `renderFrameWithDt`.
 @property (nonatomic, copy, nullable) NSString *debugOverlayText;
 
 /// Throttled metrics (updated ~every 20 frames inside `renderFrameWithDt`).
@@ -47,7 +44,6 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) BOOL metricsIonTokenConfigured;
 @property (nonatomic, readonly) BOOL metricsTilesetReady;
 @property (nonatomic, readonly) NSString *metricsCreditsPlainText;
-/// Estimated terrain altitude (m above WGS84 ellipsoid) below the camera.
 @property (nonatomic, readonly) double metricsTerrainHeight;
 /// YES when the device has a usable network path; updated by NWPathMonitor.
 /// When NO, tile requests are suspended (maximumSimultaneousTileLoads = 0)

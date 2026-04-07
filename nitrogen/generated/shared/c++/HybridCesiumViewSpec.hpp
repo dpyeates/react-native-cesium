@@ -91,7 +91,6 @@ namespace margelo::nitro::reactnativecesium {
 
     public:
       // Methods
-      virtual void setJoystickRates(double pitchRate, double rollRate) = 0;
       virtual std::shared_ptr<Promise<CameraState>> getCameraState() = 0;
       virtual void flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) = 0;
       virtual void lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) = 0;

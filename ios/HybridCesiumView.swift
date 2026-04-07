@@ -14,26 +14,23 @@ class HybridCesiumView: HybridCesiumViewSpec {
     didSet { bridge?.updateIonAccessToken(ionAccessToken, assetId: Int64(ionAssetId)) }
   }
 
-  // Position/heading: preserve native pitch/roll so the joystick isn't overridden.
   var cameraLatitude: Double = 46.15 {
-    didSet { pushCameraPositionAndHeading() }
+    didSet { pushFullCameraFromProps() }
   }
   var cameraLongitude: Double = 7.35 {
-    didSet { pushCameraPositionAndHeading() }
+    didSet { pushFullCameraFromProps() }
   }
   var cameraAltitude: Double = 12_000 {
-    didSet { pushCameraPositionAndHeading() }
+    didSet { pushFullCameraFromProps() }
   }
   var cameraHeading: Double = 129 {
-    didSet { pushCameraPositionAndHeading() }
+    didSet { pushFullCameraFromProps() }
   }
-
-  // Pitch/roll: always use prop values (overrides native state).
   var cameraPitch: Double = -45 {
-    didSet { pushCameraParams() }
+    didSet { pushFullCameraFromProps() }
   }
   var cameraRoll: Double = 0 {
-    didSet { pushCameraParams() }
+    didSet { pushFullCameraFromProps() }
   }
 
   var cameraVerticalFovDeg: Double = 60 {
@@ -71,10 +68,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
   var onMetrics: ((CesiumMetrics) -> Void)?
 
   // MARK: - Methods
-
-  func setJoystickRates(pitchRate: Double, rollRate: Double) throws {
-    bridge?.setJoystickPitchRate(pitchRate, rollRate: rollRate)
-  }
 
   func getCameraState() throws -> Promise<CameraState> {
     guard let b = bridge else {
@@ -200,8 +193,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
     if !ionAccessToken.isEmpty {
       bridge?.updateIonAccessToken(ionAccessToken, assetId: Int64(ionAssetId))
     }
-    // Use the full 6-param push for initial setup so pitch/roll props take effect.
-    pushCameraParams()
+    pushFullCameraFromProps()
     bridge?.setVerticalFovDeg(cameraVerticalFovDeg)
     if ionImageryAssetId != 1 {
       bridge?.updateImageryAssetId(Int64(ionImageryAssetId))
@@ -236,8 +228,9 @@ class HybridCesiumView: HybridCesiumViewSpec {
     bridge?.setShowCredits(showCredits)
   }
 
-  /// Full 6-param push — used on initial setup and when pitch/roll props change.
-  private func pushCameraParams() {
+  /// All 6 DOF from React props → demand target in the native bridge.
+  /// The bridge's per-frame smooth follower handles transitions.
+  private func pushFullCameraFromProps() {
     bridge?.updateCameraLatitude(
       cameraLatitude,
       longitude: cameraLongitude,
@@ -245,20 +238,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
       heading: cameraHeading,
       pitch: cameraPitch,
       roll: cameraRoll
-    )
-  }
-
-  /// Position-only push — reads current native pitch/roll so joystick-driven
-  /// pitch isn't overridden on every gesture frame.
-  private func pushCameraPositionAndHeading() {
-    guard let b = bridge else { return }
-    b.updateCameraLatitude(
-      cameraLatitude,
-      longitude: cameraLongitude,
-      altitude: cameraAltitude,
-      heading: cameraHeading,
-      pitch: b.readCameraPitch(),
-      roll: b.readCameraRoll()
     )
   }
 

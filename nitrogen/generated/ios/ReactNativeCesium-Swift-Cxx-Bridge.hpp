@@ -143,15 +143,6 @@ namespace margelo::nitro::reactnativecesium::bridge::swift {
   using std__weak_ptr_HybridCesiumViewSpec_ = std::weak_ptr<HybridCesiumViewSpec>;
   inline std__weak_ptr_HybridCesiumViewSpec_ weakify_std__shared_ptr_HybridCesiumViewSpec_(const std::shared_ptr<HybridCesiumViewSpec>& strong) noexcept { return strong; }
   
-  // pragma MARK: Result<void>
-  using Result_void_ = Result<void>;
-  inline Result_void_ create_Result_void_() noexcept {
-    return Result<void>::withValue();
-  }
-  inline Result_void_ create_Result_void_(const std::exception_ptr& error) noexcept {
-    return Result<void>::withError(error);
-  }
-  
   // pragma MARK: Result<std::shared_ptr<Promise<CameraState>>>
   using Result_std__shared_ptr_Promise_CameraState___ = Result<std::shared_ptr<Promise<CameraState>>>;
   inline Result_std__shared_ptr_Promise_CameraState___ create_Result_std__shared_ptr_Promise_CameraState___(const std::shared_ptr<Promise<CameraState>>& value) noexcept {
@@ -159,6 +150,15 @@ namespace margelo::nitro::reactnativecesium::bridge::swift {
   }
   inline Result_std__shared_ptr_Promise_CameraState___ create_Result_std__shared_ptr_Promise_CameraState___(const std::exception_ptr& error) noexcept {
     return Result<std::shared_ptr<Promise<CameraState>>>::withError(error);
+  }
+  
+  // pragma MARK: Result<void>
+  using Result_void_ = Result<void>;
+  inline Result_void_ create_Result_void_() noexcept {
+    return Result<void>::withValue();
+  }
+  inline Result_void_ create_Result_void_(const std::exception_ptr& error) noexcept {
+    return Result<void>::withError(error);
   }
 
 } // namespace margelo::nitro::reactnativecesium::bridge::swift

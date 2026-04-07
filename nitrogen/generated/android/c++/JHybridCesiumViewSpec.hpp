@@ -89,7 +89,6 @@ namespace margelo::nitro::reactnativecesium {
 
   public:
     // Methods
-    void setJoystickRates(double pitchRate, double rollRate) override;
     std::shared_ptr<Promise<CameraState>> getCameraState() override;
     void flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) override;
     void lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) override;

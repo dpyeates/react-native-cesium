@@ -32,8 +32,6 @@ class HybridCesiumView(context: Context) : HybridCesiumViewSpec() {
 
   override val view: View get() = surfaceView
 
-  override fun setJoystickRates(pitchRate: Double, rollRate: Double) {}
-
   override fun getCameraState(): Promise<CameraState> {
     return Promise.resolved(
       CameraState(

@@ -59,14 +59,16 @@ void GlobeCamera::recompute() const {
   double pitchRad = glm::radians(params_.pitch);
   double rollRad  = glm::radians(params_.roll);
 
-  glm::dvec3 fwd = north * std::cos(hdgRad) + east * std::sin(hdgRad);
+  // 1. Heading: forward and right in the horizontal plane.
+  glm::dvec3 fwdH  = north * std::cos(hdgRad) + east * std::sin(hdgRad);
+  glm::dvec3 right = glm::normalize(glm::cross(fwdH, upENU));
 
-  glm::dvec3 right = glm::normalize(glm::cross(fwd, upENU));
-  fwd = glm::normalize(fwd * std::cos(pitchRad) + upENU * std::sin(pitchRad));
+  // 2. Pitch: rotate fwdH and upENU around the fixed right axis.
+  //    Works for any pitch (full 360° loop) — no cross(fwd, upENU) singularity.
+  glm::dvec3 fwd   = fwdH * std::cos(pitchRad) + upENU * std::sin(pitchRad);
+  glm::dvec3 camUp = -fwdH * std::sin(pitchRad) + upENU * std::cos(pitchRad);
 
-  right = glm::normalize(glm::cross(fwd, upENU));
-  glm::dvec3 camUp = glm::normalize(glm::cross(right, fwd));
-
+  // 3. Roll: rotate right and camUp around fwd.
   if (std::abs(rollRad) > 1e-6) {
     glm::dvec3 rolledRight = right * std::cos(rollRad) + camUp * std::sin(rollRad);
     camUp = glm::normalize(glm::cross(rolledRight, fwd));

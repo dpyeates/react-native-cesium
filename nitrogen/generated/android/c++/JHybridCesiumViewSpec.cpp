@@ -226,10 +226,6 @@ namespace margelo::nitro::reactnativecesium {
   }
 
   // Methods
-  void JHybridCesiumViewSpec::setJoystickRates(double pitchRate, double rollRate) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* pitchRate */, double /* rollRate */)>("setJoystickRates");
-    method(_javaPart, pitchRate, rollRate);
-  }
   std::shared_ptr<Promise<CameraState>> JHybridCesiumViewSpec::getCameraState() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>()>("getCameraState");
     auto __result = method(_javaPart);

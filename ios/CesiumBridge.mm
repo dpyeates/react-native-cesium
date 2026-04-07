@@ -53,7 +53,14 @@ struct CamAnim {
   enum { FlyTo, LookAt } mode = FlyTo;
 };
 
+
 } // namespace
+
+// ── Per-DOF smoothing. ────────────────────────────────────────────────────────
+static const double kSmoothAlt = 25.0;
+static const double kSmoothHdg = 30.0;
+static const double kSmoothRoll = 50.0;
+static const double kSmoothPitch = 50.0;
 
 @implementation CesiumBridge {
   std::unique_ptr<reactnativecesium::MetalBackend> _metalBackend;
@@ -71,13 +78,13 @@ struct CamAnim {
   double _maxSimLoads;
   double _loadDescLim;
 
-  std::atomic<double> _pitchRate;
-  std::atomic<double> _rollRate;
-
   BOOL _debugOverlay;
   BOOL _showCredits;
 
   CamAnim _camAnim;
+
+  // Demand target — incoming props/calls write here; render loop smooths toward it.
+  reactnativecesium::CameraParams _camTarget;
 
   BOOL _suspended;
 
@@ -137,8 +144,6 @@ struct CamAnim {
     _maxSSE            = 32.0;
     _maxSimLoads       = 12.0;
     _loadDescLim       = 20.0;
-    _pitchRate.store(0.0);
-    _rollRate.store(0.0);
     _debugOverlay      = NO;
     _showCredits       = YES;
     _suspended         = NO;
@@ -201,6 +206,9 @@ struct CamAnim {
   _engine = std::make_unique<reactnativecesium::CesiumEngine>();
   _engine->initialize(*_metalBackend, cfg);
 
+  // Sync demand target with engine's initial camera defaults.
+  _camTarget = _engine->camera().getParams();
+
   auto* backendPtr = _metalBackend.get();
   _engine->getResourcePreparer()->setGPUTextureCreator(
       [backendPtr](const uint8_t* pixels, int32_t w, int32_t h) -> void* {
@@ -232,14 +240,12 @@ struct CamAnim {
                        pitch:(double)pitch
                         roll:(double)roll {
   if (!_initialized || _camAnim.active) return;
-  reactnativecesium::CameraParams params;
-  params.latitude  = lat;
-  params.longitude = lon;
-  params.altitude  = alt;
-  params.heading   = heading;
-  params.pitch     = pitch;
-  params.roll      = roll;
-  _engine->camera().setParams(params);
+  _camTarget.latitude  = lat;
+  _camTarget.longitude = lon;
+  _camTarget.altitude  = alt;
+  _camTarget.heading   = heading;
+  _camTarget.pitch     = pitch;
+  _camTarget.roll      = roll;
 }
 
 - (void)setDebugOverlay:(BOOL)enabled {
@@ -256,11 +262,6 @@ struct CamAnim {
   _viewportWidth  = width;
   _viewportHeight = height;
   if (_metalBackend) _metalBackend->resize(width, height);
-}
-
-- (void)setJoystickPitchRate:(double)pitchRate rollRate:(double)rollRate {
-  _pitchRate.store(pitchRate);
-  _rollRate.store(rollRate);
 }
 
 - (void)setVerticalFovDeg:(double)degrees {
@@ -308,6 +309,7 @@ struct CamAnim {
   _engine->camera().setParams(p);
   if (_camAnim.elapsed >= _camAnim.duration) {
     _camAnim.active = false;
+    _camTarget = _engine->camera().getParams();
   }
 }
 
@@ -343,7 +345,10 @@ struct CamAnim {
   _camAnim.active      = true;
 }
 
-- (void)cancelCameraAnimation { _camAnim.active = false; }
+- (void)cancelCameraAnimation {
+  _camAnim.active = false;
+  if (_engine) _camTarget = _engine->camera().getParams();
+}
 
 - (void)renderFrameWithDt:(double)dt {
   if (!_initialized || _suspended) return;
@@ -352,18 +357,22 @@ struct CamAnim {
     if (_camAnim.active) {
       [self stepCameraAnimation:dt];
     } else {
-      const double pr = _pitchRate.load();
-      const double rr = _rollRate.load();
-      if (pr != 0.0 || rr != 0.0) {
-        auto p = _engine->camera().getParams();
-        p.pitch += pr * dt;
-        p.roll  += rr * dt;
-        while (p.pitch >  180.0) p.pitch -= 360.0;
-        while (p.pitch < -180.0) p.pitch += 360.0;
-        while (p.roll  >  180.0) p.roll  -= 360.0;
-        while (p.roll  < -180.0) p.roll  += 360.0;
-        _engine->camera().setParams(p);
-      }
+      auto cur = _engine->camera().getParams();
+
+      // ── Smooth follower: track _camTarget per DOF ────────────────────────────
+      // lat/lon: direct copy — pan gestures must feel instant.
+      cur.latitude  = _camTarget.latitude;
+      cur.longitude = _camTarget.longitude;
+      // alt/hdg/roll/pitch: exponential decay toward target.
+      const double aAlt = 1.0 - std::exp(-kSmoothAlt * dt);
+      const double aHdg = 1.0 - std::exp(-kSmoothHdg * dt);
+      const double aPitch = 1.0 - std::exp(-kSmoothPitch * dt);
+      const double aRoll = 1.0 - std::exp(-kSmoothRoll * dt);
+      cur.altitude = cur.altitude + aAlt * (_camTarget.altitude - cur.altitude);
+      cur.heading  = lerpAngleDeg(cur.heading, _camTarget.heading, aHdg);
+      cur.pitch  = lerpAngleDeg(cur.pitch, _camTarget.pitch, aPitch);
+      cur.roll  = 0;//lerpAngleDeg(cur.roll, _camTarget.roll, aRoll);
+      _engine->camera().setParams(cur);
     }
 
     _engine->updateFrame(_viewportWidth, _viewportHeight, _frameResult);
@@ -450,17 +459,21 @@ struct CamAnim {
     }
 
     if (_debugOverlay) {
+      const auto cp = _engine->camera().getParams();
       self.debugOverlayText = [NSString
           stringWithFormat:
               @"tiles=%d loadQ=%d visited=%d\nion=%@ ts=%@ fov=%.1f°\n"
-              @"lat=%.5f lon=%.5f alt=%.0f\nhdg=%.1f pitch=%.1f roll=%.1f",
+              @"lat=%.5f lon=%.5f alt=%.0f\nhdg=%.1f\n"
+              @"pitch  cur=%.2f  dem=%.2f  Δ=%.2f\n"
+              @"roll   cur=%.2f  dem=%.2f  Δ=%.2f",
               _frameResult.tilesRendered, _frameResult.tilesLoading,
               _frameResult.tilesVisited,
               _frameResult.ionTokenConfigured ? @"yes" : @"no",
               _frameResult.tilesetActive ? @"yes" : @"no", _frameResult.verticalFovDeg,
               _frameResult.cameraLat, _frameResult.cameraLon, _frameResult.cameraAlt,
-              _engine->camera().getParams().heading, _engine->camera().getParams().pitch,
-              _engine->camera().getParams().roll];
+              cp.heading,
+              cp.pitch, _camTarget.pitch, _camTarget.pitch - cp.pitch,
+              cp.roll,  _camTarget.roll,  _camTarget.roll  - cp.roll];
     }
 
     const double instFps = (dt > 1e-6) ? (1.0 / dt) : 0.0;

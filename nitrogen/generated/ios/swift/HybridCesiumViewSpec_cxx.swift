@@ -342,17 +342,6 @@ open class HybridCesiumViewSpec_cxx {
 
   // Methods
   @inline(__always)
-  public final func setJoystickRates(pitchRate: Double, rollRate: Double) -> bridge.Result_void_ {
-    do {
-      try self.__implementation.setJoystickRates(pitchRate: pitchRate, rollRate: rollRate)
-      return bridge.create_Result_void_()
-    } catch (let __error) {
-      let __exceptionPtr = __error.toCpp()
-      return bridge.create_Result_void_(__exceptionPtr)
-    }
-  }
-  
-  @inline(__always)
   public final func getCameraState() -> bridge.Result_std__shared_ptr_Promise_CameraState___ {
     do {
       let __result = try self.__implementation.getCameraState()

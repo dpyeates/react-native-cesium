@@ -183,12 +183,6 @@ namespace margelo::nitro::reactnativecesium {
 
   public:
     // Methods
-    inline void setJoystickRates(double pitchRate, double rollRate) override {
-      auto __result = _swiftPart.setJoystickRates(std::forward<decltype(pitchRate)>(pitchRate), std::forward<decltype(rollRate)>(rollRate));
-      if (__result.hasError()) [[unlikely]] {
-        std::rethrow_exception(__result.error());
-      }
-    }
     inline std::shared_ptr<Promise<CameraState>> getCameraState() override {
       auto __result = _swiftPart.getCameraState();
       if (__result.hasError()) [[unlikely]] {
