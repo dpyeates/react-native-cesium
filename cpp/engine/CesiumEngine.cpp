@@ -13,7 +13,6 @@
 #include <CesiumAsync/CachingAssetAccessor.h>
 #include <CesiumAsync/SqliteCache.h>
 #include <CesiumCurl/CurlAssetAccessor.h>
-#include <CesiumGeospatial/Ellipsoid.h>
 #include <CesiumRasterOverlays/IonRasterOverlay.h>
 #include <CesiumUtility/CreditSystem.h>
 #include <CesiumUtility/IntrusivePointer.h>
@@ -96,28 +95,34 @@ void CesiumEngine::appendEllipsoidDraws(FrameResult& result) const {
   if (ellipsoidPositions_.empty() || ellipsoidIndices_.empty()) return;
 
   const glm::dvec3 cameraPos = camera_.getECEFPosition();
-  const size_t   baseVertex   = result.eyeRelPositions.size() / 3;
+  const size_t     baseVertex = result.eyeRelPositions.size() / 3;
   const uint32_t indexByteOff = static_cast<uint32_t>(result.indices.size() * sizeof(uint32_t));
+  const size_t   vertexCount = ellipsoidPositions_.size();
+  const size_t   positionOffset = result.eyeRelPositions.size();
+  const size_t   uvOffset = result.uvs.size();
+
+  result.eyeRelPositions.resize(positionOffset + vertexCount * 3);
+  result.uvs.resize(uvOffset + vertexCount * 2);
+
+  float* eyeRelOut = result.eyeRelPositions.data() + positionOffset;
+  float* uvOut = result.uvs.data() + uvOffset;
 
   for (const auto& posEcef : ellipsoidPositions_) {
     const glm::dvec3 eyeRel = posEcef - cameraPos;
-    result.eyeRelPositions.push_back(static_cast<float>(eyeRel.x));
-    result.eyeRelPositions.push_back(static_cast<float>(eyeRel.y));
-    result.eyeRelPositions.push_back(static_cast<float>(eyeRel.z));
-
-    // Vertices sit on an ellipsoid inset below WGS84 for depth sorting; raw
-    // geodetic height would be slightly negative, which the terrain shader
-    // blue. For the no-tiles fallback we want nominal land (green) at sea
-    // level, not water — use 0 m for shading only.
-    result.altitudes.push_back(0.0f);
-
-    // No UVs — shader applies hypsometric-style tint from altitude.
-    result.uvs.push_back(0.5f);
-    result.uvs.push_back(0.5f);
+    *eyeRelOut++ = static_cast<float>(eyeRel.x);
+    *eyeRelOut++ = static_cast<float>(eyeRel.y);
+    *eyeRelOut++ = static_cast<float>(eyeRel.z);
+    // The fallback mesh never samples an imagery overlay, but we keep the UV
+    // stream densely packed so the renderer can treat all draws uniformly.
+    *uvOut++ = 0.5f;
+    *uvOut++ = 0.5f;
   }
 
+  const size_t indexOffset = result.indices.size();
+  result.indices.resize(indexOffset + ellipsoidIndices_.size());
+  uint32_t* indexOut = result.indices.data() + indexOffset;
   for (uint32_t idx : ellipsoidIndices_) {
-    result.indices.push_back(static_cast<uint32_t>(baseVertex) + idx);
+    *indexOut++ = static_cast<uint32_t>(baseVertex) + idx;
   }
 
   DrawPrimitive draw;
@@ -129,7 +134,7 @@ void CesiumEngine::appendEllipsoidDraws(FrameResult& result) const {
   result.draws.push_back(draw);
 }
 
-void CesiumEngine::initialize(IGPUBackend& /*gpu*/, const EngineConfig& config) {
+void CesiumEngine::initialize(const EngineConfig& config) {
   config_ = config;
 
   auto logger = spdlog::default_logger();
@@ -230,11 +235,8 @@ void CesiumEngine::setImageryAssetId(int64_t assetId) {
 }
 
 void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
-  ++frameCount_;
-
   result.eyeRelPositions.clear();
   result.uvs.clear();
-  result.altitudes.clear();
   result.indices.clear();
   result.draws.clear();
   result.creditHtmlLines.clear();
@@ -256,10 +258,7 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
 
   result.eyeRelPositions.reserve(512 * 1024);
   result.uvs.reserve(512 * 1024 * 2);
-  result.altitudes.reserve(512 * 1024 / 3);
   result.indices.reserve(3 * 1024 * 1024);
-
-  const auto& ellipsoid = CesiumGeospatial::Ellipsoid::WGS84;
 
   asyncSystem_.dispatchMainThreadTasks();
 
@@ -317,10 +316,6 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
         result.eyeRelPositions.push_back(static_cast<float>(eyeRel.x));
         result.eyeRelPositions.push_back(static_cast<float>(eyeRel.y));
         result.eyeRelPositions.push_back(static_cast<float>(eyeRel.z));
-
-        auto carto = ellipsoid.cartesianToCartographic(posEcef);
-        result.altitudes.push_back(
-            carto ? static_cast<float>(carto->height) : 0.0f);
 
         if (hasPrimUVs) {
           result.uvs.push_back(prim.uvs[vi].x);

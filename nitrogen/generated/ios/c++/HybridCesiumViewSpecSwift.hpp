@@ -12,16 +12,16 @@
 // Forward declaration of `HybridCesiumViewSpec_cxx` to properly resolve imports.
 namespace ReactNativeCesium { class HybridCesiumViewSpec_cxx; }
 
-// Forward declaration of `CesiumMetrics` to properly resolve imports.
-namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 // Forward declaration of `CameraState` to properly resolve imports.
 namespace margelo::nitro::reactnativecesium { struct CameraState; }
+// Forward declaration of `CesiumMetrics` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 
 #include <string>
+#include "CameraState.hpp"
 #include "CesiumMetrics.hpp"
 #include <functional>
 #include <optional>
-#include "CameraState.hpp"
 #include <NitroModules/Promise.hpp>
 
 #include "ReactNativeCesium-Swift-Cxx-Umbrella.hpp"
@@ -83,53 +83,11 @@ namespace margelo::nitro::reactnativecesium {
     inline void setIonAssetId(double ionAssetId) noexcept override {
       _swiftPart.setIonAssetId(std::forward<decltype(ionAssetId)>(ionAssetId));
     }
-    inline double getCameraLatitude() noexcept override {
-      return _swiftPart.getCameraLatitude();
+    inline CameraState getInitialCamera() noexcept override {
+      return _swiftPart.getInitialCamera();
     }
-    inline void setCameraLatitude(double cameraLatitude) noexcept override {
-      _swiftPart.setCameraLatitude(std::forward<decltype(cameraLatitude)>(cameraLatitude));
-    }
-    inline double getCameraLongitude() noexcept override {
-      return _swiftPart.getCameraLongitude();
-    }
-    inline void setCameraLongitude(double cameraLongitude) noexcept override {
-      _swiftPart.setCameraLongitude(std::forward<decltype(cameraLongitude)>(cameraLongitude));
-    }
-    inline double getCameraAltitude() noexcept override {
-      return _swiftPart.getCameraAltitude();
-    }
-    inline void setCameraAltitude(double cameraAltitude) noexcept override {
-      _swiftPart.setCameraAltitude(std::forward<decltype(cameraAltitude)>(cameraAltitude));
-    }
-    inline double getCameraHeading() noexcept override {
-      return _swiftPart.getCameraHeading();
-    }
-    inline void setCameraHeading(double cameraHeading) noexcept override {
-      _swiftPart.setCameraHeading(std::forward<decltype(cameraHeading)>(cameraHeading));
-    }
-    inline double getCameraPitch() noexcept override {
-      return _swiftPart.getCameraPitch();
-    }
-    inline void setCameraPitch(double cameraPitch) noexcept override {
-      _swiftPart.setCameraPitch(std::forward<decltype(cameraPitch)>(cameraPitch));
-    }
-    inline double getCameraRoll() noexcept override {
-      return _swiftPart.getCameraRoll();
-    }
-    inline void setCameraRoll(double cameraRoll) noexcept override {
-      _swiftPart.setCameraRoll(std::forward<decltype(cameraRoll)>(cameraRoll));
-    }
-    inline double getCameraVerticalFovDeg() noexcept override {
-      return _swiftPart.getCameraVerticalFovDeg();
-    }
-    inline void setCameraVerticalFovDeg(double cameraVerticalFovDeg) noexcept override {
-      _swiftPart.setCameraVerticalFovDeg(std::forward<decltype(cameraVerticalFovDeg)>(cameraVerticalFovDeg));
-    }
-    inline bool getDebugOverlay() noexcept override {
-      return _swiftPart.getDebugOverlay();
-    }
-    inline void setDebugOverlay(bool debugOverlay) noexcept override {
-      _swiftPart.setDebugOverlay(std::forward<decltype(debugOverlay)>(debugOverlay));
+    inline void setInitialCamera(const CameraState& initialCamera) noexcept override {
+      _swiftPart.setInitialCamera(std::forward<decltype(initialCamera)>(initialCamera));
     }
     inline bool getPauseRendering() noexcept override {
       return _swiftPart.getPauseRendering();
@@ -161,12 +119,6 @@ namespace margelo::nitro::reactnativecesium {
     inline void setMsaaSampleCount(double msaaSampleCount) noexcept override {
       _swiftPart.setMsaaSampleCount(std::forward<decltype(msaaSampleCount)>(msaaSampleCount));
     }
-    inline bool getShowCredits() noexcept override {
-      return _swiftPart.getShowCredits();
-    }
-    inline void setShowCredits(bool showCredits) noexcept override {
-      _swiftPart.setShowCredits(std::forward<decltype(showCredits)>(showCredits));
-    }
     inline double getIonImageryAssetId() noexcept override {
       return _swiftPart.getIonImageryAssetId();
     }
@@ -191,14 +143,8 @@ namespace margelo::nitro::reactnativecesium {
       auto __value = std::move(__result.value());
       return __value;
     }
-    inline void flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) override {
-      auto __result = _swiftPart.flyTo(std::forward<decltype(latitude)>(latitude), std::forward<decltype(longitude)>(longitude), std::forward<decltype(altitude)>(altitude), std::forward<decltype(heading)>(heading), std::forward<decltype(pitch)>(pitch), std::forward<decltype(roll)>(roll), std::forward<decltype(durationSeconds)>(durationSeconds));
-      if (__result.hasError()) [[unlikely]] {
-        std::rethrow_exception(__result.error());
-      }
-    }
-    inline void lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) override {
-      auto __result = _swiftPart.lookAt(std::forward<decltype(targetLatitude)>(targetLatitude), std::forward<decltype(targetLongitude)>(targetLongitude), std::forward<decltype(targetAltitude)>(targetAltitude), std::forward<decltype(durationSeconds)>(durationSeconds));
+    inline void setCamera(const CameraState& camera) override {
+      auto __result = _swiftPart.setCamera(std::forward<decltype(camera)>(camera));
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }

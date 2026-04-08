@@ -45,8 +45,6 @@ namespace margelo::nitro::reactnativecesium {
       jboolean tilesetReady = this->getFieldValue(fieldTilesetReady);
       static const auto fieldCreditsPlainText = clazz->getField<jni::JString>("creditsPlainText");
       jni::local_ref<jni::JString> creditsPlainText = this->getFieldValue(fieldCreditsPlainText);
-      static const auto fieldTerrainHeightBelowCamera = clazz->getField<double>("terrainHeightBelowCamera");
-      double terrainHeightBelowCamera = this->getFieldValue(fieldTerrainHeightBelowCamera);
       return CesiumMetrics(
         fps,
         tilesRendered,
@@ -54,8 +52,7 @@ namespace margelo::nitro::reactnativecesium {
         tilesVisited,
         static_cast<bool>(ionTokenConfigured),
         static_cast<bool>(tilesetReady),
-        creditsPlainText->toStdString(),
-        terrainHeightBelowCamera
+        creditsPlainText->toStdString()
       );
     }
 
@@ -65,7 +62,7 @@ namespace margelo::nitro::reactnativecesium {
      */
     [[maybe_unused]]
     static jni::local_ref<JCesiumMetrics::javaobject> fromCpp(const CesiumMetrics& value) {
-      using JSignature = JCesiumMetrics(double, double, double, double, jboolean, jboolean, jni::alias_ref<jni::JString>, double);
+      using JSignature = JCesiumMetrics(double, double, double, double, jboolean, jboolean, jni::alias_ref<jni::JString>);
       static const auto clazz = javaClassStatic();
       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
       return create(
@@ -76,8 +73,7 @@ namespace margelo::nitro::reactnativecesium {
         value.tilesVisited,
         value.ionTokenConfigured,
         value.tilesetReady,
-        jni::make_jstring(value.creditsPlainText),
-        value.terrainHeightBelowCamera
+        jni::make_jstring(value.creditsPlainText)
       );
     }
   };

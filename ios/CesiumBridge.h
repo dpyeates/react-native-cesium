@@ -18,9 +18,9 @@ NS_ASSUME_NONNULL_BEGIN
                      heading:(double)heading
                        pitch:(double)pitch
                         roll:(double)roll;
-- (void)setDebugOverlay:(BOOL)enabled;
-- (void)setShowCredits:(BOOL)enabled;
 - (void)resize:(int)width height:(int)height;
+- (BOOL)shouldRenderNextFrame;
+- (void)markNeedsRender;
 - (void)renderFrameWithDt:(double)dt;
 - (void)shutdown;
 
@@ -34,9 +34,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)setMsaaSampleCount:(int)samples;
 
-@property (nonatomic, copy, nullable) NSString *debugOverlayText;
-
-/// Throttled metrics (updated ~every 20 frames inside `renderFrameWithDt`).
+/// Throttled metrics consumed by the Swift hybrid view.
 @property (nonatomic, readonly) double metricsFps;
 @property (nonatomic, readonly) NSInteger metricsTilesRendered;
 @property (nonatomic, readonly) NSInteger metricsTilesLoading;
@@ -44,12 +42,6 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) BOOL metricsIonTokenConfigured;
 @property (nonatomic, readonly) BOOL metricsTilesetReady;
 @property (nonatomic, readonly) NSString *metricsCreditsPlainText;
-@property (nonatomic, readonly) double metricsTerrainHeight;
-/// YES when the device has a usable network path; updated by NWPathMonitor.
-/// When NO, tile requests are suspended (maximumSimultaneousTileLoads = 0)
-/// and the ellipsoid fallback mesh provides flat terrain for uncached areas.
-@property (nonatomic, readonly) BOOL metricsNetworkReachable;
-
 - (double)readCameraLatitude;
 - (double)readCameraLongitude;
 - (double)readCameraAltitude;
@@ -57,21 +49,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (double)readCameraPitch;
 - (double)readCameraRoll;
 - (double)readVerticalFovDeg;
-
-- (void)flyToLatitude:(double)lat
-            longitude:(double)lon
-             altitude:(double)alt
-              heading:(double)heading
-                pitch:(double)pitch
-                 roll:(double)roll
-     durationSeconds:(double)duration;
-
-- (void)lookAtTargetLatitude:(double)lat
-                   longitude:(double)lon
-                    altitude:(double)alt
-            durationSeconds:(double)duration;
-
-- (void)cancelCameraAnimation;
 
 @end
 

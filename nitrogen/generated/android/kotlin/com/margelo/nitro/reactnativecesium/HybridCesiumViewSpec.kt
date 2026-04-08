@@ -43,49 +43,7 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @get:Keep
   @set:DoNotStrip
   @set:Keep
-  abstract var cameraLatitude: Double
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
-  abstract var cameraLongitude: Double
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
-  abstract var cameraAltitude: Double
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
-  abstract var cameraHeading: Double
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
-  abstract var cameraPitch: Double
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
-  abstract var cameraRoll: Double
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
-  abstract var cameraVerticalFovDeg: Double
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
-  abstract var debugOverlay: Boolean
+  abstract var initialCamera: CameraState
   
   @get:DoNotStrip
   @get:Keep
@@ -121,12 +79,6 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @get:Keep
   @set:DoNotStrip
   @set:Keep
-  abstract var showCredits: Boolean
-  
-  @get:DoNotStrip
-  @get:Keep
-  @set:DoNotStrip
-  @set:Keep
   abstract var ionImageryAssetId: Double
   
   abstract var onMetrics: ((metrics: CesiumMetrics) -> Unit)?
@@ -150,11 +102,7 @@ abstract class HybridCesiumViewSpec: HybridView() {
   
   @DoNotStrip
   @Keep
-  abstract fun flyTo(latitude: Double, longitude: Double, altitude: Double, heading: Double, pitch: Double, roll: Double, durationSeconds: Double): Unit
-  
-  @DoNotStrip
-  @Keep
-  abstract fun lookAt(targetLatitude: Double, targetLongitude: Double, targetAltitude: Double, durationSeconds: Double): Unit
+  abstract fun setCamera(camera: CameraState): Unit
 
   // Default implementation of `HybridObject.toString()`
   override fun toString(): String {

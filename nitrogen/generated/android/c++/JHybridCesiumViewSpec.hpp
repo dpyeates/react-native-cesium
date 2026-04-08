@@ -54,22 +54,8 @@ namespace margelo::nitro::reactnativecesium {
     void setIonAccessToken(const std::string& ionAccessToken) override;
     double getIonAssetId() override;
     void setIonAssetId(double ionAssetId) override;
-    double getCameraLatitude() override;
-    void setCameraLatitude(double cameraLatitude) override;
-    double getCameraLongitude() override;
-    void setCameraLongitude(double cameraLongitude) override;
-    double getCameraAltitude() override;
-    void setCameraAltitude(double cameraAltitude) override;
-    double getCameraHeading() override;
-    void setCameraHeading(double cameraHeading) override;
-    double getCameraPitch() override;
-    void setCameraPitch(double cameraPitch) override;
-    double getCameraRoll() override;
-    void setCameraRoll(double cameraRoll) override;
-    double getCameraVerticalFovDeg() override;
-    void setCameraVerticalFovDeg(double cameraVerticalFovDeg) override;
-    bool getDebugOverlay() override;
-    void setDebugOverlay(bool debugOverlay) override;
+    CameraState getInitialCamera() override;
+    void setInitialCamera(const CameraState& initialCamera) override;
     bool getPauseRendering() override;
     void setPauseRendering(bool pauseRendering) override;
     double getMaximumScreenSpaceError() override;
@@ -80,8 +66,6 @@ namespace margelo::nitro::reactnativecesium {
     void setLoadingDescendantLimit(double loadingDescendantLimit) override;
     double getMsaaSampleCount() override;
     void setMsaaSampleCount(double msaaSampleCount) override;
-    bool getShowCredits() override;
-    void setShowCredits(bool showCredits) override;
     double getIonImageryAssetId() override;
     void setIonImageryAssetId(double ionImageryAssetId) override;
     std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() override;
@@ -90,8 +74,7 @@ namespace margelo::nitro::reactnativecesium {
   public:
     // Methods
     std::shared_ptr<Promise<CameraState>> getCameraState() override;
-    void flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) override;
-    void lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) override;
+    void setCamera(const CameraState& camera) override;
 
   private:
     jni::global_ref<JHybridCesiumViewSpec::JavaPart> _javaPart;

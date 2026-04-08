@@ -46,84 +46,14 @@ namespace margelo::nitro::reactnativecesium::views {
         throw std::runtime_error(std::string("CesiumView.ionAssetId: ") + exc.what());
       }
     }()),
-    cameraLatitude([&]() -> CachedProp<double> {
+    initialCamera([&]() -> CachedProp<CameraState> {
       try {
-        const react::RawValue* rawValue = rawProps.at("cameraLatitude", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.cameraLatitude;
+        const react::RawValue* rawValue = rawProps.at("initialCamera", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.initialCamera;
         const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.cameraLatitude);
+        return CachedProp<CameraState>::fromRawValue(*runtime, value, sourceProps.initialCamera);
       } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.cameraLatitude: ") + exc.what());
-      }
-    }()),
-    cameraLongitude([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("cameraLongitude", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.cameraLongitude;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.cameraLongitude);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.cameraLongitude: ") + exc.what());
-      }
-    }()),
-    cameraAltitude([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("cameraAltitude", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.cameraAltitude;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.cameraAltitude);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.cameraAltitude: ") + exc.what());
-      }
-    }()),
-    cameraHeading([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("cameraHeading", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.cameraHeading;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.cameraHeading);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.cameraHeading: ") + exc.what());
-      }
-    }()),
-    cameraPitch([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("cameraPitch", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.cameraPitch;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.cameraPitch);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.cameraPitch: ") + exc.what());
-      }
-    }()),
-    cameraRoll([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("cameraRoll", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.cameraRoll;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.cameraRoll);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.cameraRoll: ") + exc.what());
-      }
-    }()),
-    cameraVerticalFovDeg([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("cameraVerticalFovDeg", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.cameraVerticalFovDeg;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.cameraVerticalFovDeg);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.cameraVerticalFovDeg: ") + exc.what());
-      }
-    }()),
-    debugOverlay([&]() -> CachedProp<bool> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("debugOverlay", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.debugOverlay;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.debugOverlay);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.debugOverlay: ") + exc.what());
+        throw std::runtime_error(std::string("CesiumView.initialCamera: ") + exc.what());
       }
     }()),
     pauseRendering([&]() -> CachedProp<bool> {
@@ -176,16 +106,6 @@ namespace margelo::nitro::reactnativecesium::views {
         throw std::runtime_error(std::string("CesiumView.msaaSampleCount: ") + exc.what());
       }
     }()),
-    showCredits([&]() -> CachedProp<bool> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("showCredits", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.showCredits;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.showCredits);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.showCredits: ") + exc.what());
-      }
-    }()),
     ionImageryAssetId([&]() -> CachedProp<double> {
       try {
         const react::RawValue* rawValue = rawProps.at("ionImageryAssetId", nullptr, nullptr);
@@ -221,20 +141,12 @@ namespace margelo::nitro::reactnativecesium::views {
     switch (hashString(propName)) {
       case hashString("ionAccessToken"): return true;
       case hashString("ionAssetId"): return true;
-      case hashString("cameraLatitude"): return true;
-      case hashString("cameraLongitude"): return true;
-      case hashString("cameraAltitude"): return true;
-      case hashString("cameraHeading"): return true;
-      case hashString("cameraPitch"): return true;
-      case hashString("cameraRoll"): return true;
-      case hashString("cameraVerticalFovDeg"): return true;
-      case hashString("debugOverlay"): return true;
+      case hashString("initialCamera"): return true;
       case hashString("pauseRendering"): return true;
       case hashString("maximumScreenSpaceError"): return true;
       case hashString("maximumSimultaneousTileLoads"): return true;
       case hashString("loadingDescendantLimit"): return true;
       case hashString("msaaSampleCount"): return true;
-      case hashString("showCredits"): return true;
       case hashString("ionImageryAssetId"): return true;
       case hashString("onMetrics"): return true;
       case hashString("hybridRef"): return true;

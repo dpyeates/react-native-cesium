@@ -18,8 +18,8 @@ public extension CesiumMetrics {
   /**
    * Create a new instance of `CesiumMetrics`.
    */
-  init(fps: Double, tilesRendered: Double, tilesLoading: Double, tilesVisited: Double, ionTokenConfigured: Bool, tilesetReady: Bool, creditsPlainText: String, terrainHeightBelowCamera: Double) {
-    self.init(fps, tilesRendered, tilesLoading, tilesVisited, ionTokenConfigured, tilesetReady, std.string(creditsPlainText), terrainHeightBelowCamera)
+  init(fps: Double, tilesRendered: Double, tilesLoading: Double, tilesVisited: Double, ionTokenConfigured: Bool, tilesetReady: Bool, creditsPlainText: String) {
+    self.init(fps, tilesRendered, tilesLoading, tilesVisited, ionTokenConfigured, tilesetReady, std.string(creditsPlainText))
   }
 
   @inline(__always)
@@ -55,10 +55,5 @@ public extension CesiumMetrics {
   @inline(__always)
   var creditsPlainText: String {
     return String(self.__creditsPlainText)
-  }
-  
-  @inline(__always)
-  var terrainHeightBelowCamera: Double {
-    return self.__terrainHeightBelowCamera
   }
 }

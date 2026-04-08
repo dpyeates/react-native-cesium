@@ -7,22 +7,22 @@
 
 #include "JHybridCesiumViewSpec.hpp"
 
-// Forward declaration of `CesiumMetrics` to properly resolve imports.
-namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 // Forward declaration of `CameraState` to properly resolve imports.
 namespace margelo::nitro::reactnativecesium { struct CameraState; }
+// Forward declaration of `CesiumMetrics` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 
 #include <string>
+#include "CameraState.hpp"
+#include "JCameraState.hpp"
 #include "CesiumMetrics.hpp"
 #include <functional>
 #include <optional>
 #include "JFunc_void_CesiumMetrics.hpp"
 #include <NitroModules/JNICallable.hpp>
 #include "JCesiumMetrics.hpp"
-#include "CameraState.hpp"
 #include <NitroModules/Promise.hpp>
 #include <NitroModules/JPromise.hpp>
-#include "JCameraState.hpp"
 
 namespace margelo::nitro::reactnativecesium {
 
@@ -72,77 +72,14 @@ namespace margelo::nitro::reactnativecesium {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* ionAssetId */)>("setIonAssetId");
     method(_javaPart, ionAssetId);
   }
-  double JHybridCesiumViewSpec::getCameraLatitude() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getCameraLatitude");
+  CameraState JHybridCesiumViewSpec::getInitialCamera() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JCameraState>()>("getInitialCamera");
     auto __result = method(_javaPart);
-    return __result;
+    return __result->toCpp();
   }
-  void JHybridCesiumViewSpec::setCameraLatitude(double cameraLatitude) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* cameraLatitude */)>("setCameraLatitude");
-    method(_javaPart, cameraLatitude);
-  }
-  double JHybridCesiumViewSpec::getCameraLongitude() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getCameraLongitude");
-    auto __result = method(_javaPart);
-    return __result;
-  }
-  void JHybridCesiumViewSpec::setCameraLongitude(double cameraLongitude) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* cameraLongitude */)>("setCameraLongitude");
-    method(_javaPart, cameraLongitude);
-  }
-  double JHybridCesiumViewSpec::getCameraAltitude() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getCameraAltitude");
-    auto __result = method(_javaPart);
-    return __result;
-  }
-  void JHybridCesiumViewSpec::setCameraAltitude(double cameraAltitude) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* cameraAltitude */)>("setCameraAltitude");
-    method(_javaPart, cameraAltitude);
-  }
-  double JHybridCesiumViewSpec::getCameraHeading() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getCameraHeading");
-    auto __result = method(_javaPart);
-    return __result;
-  }
-  void JHybridCesiumViewSpec::setCameraHeading(double cameraHeading) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* cameraHeading */)>("setCameraHeading");
-    method(_javaPart, cameraHeading);
-  }
-  double JHybridCesiumViewSpec::getCameraPitch() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getCameraPitch");
-    auto __result = method(_javaPart);
-    return __result;
-  }
-  void JHybridCesiumViewSpec::setCameraPitch(double cameraPitch) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* cameraPitch */)>("setCameraPitch");
-    method(_javaPart, cameraPitch);
-  }
-  double JHybridCesiumViewSpec::getCameraRoll() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getCameraRoll");
-    auto __result = method(_javaPart);
-    return __result;
-  }
-  void JHybridCesiumViewSpec::setCameraRoll(double cameraRoll) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* cameraRoll */)>("setCameraRoll");
-    method(_javaPart, cameraRoll);
-  }
-  double JHybridCesiumViewSpec::getCameraVerticalFovDeg() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getCameraVerticalFovDeg");
-    auto __result = method(_javaPart);
-    return __result;
-  }
-  void JHybridCesiumViewSpec::setCameraVerticalFovDeg(double cameraVerticalFovDeg) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* cameraVerticalFovDeg */)>("setCameraVerticalFovDeg");
-    method(_javaPart, cameraVerticalFovDeg);
-  }
-  bool JHybridCesiumViewSpec::getDebugOverlay() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getDebugOverlay");
-    auto __result = method(_javaPart);
-    return static_cast<bool>(__result);
-  }
-  void JHybridCesiumViewSpec::setDebugOverlay(bool debugOverlay) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* debugOverlay */)>("setDebugOverlay");
-    method(_javaPart, debugOverlay);
+  void JHybridCesiumViewSpec::setInitialCamera(const CameraState& initialCamera) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JCameraState> /* initialCamera */)>("setInitialCamera");
+    method(_javaPart, JCameraState::fromCpp(initialCamera));
   }
   bool JHybridCesiumViewSpec::getPauseRendering() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getPauseRendering");
@@ -189,15 +126,6 @@ namespace margelo::nitro::reactnativecesium {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* msaaSampleCount */)>("setMsaaSampleCount");
     method(_javaPart, msaaSampleCount);
   }
-  bool JHybridCesiumViewSpec::getShowCredits() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<jboolean()>("getShowCredits");
-    auto __result = method(_javaPart);
-    return static_cast<bool>(__result);
-  }
-  void JHybridCesiumViewSpec::setShowCredits(bool showCredits) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* showCredits */)>("setShowCredits");
-    method(_javaPart, showCredits);
-  }
   double JHybridCesiumViewSpec::getIonImageryAssetId() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getIonImageryAssetId");
     auto __result = method(_javaPart);
@@ -242,13 +170,9 @@ namespace margelo::nitro::reactnativecesium {
       return __promise;
     }();
   }
-  void JHybridCesiumViewSpec::flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* latitude */, double /* longitude */, double /* altitude */, double /* heading */, double /* pitch */, double /* roll */, double /* durationSeconds */)>("flyTo");
-    method(_javaPart, latitude, longitude, altitude, heading, pitch, roll, durationSeconds);
-  }
-  void JHybridCesiumViewSpec::lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* targetLatitude */, double /* targetLongitude */, double /* targetAltitude */, double /* durationSeconds */)>("lookAt");
-    method(_javaPart, targetLatitude, targetLongitude, targetAltitude, durationSeconds);
+  void JHybridCesiumViewSpec::setCamera(const CameraState& camera) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JCameraState> /* camera */)>("setCamera");
+    method(_javaPart, JCameraState::fromCpp(camera));
   }
 
 } // namespace margelo::nitro::reactnativecesium

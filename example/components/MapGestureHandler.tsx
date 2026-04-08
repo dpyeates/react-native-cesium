@@ -2,40 +2,46 @@ import React, { useMemo, type ReactNode } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
   type SharedValue,
+  useAnimatedReaction,
+  useSharedValue,
   withDecay,
 } from 'react-native-reanimated';
+import type { CameraState } from 'react-native-cesium';
 
 // Degrees per pixel per metre of altitude — matches native GestureHandler scale.
 const PAN_SCALE = 1.55e-8;
-const MIN_ALT_ABOVE_TERRAIN = 3;
 const MIN_ALT_ABSOLUTE = 3;
 const MAX_ALT = 100_000_000;
 
 export type MapGestureHandlerProps = {
   children: ReactNode;
-  camLat: SharedValue<number>;
-  camLon: SharedValue<number>;
-  camAlt: SharedValue<number>;
-  camHdg: SharedValue<number>;
-  snapLat: SharedValue<number>;
-  snapLon: SharedValue<number>;
-  snapAlt: SharedValue<number>;
-  snapHdg: SharedValue<number>;
-  terrainHeight: SharedValue<number>;
+  camera: SharedValue<CameraState>;
 };
 
+/** Per-gesture anchor values; each gesture seeds this in `onBegin` from `camera`. */
 export function MapGestureHandler({
   children,
-  camLat,
-  camLon,
-  camAlt,
-  camHdg,
-  snapLat,
-  snapLon,
-  snapAlt,
-  snapHdg,
-  terrainHeight,
+  camera,
 }: MapGestureHandlerProps) {
+  const snap = useSharedValue({
+    lat: 0,
+    lon: 0,
+    alt: 0,
+    hdg: 0,
+  });
+
+  const panDecayLat = useSharedValue(camera.value.latitude);
+  const panDecayLon = useSharedValue(camera.value.longitude);
+  useAnimatedReaction(
+    () => ({ lat: panDecayLat.value, lon: panDecayLon.value }),
+    cur => {
+      'worklet';
+      const prev = camera.value;
+      camera.value = { ...prev, latitude: cur.lat, longitude: cur.lon };
+    },
+    [camera],
+  );
+
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -43,51 +49,54 @@ export function MapGestureHandler({
         .maxPointers(1)
         .onBegin(() => {
           'worklet';
-          snapLat.value = camLat.value;
-          snapLon.value = camLon.value;
+          const prev = camera.value;
+          snap.value = { ...snap.value, lat: prev.latitude, lon: prev.longitude };
         })
         .onUpdate(e => {
           'worklet';
-          const sens = camAlt.value * PAN_SCALE;
-          const H = (camHdg.value * Math.PI) / 180;
+          const cur = camera.value;
+          const sens = cur.altitude * PAN_SCALE;
+          const H = (cur.heading * Math.PI) / 180;
           const cosH = Math.cos(H);
           const sinH = Math.sin(H);
-          const latRad = (snapLat.value * Math.PI) / 180;
+          const latRad = (snap.value.lat * Math.PI) / 180;
           const fwd = e.translationY * sens;
           const rgt = -e.translationX * sens;
-          camLat.value = Math.max(
+          const lat = Math.max(
             -90,
-            Math.min(90, snapLat.value + cosH * fwd - sinH * rgt),
+            Math.min(90, snap.value.lat + cosH * fwd - sinH * rgt),
           );
-          camLon.value =
-            snapLon.value +
+          const lon =
+            snap.value.lon +
             (sinH * fwd + cosH * rgt) / Math.max(Math.cos(latRad), 0.01);
+          camera.value = { ...cur, latitude: lat, longitude: lon };
         })
         .onEnd(e => {
           'worklet';
-          const sens = camAlt.value * PAN_SCALE;
-          const H = (camHdg.value * Math.PI) / 180;
+          const cur = camera.value;
+          const sens = cur.altitude * PAN_SCALE;
+          const H = (cur.heading * Math.PI) / 180;
           const cosH = Math.cos(H);
           const sinH = Math.sin(H);
-          const latRad = (camLat.value * Math.PI) / 180;
+          const latRad = (cur.latitude * Math.PI) / 180;
           const latVel = sens * (cosH * e.velocityY + sinH * e.velocityX);
           const lonVel =
             (sens * (sinH * e.velocityY - cosH * e.velocityX)) /
             Math.max(Math.cos(latRad), 0.01);
-          camLat.value = withDecay({
+          panDecayLat.value = cur.latitude;
+          panDecayLon.value = cur.longitude;
+          panDecayLat.value = withDecay({
             velocity: latVel,
             clamp: [-90, 90],
             deceleration: 0.99,
           });
-          camLon.value = withDecay({ velocity: lonVel, deceleration: 0.99 });
+          panDecayLon.value = withDecay({ velocity: lonVel, deceleration: 0.99 });
         }),
     [
-      camLat,
-      camLon,
-      camAlt,
-      camHdg,
-      snapLat,
-      snapLon,
+      camera,
+      panDecayLat,
+      panDecayLon,
+      snap,
     ],
   );
 
@@ -96,22 +105,19 @@ export function MapGestureHandler({
       Gesture.Pinch()
         .onBegin(() => {
           'worklet';
-          const minAlt = Math.max(
-            MIN_ALT_ABSOLUTE,
-            terrainHeight.value + MIN_ALT_ABOVE_TERRAIN,
-          );
-          snapAlt.value = Math.max(camAlt.value, minAlt);
+          const cur = camera.value;
+          snap.value = { ...snap.value, alt: Math.max(cur.altitude, MIN_ALT_ABSOLUTE) };
         })
         .onUpdate(e => {
           'worklet';
-          const newAlt = snapAlt.value / Math.max(e.scale, 1e-6);
-          const minAlt = Math.max(
-            MIN_ALT_ABSOLUTE,
-            terrainHeight.value + MIN_ALT_ABOVE_TERRAIN,
-          );
-          camAlt.value = Math.max(minAlt, Math.min(MAX_ALT, newAlt));
+          const cur = camera.value;
+          const newAlt = snap.value.alt / Math.max(e.scale, 1e-6);
+          camera.value = {
+            ...cur,
+            altitude: Math.max(MIN_ALT_ABSOLUTE, Math.min(MAX_ALT, newAlt)),
+          };
         }),
-    [camAlt, snapAlt, terrainHeight],
+    [camera, snap],
   );
 
   const rotationGesture = useMemo(
@@ -119,15 +125,16 @@ export function MapGestureHandler({
       Gesture.Rotation()
         .onBegin(() => {
           'worklet';
-          snapHdg.value = camHdg.value;
+          const cur = camera.value;
+          snap.value = { ...snap.value, hdg: cur.heading };
         })
         .onUpdate(e => {
           'worklet';
-          camHdg.value =
-            (((snapHdg.value + (e.rotation * 180) / Math.PI) % 360) + 360) %
-            360;
+          const cur = camera.value;
+          const hdg = (((snap.value.hdg + (e.rotation * 180) / Math.PI) % 360) + 360) % 360;
+          camera.value = { ...cur, heading: hdg };
         }),
-    [camHdg, snapHdg],
+    [camera, snap],
   );
 
   const pinchRotateGesture = useMemo(

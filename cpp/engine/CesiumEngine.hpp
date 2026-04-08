@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../renderer/IGPUBackend.hpp"
 #include "../renderer/RenderTypes.hpp"
 #include "GlobeCamera.hpp"
 #include "ResourcePreparer.hpp"
@@ -41,7 +40,7 @@ public:
   CesiumEngine(const CesiumEngine&)            = delete;
   CesiumEngine& operator=(const CesiumEngine&) = delete;
 
-  void initialize(IGPUBackend& gpu, const EngineConfig& config);
+  void initialize(const EngineConfig& config);
   void shutdown();
   void updateConfig(const EngineConfig& config);
 
@@ -62,13 +61,12 @@ private:
 
   bool tilesetOptionsMatch(const EngineConfig& a, const EngineConfig& b) const;
 
-  // Builds a tessellated WGS84 ellipsoid mesh (inset ~50 m) used as a
+  // Builds a tessellated WGS84 ellipsoid mesh (inset ~20 m) used as a
   // permanent background so flat terrain is always visible even when tiles
   // are absent or not yet loaded.
   void buildEllipsoidMesh();
   void appendEllipsoidDraws(FrameResult& result) const;
 
-  IGPUBackend* gpu_ = nullptr;
   EngineConfig config_;
 
   std::shared_ptr<TaskProcessor>               taskProcessor_;
@@ -83,8 +81,6 @@ private:
 
   GlobeCamera          camera_;
   TileLifecycleManager lifecycle_;
-
-  uint64_t frameCount_ = 0;
 
   // Pre-computed fallback ellipsoid geometry (ECEF, absolute).
   std::vector<glm::dvec3> ellipsoidPositions_;

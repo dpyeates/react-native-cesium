@@ -12,27 +12,18 @@ public protocol HybridCesiumViewSpec_protocol: HybridObject, HybridView {
   // Properties
   var ionAccessToken: String { get set }
   var ionAssetId: Double { get set }
-  var cameraLatitude: Double { get set }
-  var cameraLongitude: Double { get set }
-  var cameraAltitude: Double { get set }
-  var cameraHeading: Double { get set }
-  var cameraPitch: Double { get set }
-  var cameraRoll: Double { get set }
-  var cameraVerticalFovDeg: Double { get set }
-  var debugOverlay: Bool { get set }
+  var initialCamera: CameraState { get set }
   var pauseRendering: Bool { get set }
   var maximumScreenSpaceError: Double { get set }
   var maximumSimultaneousTileLoads: Double { get set }
   var loadingDescendantLimit: Double { get set }
   var msaaSampleCount: Double { get set }
-  var showCredits: Bool { get set }
   var ionImageryAssetId: Double { get set }
   var onMetrics: ((_ metrics: CesiumMetrics) -> Void)? { get set }
 
   // Methods
   func getCameraState() throws -> Promise<CameraState>
-  func flyTo(latitude: Double, longitude: Double, altitude: Double, heading: Double, pitch: Double, roll: Double, durationSeconds: Double) throws -> Void
-  func lookAt(targetLatitude: Double, targetLongitude: Double, targetAltitude: Double, durationSeconds: Double) throws -> Void
+  func setCamera(camera: CameraState) throws -> Void
 }
 
 public extension HybridCesiumViewSpec_protocol {

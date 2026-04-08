@@ -37,6 +37,7 @@ struct SkyUniforms {
 
 struct OverlayParamsCPP {
   uint32_t hasOverlay;
+  uint32_t isEllipsoidFallback;
   float    translation[2];
   float    scale[2];
 };
@@ -55,7 +56,6 @@ struct TerrainVOut {
   float4 position [[position]];
   float3 eyeRelPos;
   float2 uv;           // overlay UV coordinates
-  float  alt;          // geodetic altitude (computed on CPU in double precision)
 };
 
 float ellipsoidHeightMeters(float3 p) {
@@ -90,20 +90,19 @@ vertex TerrainVOut terrainVertex(
     uint vid [[vertex_id]],
     const device packed_float3* pos  [[buffer(0)]],
     constant TerrainUniforms& u      [[buffer(1)]],
-    const device packed_float2* uvs  [[buffer(2)]],
-    const device float* alts         [[buffer(3)]])
+    const device packed_float2* uvs  [[buffer(2)]])
 {
   TerrainVOut o;
   float3 ep=float3(pos[vid]);
   o.position=u.vpMatrix*float4(ep,1.f);
   o.eyeRelPos=ep;
   o.uv=float2(uvs[vid]);
-  o.alt=alts[vid];
   return o;
 }
 
 struct OverlayParams {
   uint  hasOverlay;
+  uint  isEllipsoidFallback;
   float translation[2];
   float scale[2];
 };
@@ -133,7 +132,8 @@ fragment float4 terrainFragment(
   float diff=saturate(dot(n,sun));
   float amb=.18f, rim=saturate(1.f-dot(n,vd))*.06f;
   float steep=1.f-saturate(abs(dot(n,gu)));
-  float3 base=hypsometricColor(in.alt,steep);
+  float alt=(ov.isEllipsoidFallback != 0u) ? 0.f : ellipsoidHeightMeters(wp);
+  float3 base=hypsometricColor(alt,steep);
   float3 lit=base*(amb+diff*.72f+rim);
 
   // 1km grid aligned to lat/lon
@@ -266,8 +266,8 @@ MetalBackend::MetalBackend()
       currentEncoder_(nullptr),
       frameSemaphore_(nullptr), frameIndex_(0) {
   for (int i = 0; i < kMaxFramesInFlight; ++i) {
-    vtxBufs_[i] = idxBufs_[i] = uvBufs_[i] = altBufs_[i] = nullptr;
-    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = altCaps_[i] = 0;
+    vtxBufs_[i] = idxBufs_[i] = uvBufs_[i] = nullptr;
+    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = 0;
   }
 }
 
@@ -405,8 +405,7 @@ void MetalBackend::shutdown() {
     if (vtxBufs_[i]) { CFRelease(vtxBufs_[i]); vtxBufs_[i] = nullptr; }
     if (idxBufs_[i]) { CFRelease(idxBufs_[i]); idxBufs_[i] = nullptr; }
     if (uvBufs_[i])  { CFRelease(uvBufs_[i]);  uvBufs_[i]  = nullptr; }
-    if (altBufs_[i]) { CFRelease(altBufs_[i]); altBufs_[i] = nullptr; }
-    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = altCaps_[i] = 0;
+    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = 0;
   }
 
   if (device_)            { CFRelease(device_);            device_           = nullptr; }
@@ -592,7 +591,6 @@ void MetalBackend::drawScene(const FrameResult& frame) {
   const size_t vtxBytes = frame.eyeRelPositions.size() * sizeof(float);
   const size_t idxBytes = frame.indices.size()         * sizeof(uint32_t);
   const size_t uvBytes  = frame.uvs.size()             * sizeof(float);
-  const size_t altBytes = frame.altitudes.size()       * sizeof(float);
 
   id<MTLBuffer> vtxBuf = ensureBuffer(&vtxBufs_[fi], &vtxCaps_[fi],
                                        vtxBytes, frame.eyeRelPositions.data(), dev);
@@ -600,8 +598,6 @@ void MetalBackend::drawScene(const FrameResult& frame) {
                                        idxBytes, frame.indices.data(), dev);
   id<MTLBuffer> uvBuf  = ensureBuffer(&uvBufs_[fi],  &uvCaps_[fi],
                                        uvBytes,  frame.uvs.data(), dev);
-  id<MTLBuffer> altBuf = ensureBuffer(&altBufs_[fi], &altCaps_[fi],
-                                       altBytes, frame.altitudes.data(), dev);
 
   if (!vtxBuf || !idxBuf) return;
 
@@ -620,7 +616,6 @@ void MetalBackend::drawScene(const FrameResult& frame) {
   [enc setVertexBuffer:vtxBuf offset:0 atIndex:0];
   [enc setVertexBytes:&terrU length:sizeof(terrU) atIndex:1];
   if (uvBuf) [enc setVertexBuffer:uvBuf offset:0 atIndex:2];
-  if (altBuf) [enc setVertexBuffer:altBuf offset:0 atIndex:3];
   [enc setFragmentBytes:&terrU length:sizeof(terrU) atIndex:0];
 
   id<MTLTexture> fallbackTex = (__bridge id<MTLTexture>)fallbackTexture_;
@@ -630,6 +625,7 @@ void MetalBackend::drawScene(const FrameResult& frame) {
 
     OverlayParamsCPP ov{};
     ov.hasOverlay = (draw.overlayTexture && draw.hasUVs) ? 1u : 0u;
+    ov.isEllipsoidFallback = draw.isEllipsoidFallback ? 1u : 0u;
     ov.translation[0] = draw.overlayTranslation.x;
     ov.translation[1] = draw.overlayTranslation.y;
     ov.scale[0]       = draw.overlayScale.x;

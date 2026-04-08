@@ -45,37 +45,9 @@ void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     hybridView->setIonAssetId(props->ionAssetId.value);
     props->ionAssetId.isDirty = false;
   }
-  if (props->cameraLatitude.isDirty) {
-    hybridView->setCameraLatitude(props->cameraLatitude.value);
-    props->cameraLatitude.isDirty = false;
-  }
-  if (props->cameraLongitude.isDirty) {
-    hybridView->setCameraLongitude(props->cameraLongitude.value);
-    props->cameraLongitude.isDirty = false;
-  }
-  if (props->cameraAltitude.isDirty) {
-    hybridView->setCameraAltitude(props->cameraAltitude.value);
-    props->cameraAltitude.isDirty = false;
-  }
-  if (props->cameraHeading.isDirty) {
-    hybridView->setCameraHeading(props->cameraHeading.value);
-    props->cameraHeading.isDirty = false;
-  }
-  if (props->cameraPitch.isDirty) {
-    hybridView->setCameraPitch(props->cameraPitch.value);
-    props->cameraPitch.isDirty = false;
-  }
-  if (props->cameraRoll.isDirty) {
-    hybridView->setCameraRoll(props->cameraRoll.value);
-    props->cameraRoll.isDirty = false;
-  }
-  if (props->cameraVerticalFovDeg.isDirty) {
-    hybridView->setCameraVerticalFovDeg(props->cameraVerticalFovDeg.value);
-    props->cameraVerticalFovDeg.isDirty = false;
-  }
-  if (props->debugOverlay.isDirty) {
-    hybridView->setDebugOverlay(props->debugOverlay.value);
-    props->debugOverlay.isDirty = false;
+  if (props->initialCamera.isDirty) {
+    hybridView->setInitialCamera(props->initialCamera.value);
+    props->initialCamera.isDirty = false;
   }
   if (props->pauseRendering.isDirty) {
     hybridView->setPauseRendering(props->pauseRendering.value);
@@ -96,10 +68,6 @@ void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
   if (props->msaaSampleCount.isDirty) {
     hybridView->setMsaaSampleCount(props->msaaSampleCount.value);
     props->msaaSampleCount.isDirty = false;
-  }
-  if (props->showCredits.isDirty) {
-    hybridView->setShowCredits(props->showCredits.value);
-    props->showCredits.isDirty = false;
   }
   if (props->ionImageryAssetId.isDirty) {
     hybridView->setIonImageryAssetId(props->ionImageryAssetId.value);

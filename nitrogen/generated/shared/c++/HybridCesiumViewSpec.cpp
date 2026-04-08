@@ -18,22 +18,8 @@ namespace margelo::nitro::reactnativecesium {
       prototype.registerHybridSetter("ionAccessToken", &HybridCesiumViewSpec::setIonAccessToken);
       prototype.registerHybridGetter("ionAssetId", &HybridCesiumViewSpec::getIonAssetId);
       prototype.registerHybridSetter("ionAssetId", &HybridCesiumViewSpec::setIonAssetId);
-      prototype.registerHybridGetter("cameraLatitude", &HybridCesiumViewSpec::getCameraLatitude);
-      prototype.registerHybridSetter("cameraLatitude", &HybridCesiumViewSpec::setCameraLatitude);
-      prototype.registerHybridGetter("cameraLongitude", &HybridCesiumViewSpec::getCameraLongitude);
-      prototype.registerHybridSetter("cameraLongitude", &HybridCesiumViewSpec::setCameraLongitude);
-      prototype.registerHybridGetter("cameraAltitude", &HybridCesiumViewSpec::getCameraAltitude);
-      prototype.registerHybridSetter("cameraAltitude", &HybridCesiumViewSpec::setCameraAltitude);
-      prototype.registerHybridGetter("cameraHeading", &HybridCesiumViewSpec::getCameraHeading);
-      prototype.registerHybridSetter("cameraHeading", &HybridCesiumViewSpec::setCameraHeading);
-      prototype.registerHybridGetter("cameraPitch", &HybridCesiumViewSpec::getCameraPitch);
-      prototype.registerHybridSetter("cameraPitch", &HybridCesiumViewSpec::setCameraPitch);
-      prototype.registerHybridGetter("cameraRoll", &HybridCesiumViewSpec::getCameraRoll);
-      prototype.registerHybridSetter("cameraRoll", &HybridCesiumViewSpec::setCameraRoll);
-      prototype.registerHybridGetter("cameraVerticalFovDeg", &HybridCesiumViewSpec::getCameraVerticalFovDeg);
-      prototype.registerHybridSetter("cameraVerticalFovDeg", &HybridCesiumViewSpec::setCameraVerticalFovDeg);
-      prototype.registerHybridGetter("debugOverlay", &HybridCesiumViewSpec::getDebugOverlay);
-      prototype.registerHybridSetter("debugOverlay", &HybridCesiumViewSpec::setDebugOverlay);
+      prototype.registerHybridGetter("initialCamera", &HybridCesiumViewSpec::getInitialCamera);
+      prototype.registerHybridSetter("initialCamera", &HybridCesiumViewSpec::setInitialCamera);
       prototype.registerHybridGetter("pauseRendering", &HybridCesiumViewSpec::getPauseRendering);
       prototype.registerHybridSetter("pauseRendering", &HybridCesiumViewSpec::setPauseRendering);
       prototype.registerHybridGetter("maximumScreenSpaceError", &HybridCesiumViewSpec::getMaximumScreenSpaceError);
@@ -44,15 +30,12 @@ namespace margelo::nitro::reactnativecesium {
       prototype.registerHybridSetter("loadingDescendantLimit", &HybridCesiumViewSpec::setLoadingDescendantLimit);
       prototype.registerHybridGetter("msaaSampleCount", &HybridCesiumViewSpec::getMsaaSampleCount);
       prototype.registerHybridSetter("msaaSampleCount", &HybridCesiumViewSpec::setMsaaSampleCount);
-      prototype.registerHybridGetter("showCredits", &HybridCesiumViewSpec::getShowCredits);
-      prototype.registerHybridSetter("showCredits", &HybridCesiumViewSpec::setShowCredits);
       prototype.registerHybridGetter("ionImageryAssetId", &HybridCesiumViewSpec::getIonImageryAssetId);
       prototype.registerHybridSetter("ionImageryAssetId", &HybridCesiumViewSpec::setIonImageryAssetId);
       prototype.registerHybridGetter("onMetrics", &HybridCesiumViewSpec::getOnMetrics);
       prototype.registerHybridSetter("onMetrics", &HybridCesiumViewSpec::setOnMetrics);
       prototype.registerHybridMethod("getCameraState", &HybridCesiumViewSpec::getCameraState);
-      prototype.registerHybridMethod("flyTo", &HybridCesiumViewSpec::flyTo);
-      prototype.registerHybridMethod("lookAt", &HybridCesiumViewSpec::lookAt);
+      prototype.registerHybridMethod("setCamera", &HybridCesiumViewSpec::setCamera);
     });
   }
 

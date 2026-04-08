@@ -89,45 +89,10 @@ using namespace margelo::nitro::reactnativecesium::views;
     swiftPart.setIonAssetId(newViewProps.ionAssetId.value);
     newViewProps.ionAssetId.isDirty = false;
   }
-  // cameraLatitude: number
-  if (newViewProps.cameraLatitude.isDirty) {
-    swiftPart.setCameraLatitude(newViewProps.cameraLatitude.value);
-    newViewProps.cameraLatitude.isDirty = false;
-  }
-  // cameraLongitude: number
-  if (newViewProps.cameraLongitude.isDirty) {
-    swiftPart.setCameraLongitude(newViewProps.cameraLongitude.value);
-    newViewProps.cameraLongitude.isDirty = false;
-  }
-  // cameraAltitude: number
-  if (newViewProps.cameraAltitude.isDirty) {
-    swiftPart.setCameraAltitude(newViewProps.cameraAltitude.value);
-    newViewProps.cameraAltitude.isDirty = false;
-  }
-  // cameraHeading: number
-  if (newViewProps.cameraHeading.isDirty) {
-    swiftPart.setCameraHeading(newViewProps.cameraHeading.value);
-    newViewProps.cameraHeading.isDirty = false;
-  }
-  // cameraPitch: number
-  if (newViewProps.cameraPitch.isDirty) {
-    swiftPart.setCameraPitch(newViewProps.cameraPitch.value);
-    newViewProps.cameraPitch.isDirty = false;
-  }
-  // cameraRoll: number
-  if (newViewProps.cameraRoll.isDirty) {
-    swiftPart.setCameraRoll(newViewProps.cameraRoll.value);
-    newViewProps.cameraRoll.isDirty = false;
-  }
-  // cameraVerticalFovDeg: number
-  if (newViewProps.cameraVerticalFovDeg.isDirty) {
-    swiftPart.setCameraVerticalFovDeg(newViewProps.cameraVerticalFovDeg.value);
-    newViewProps.cameraVerticalFovDeg.isDirty = false;
-  }
-  // debugOverlay: boolean
-  if (newViewProps.debugOverlay.isDirty) {
-    swiftPart.setDebugOverlay(newViewProps.debugOverlay.value);
-    newViewProps.debugOverlay.isDirty = false;
+  // initialCamera: struct
+  if (newViewProps.initialCamera.isDirty) {
+    swiftPart.setInitialCamera(newViewProps.initialCamera.value);
+    newViewProps.initialCamera.isDirty = false;
   }
   // pauseRendering: boolean
   if (newViewProps.pauseRendering.isDirty) {
@@ -153,11 +118,6 @@ using namespace margelo::nitro::reactnativecesium::views;
   if (newViewProps.msaaSampleCount.isDirty) {
     swiftPart.setMsaaSampleCount(newViewProps.msaaSampleCount.value);
     newViewProps.msaaSampleCount.isDirty = false;
-  }
-  // showCredits: boolean
-  if (newViewProps.showCredits.isDirty) {
-    swiftPart.setShowCredits(newViewProps.showCredits.value);
-    newViewProps.showCredits.isDirty = false;
   }
   // ionImageryAssetId: number
   if (newViewProps.ionImageryAssetId.isDirty) {

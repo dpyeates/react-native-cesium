@@ -1,22 +1,26 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   StatusBar,
   StyleSheet,
-  View,
   Text,
   TouchableOpacity,
+  View,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import type { FrameInfo } from 'react-native-reanimated';
 import {
-  useSharedValue,
   useAnimatedReaction,
   useFrameCallback,
+  useSharedValue,
 } from 'react-native-reanimated';
-import type { FrameInfo } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { callback } from 'react-native-nitro-modules';
+import type {
+  CameraState,
+  CesiumMetrics,
+  CesiumViewMethods,
+} from 'react-native-cesium';
 import { CesiumView } from 'react-native-cesium';
-import type { CesiumMetrics, CesiumViewMethods } from 'react-native-cesium';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
@@ -29,18 +33,15 @@ import { MapGestureHandler } from './components/MapGestureHandler';
 const ION_ACCESS_TOKEN =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJhZGIzMGE2My1iODU3LTRkMzYtOTBmOS0wOGFjMWFkZmZiODIiLCJpZCI6MTcxMDczLCJpYXQiOjE3NzM4MjU0Mjd9.cckmnJRd3YpQYQGs7Y7_2YwcVco5elP3Gqhpj1tnoHs';
 
-// ── Initial camera ────────────────────────────────────────────────────────────
-
-const INIT_LAT = 46.02;
-const INIT_LON = 7.6;
-const INIT_ALT = 5800;
-const INIT_HDG = 220;
-const INIT_PITCH = -20;
-const INIT_ROLL = 0;
-
-const CREDITS_BAR_HEIGHT = 26;
-
-// ── Main App ──────────────────────────────────────────────────────────────────
+const INITIAL_CAMERA: CameraState = {
+  latitude: 46.02,
+  longitude: 7.6,
+  altitude: 5800,
+  heading: 220,
+  pitch: -20,
+  roll: 0,
+  verticalFovDeg: 60,
+};
 
 function AppContent() {
   const insets = useSafeAreaInsets();
@@ -49,48 +50,15 @@ function AppContent() {
   const [credits, setCredits] = useState('');
   const [creditsExpanded, setCreditsExpanded] = useState(false);
 
-  // ── Terrain height shared value (updated from onMetrics ~3fps) ───────────
-  const terrainHeight = useSharedValue(0);
-
-  // ── Camera shared values (UI-thread, drives gestures + animations) ─────────
-  const camLat   = useSharedValue(INIT_LAT);
-  const camLon   = useSharedValue(INIT_LON);
-  const camAlt   = useSharedValue(INIT_ALT);
-  const camHdg   = useSharedValue(INIT_HDG);
-  const camPitch = useSharedValue(INIT_PITCH);
-  const camRoll  = useSharedValue(INIT_ROLL);
+  // ── Camera shared demand (UI-thread, drives gestures + animations) ─────────
+  const camera = useSharedValue<CameraState>(INITIAL_CAMERA);
 
   const joystickPitchRate = useSharedValue(0);
-  const joystickRollRate  = useSharedValue(0);
+  const joystickRollRate = useSharedValue(0);
 
-  // Snapshots taken at the start of each gesture to compute absolute deltas.
-  const snapLat = useSharedValue(INIT_LAT);
-  const snapLon = useSharedValue(INIT_LON);
-  const snapAlt = useSharedValue(INIT_ALT);
-  const snapHdg = useSharedValue(INIT_HDG);
-
-  const [camState, setCamState] = useState({
-    lat:   INIT_LAT,
-    lon:   INIT_LON,
-    alt:   INIT_ALT,
-    hdg:   INIT_HDG,
-    pitch: INIT_PITCH,
-    roll:  INIT_ROLL,
-  });
-
-  const applyCamera = useCallback(
-    (
-      lat: number,
-      lon: number,
-      alt: number,
-      hdg: number,
-      pitch: number,
-      roll: number,
-    ) => {
-      setCamState({ lat, lon, alt, hdg, pitch, roll });
-    },
-    [],
-  );
+  const applyCameraToNative = useCallback((nextCamera: CameraState) => {
+    nativeRef.current?.setCamera(nextCamera);
+  }, []);
 
   // Joystick rates → pitch/roll. Both wrap ±180°; pitch loops like an aircraft.
   const integrateJoystick = useCallback(
@@ -104,57 +72,40 @@ function AppContent() {
       const pr = joystickPitchRate.value;
       const rr = joystickRollRate.value;
       if (pr === 0 && rr === 0) return;
-      let p = camPitch.value + pr * dt;
-      let r = camRoll.value + rr * dt;
+      const cur = camera.value;
+      let p = cur.pitch + pr * dt;
+      let r = cur.roll + rr * dt;
       while (p > 180) p -= 360;
       while (p < -180) p += 360;
       while (r > 180) r -= 360;
       while (r < -180) r += 360;
-      camPitch.value = p;
-      camRoll.value = r;
+      camera.value = { ...cur, pitch: p, roll: r };
     },
-    [joystickPitchRate, joystickRollRate, camPitch, camRoll],
+    [joystickPitchRate, joystickRollRate, camera],
   );
 
   useFrameCallback(integrateJoystick);
 
-  // All 6 DOF → React props → native demand target.
+  // Bridge UI-thread camera shared value to native imperative method.
   useAnimatedReaction(
     () => ({
-      lat:   camLat.value,
-      lon:   camLon.value,
-      alt:   camAlt.value,
-      hdg:   camHdg.value,
-      pitch: camPitch.value,
-      roll:  camRoll.value,
+      latitude: camera.value.latitude,
+      longitude: camera.value.longitude,
+      altitude: camera.value.altitude,
+      heading: camera.value.heading,
+      pitch: camera.value.pitch,
+      roll: camera.value.roll,
+      verticalFovDeg: camera.value.verticalFovDeg,
     }),
-    (cur, prev) => {
-      if (
-        !prev ||
-        cur.lat   !== prev.lat   ||
-        cur.lon   !== prev.lon   ||
-        cur.alt   !== prev.alt   ||
-        cur.hdg   !== prev.hdg   ||
-        cur.pitch !== prev.pitch ||
-        cur.roll  !== prev.roll
-      ) {
-        scheduleOnRN(
-          applyCamera,
-          cur.lat,
-          cur.lon,
-          cur.alt,
-          cur.hdg,
-          cur.pitch,
-          cur.roll,
-        );
-      }
+    (cur) => {
+      scheduleOnRN(applyCameraToNative, cur);
     },
   );
 
   const handleJoystickRates = useCallback(
     (pitchRate: number, rollRate: number) => {
       joystickPitchRate.value = pitchRate;
-      joystickRollRate.value  = rollRate;
+      joystickRollRate.value = rollRate;
     },
     [joystickPitchRate, joystickRollRate],
   );
@@ -162,26 +113,15 @@ function AppContent() {
   const handleMetrics = useCallback(
     (m: CesiumMetrics) => {
       setCredits(m.creditsPlainText);
-      terrainHeight.value = m.terrainHeightBelowCamera;
     },
-    [terrainHeight],
+    [],
   );
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      <MapGestureHandler
-        camLat={camLat}
-        camLon={camLon}
-        camAlt={camAlt}
-        camHdg={camHdg}
-        snapLat={snapLat}
-        snapLon={snapLon}
-        snapAlt={snapAlt}
-        snapHdg={snapHdg}
-        terrainHeight={terrainHeight}
-      >
+      <MapGestureHandler camera={camera}>
         <CesiumView
           hybridRef={callback((ref: CesiumViewMethods | null) => {
             nativeRef.current = ref;
@@ -189,20 +129,12 @@ function AppContent() {
           style={styles.map}
           ionAccessToken={ION_ACCESS_TOKEN}
           ionAssetId={1}
-          cameraLatitude={camState.lat}
-          cameraLongitude={camState.lon}
-          cameraAltitude={camState.alt}
-          cameraHeading={camState.hdg}
-          cameraPitch={camState.pitch}
-          cameraRoll={camState.roll}
-          cameraVerticalFovDeg={60}
-          debugOverlay={false}
+          initialCamera={INITIAL_CAMERA}
           pauseRendering={false}
           maximumScreenSpaceError={16}
           maximumSimultaneousTileLoads={8}
           loadingDescendantLimit={20}
           msaaSampleCount={1}
-          showCredits={true}
           ionImageryAssetId={imageryAssetId}
           onMetrics={callback(handleMetrics)}
         />
@@ -216,7 +148,7 @@ function AppContent() {
             bottom:
               insets.bottom +
               16 +
-              (credits.length > 0 ? CREDITS_BAR_HEIGHT + 8 : 0),
+              (credits.length > 0 ? 24 : 0),
           },
         ]}
       >

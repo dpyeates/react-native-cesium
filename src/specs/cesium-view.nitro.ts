@@ -24,48 +24,28 @@ export interface CesiumMetrics {
   ionTokenConfigured: boolean
   tilesetReady: boolean
   creditsPlainText: string
-  terrainHeightBelowCamera: number
 }
 
 export interface CesiumViewProps extends HybridViewProps {
   ionAccessToken: string
   ionAssetId: number
-  cameraLatitude: number
-  cameraLongitude: number
-  cameraAltitude: number
-  cameraHeading: number
-  cameraPitch: number
-  cameraRoll: number
-  cameraVerticalFovDeg: number
-  debugOverlay: boolean
+  /** Construction-time seed camera. Use `setCamera()` for runtime updates. */
+  initialCamera: CameraState
   pauseRendering: boolean
   maximumScreenSpaceError: number
   maximumSimultaneousTileLoads: number
   loadingDescendantLimit: number
   /** 1 = off; 2 or 4 = MSAA when supported. */
   msaaSampleCount: number
-  showCredits: boolean
   ionImageryAssetId: number
   onMetrics?: (metrics: CesiumMetrics) => void
 }
 
 export interface CesiumViewMethods extends HybridViewMethods {
+  /** Returns the current native camera state. */
   getCameraState(): Promise<CameraState>
-  flyTo(
-    latitude: number,
-    longitude: number,
-    altitude: number,
-    heading: number,
-    pitch: number,
-    roll: number,
-    durationSeconds: number
-  ): void
-  lookAt(
-    targetLatitude: number,
-    targetLongitude: number,
-    targetAltitude: number,
-    durationSeconds: number
-  ): void
+  /** Runtime camera control path after the view has been created. */
+  setCamera(camera: CameraState): void
 }
 
 export type CesiumView = HybridView<CesiumViewProps, CesiumViewMethods>

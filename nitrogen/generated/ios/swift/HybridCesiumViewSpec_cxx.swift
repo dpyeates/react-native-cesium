@@ -143,91 +143,14 @@ open class HybridCesiumViewSpec_cxx {
     }
   }
   
-  public final var cameraLatitude: Double {
+  public final var initialCamera: CameraState {
     @inline(__always)
     get {
-      return self.__implementation.cameraLatitude
+      return self.__implementation.initialCamera
     }
     @inline(__always)
     set {
-      self.__implementation.cameraLatitude = newValue
-    }
-  }
-  
-  public final var cameraLongitude: Double {
-    @inline(__always)
-    get {
-      return self.__implementation.cameraLongitude
-    }
-    @inline(__always)
-    set {
-      self.__implementation.cameraLongitude = newValue
-    }
-  }
-  
-  public final var cameraAltitude: Double {
-    @inline(__always)
-    get {
-      return self.__implementation.cameraAltitude
-    }
-    @inline(__always)
-    set {
-      self.__implementation.cameraAltitude = newValue
-    }
-  }
-  
-  public final var cameraHeading: Double {
-    @inline(__always)
-    get {
-      return self.__implementation.cameraHeading
-    }
-    @inline(__always)
-    set {
-      self.__implementation.cameraHeading = newValue
-    }
-  }
-  
-  public final var cameraPitch: Double {
-    @inline(__always)
-    get {
-      return self.__implementation.cameraPitch
-    }
-    @inline(__always)
-    set {
-      self.__implementation.cameraPitch = newValue
-    }
-  }
-  
-  public final var cameraRoll: Double {
-    @inline(__always)
-    get {
-      return self.__implementation.cameraRoll
-    }
-    @inline(__always)
-    set {
-      self.__implementation.cameraRoll = newValue
-    }
-  }
-  
-  public final var cameraVerticalFovDeg: Double {
-    @inline(__always)
-    get {
-      return self.__implementation.cameraVerticalFovDeg
-    }
-    @inline(__always)
-    set {
-      self.__implementation.cameraVerticalFovDeg = newValue
-    }
-  }
-  
-  public final var debugOverlay: Bool {
-    @inline(__always)
-    get {
-      return self.__implementation.debugOverlay
-    }
-    @inline(__always)
-    set {
-      self.__implementation.debugOverlay = newValue
+      self.__implementation.initialCamera = newValue
     }
   }
   
@@ -283,17 +206,6 @@ open class HybridCesiumViewSpec_cxx {
     @inline(__always)
     set {
       self.__implementation.msaaSampleCount = newValue
-    }
-  }
-  
-  public final var showCredits: Bool {
-    @inline(__always)
-    get {
-      return self.__implementation.showCredits
-    }
-    @inline(__always)
-    set {
-      self.__implementation.showCredits = newValue
     }
   }
   
@@ -361,20 +273,9 @@ open class HybridCesiumViewSpec_cxx {
   }
   
   @inline(__always)
-  public final func flyTo(latitude: Double, longitude: Double, altitude: Double, heading: Double, pitch: Double, roll: Double, durationSeconds: Double) -> bridge.Result_void_ {
+  public final func setCamera(camera: CameraState) -> bridge.Result_void_ {
     do {
-      try self.__implementation.flyTo(latitude: latitude, longitude: longitude, altitude: altitude, heading: heading, pitch: pitch, roll: roll, durationSeconds: durationSeconds)
-      return bridge.create_Result_void_()
-    } catch (let __error) {
-      let __exceptionPtr = __error.toCpp()
-      return bridge.create_Result_void_(__exceptionPtr)
-    }
-  }
-  
-  @inline(__always)
-  public final func lookAt(targetLatitude: Double, targetLongitude: Double, targetAltitude: Double, durationSeconds: Double) -> bridge.Result_void_ {
-    do {
-      try self.__implementation.lookAt(targetLatitude: targetLatitude, targetLongitude: targetLongitude, targetAltitude: targetAltitude, durationSeconds: durationSeconds)
+      try self.__implementation.setCamera(camera: camera)
       return bridge.create_Result_void_()
     } catch (let __error) {
       let __exceptionPtr = __error.toCpp()

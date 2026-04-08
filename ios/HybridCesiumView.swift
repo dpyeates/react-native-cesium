@@ -14,36 +14,25 @@ class HybridCesiumView: HybridCesiumViewSpec {
     didSet { bridge?.updateIonAccessToken(ionAccessToken, assetId: Int64(ionAssetId)) }
   }
 
-  var cameraLatitude: Double = 46.15 {
-    didSet { pushFullCameraFromProps() }
-  }
-  var cameraLongitude: Double = 7.35 {
-    didSet { pushFullCameraFromProps() }
-  }
-  var cameraAltitude: Double = 12_000 {
-    didSet { pushFullCameraFromProps() }
-  }
-  var cameraHeading: Double = 129 {
-    didSet { pushFullCameraFromProps() }
-  }
-  var cameraPitch: Double = -45 {
-    didSet { pushFullCameraFromProps() }
-  }
-  var cameraRoll: Double = 0 {
-    didSet { pushFullCameraFromProps() }
-  }
-
-  var cameraVerticalFovDeg: Double = 60 {
-    didSet { bridge?.setVerticalFovDeg(cameraVerticalFovDeg) }
-  }
-  var debugOverlay: Bool = false {
-    didSet { bridge?.setDebugOverlay(debugOverlay) }
-  }
-  var showCredits: Bool = true {
-    didSet { bridge?.setShowCredits(showCredits) }
-  }
+  /// Construction-time seed camera. Once the bridge exists, use `setCamera(_:)`
+  /// for runtime updates; later prop writes are stored but do not drive the
+  /// active native camera.
+  var initialCamera: CameraState = CameraState(
+    latitude: 46.15,
+    longitude: 7.35,
+    altitude: 12000,
+    heading: 129,
+    pitch: -45,
+    roll: 0,
+    verticalFovDeg: 60
+  )
   var pauseRendering: Bool = false {
-    didSet { displayLink?.isPaused = pauseRendering }
+    didSet {
+      displayLink?.isPaused = pauseRendering
+      if !pauseRendering {
+        bridge?.markNeedsRender()
+      }
+    }
   }
 
   var maximumScreenSpaceError: Double = 32 {
@@ -91,38 +80,11 @@ class HybridCesiumView: HybridCesiumViewSpec {
     return Promise.resolved(withResult: s)
   }
 
-  func flyTo(
-    latitude: Double,
-    longitude: Double,
-    altitude: Double,
-    heading: Double,
-    pitch: Double,
-    roll: Double,
-    durationSeconds: Double
-  ) throws {
-    bridge?.fly(
-      toLatitude: latitude,
-      longitude: longitude,
-      altitude: altitude,
-      heading: heading,
-      pitch: pitch,
-      roll: roll,
-      durationSeconds: durationSeconds
-    )
-  }
-
-  func lookAt(
-    targetLatitude: Double,
-    targetLongitude: Double,
-    targetAltitude: Double,
-    durationSeconds: Double
-  ) throws {
-    bridge?.look(
-      atTargetLatitude: targetLatitude,
-      longitude: targetLongitude,
-      altitude: targetAltitude,
-      durationSeconds: durationSeconds
-    )
+  func setCamera(camera: CameraState) throws {
+    // Runtime camera updates flow through this method; if the view is not ready
+    // yet we keep the latest value and apply it during initialization.
+    initialCamera = camera
+    pushCameraStateIfChanged(camera)
   }
 
   // MARK: - View
@@ -132,6 +94,10 @@ class HybridCesiumView: HybridCesiumViewSpec {
   private var displayLink: CADisplayLink?
   private var layoutPollTimer: Timer?
   private var metricsFrameCounter: Int = 0
+  private var idleProbeAccumulator: Double = 0
+  private var usingLowRefreshRate = false
+  private var hasConfiguredFrameRate = false
+  private var lastPushedCameraState: CameraState?
 
   var view: UIView { metalView }
 
@@ -165,7 +131,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
       }
     }
     ensureInitialized()
-    bridge?.setShowCredits(showCredits)
   }
 
   private func ensureInitialized() {
@@ -193,8 +158,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
     if !ionAccessToken.isEmpty {
       bridge?.updateIonAccessToken(ionAccessToken, assetId: Int64(ionAssetId))
     }
-    pushFullCameraFromProps()
-    bridge?.setVerticalFovDeg(cameraVerticalFovDeg)
+    pushCameraStateIfChanged(initialCamera)
     if ionImageryAssetId != 1 {
       bridge?.updateImageryAssetId(Int64(ionImageryAssetId))
     }
@@ -224,37 +188,56 @@ class HybridCesiumView: HybridCesiumViewSpec {
     bridge?.setMaximumScreenSpaceError(maximumScreenSpaceError)
     bridge?.setMaximumSimultaneousTileLoads(Int32(maximumSimultaneousTileLoads))
     bridge?.setLoadingDescendantLimit(Int32(loadingDescendantLimit))
-    bridge?.setDebugOverlay(debugOverlay)
-    bridge?.setShowCredits(showCredits)
   }
 
-  /// All 6 DOF from React props → demand target in the native bridge.
-  /// The bridge's per-frame smooth follower handles transitions.
-  private func pushFullCameraFromProps() {
+  /// Pushes camera state into native bridge only when values changed.
+  private func pushCameraStateIfChanged(_ camera: CameraState) {
+    guard bridge != nil else { return }
+    if let last = lastPushedCameraState,
+       last.latitude == camera.latitude,
+       last.longitude == camera.longitude,
+       last.altitude == camera.altitude,
+       last.heading == camera.heading,
+       last.pitch == camera.pitch,
+       last.roll == camera.roll,
+       last.verticalFovDeg == camera.verticalFovDeg {
+      return
+    }
+    lastPushedCameraState = camera
     bridge?.updateCameraLatitude(
-      cameraLatitude,
-      longitude: cameraLongitude,
-      altitude: cameraAltitude,
-      heading: cameraHeading,
-      pitch: cameraPitch,
-      roll: cameraRoll
+      camera.latitude,
+      longitude: camera.longitude,
+      altitude: camera.altitude,
+      heading: camera.heading,
+      pitch: camera.pitch,
+      roll: camera.roll
     )
+    bridge?.setVerticalFovDeg(camera.verticalFovDeg)
   }
 
   // MARK: - Render Loop
 
   private func startRenderLoop() {
     displayLink = CADisplayLink(target: self, selector: #selector(renderFrame))
-    displayLink?.preferredFrameRateRange = CAFrameRateRange(
-      minimum: 30, maximum: 60, preferred: 60
-    )
+    setDisplayLinkFrameRate(idle: false)
     displayLink?.add(to: .main, forMode: .common)
     displayLink?.isPaused = pauseRendering
+  }
+
+  private func setDisplayLinkFrameRate(idle: Bool) {
+    guard let dl = displayLink else { return }
+    if hasConfiguredFrameRate && usingLowRefreshRate == idle { return }
+    hasConfiguredFrameRate = true
+    usingLowRefreshRate = idle
+    dl.preferredFrameRateRange = idle
+      ? CAFrameRateRange(minimum: 5, maximum: 15, preferred: 10)
+      : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
   }
 
   @objc private func renderFrame() {
     guard !pauseRendering,
           let dl = displayLink,
+          let bridge,
           let metalLayer = metalView.layer as? CAMetalLayer else { return }
 
     let dt = max(dl.targetTimestamp - dl.timestamp, 1.0 / 120.0)
@@ -266,24 +249,37 @@ class HybridCesiumView: HybridCesiumViewSpec {
     if w > 0 && h > 0 {
       let layerSize = metalLayer.drawableSize
       if Int(layerSize.width) != w || Int(layerSize.height) != h {
-        bridge?.resize(Int32(w), height: Int32(h))
+        bridge.resize(Int32(w), height: Int32(h))
+        bridge.markNeedsRender()
       }
     }
 
-    bridge?.renderFrame(withDt: dt)
+    let shouldRenderNow = bridge.shouldRenderNextFrame()
+    if shouldRenderNow {
+      setDisplayLinkFrameRate(idle: false)
+      idleProbeAccumulator = 0
+      bridge.renderFrame(withDt: dt)
+    } else {
+      setDisplayLinkFrameRate(idle: true)
+      idleProbeAccumulator += dt
+      if idleProbeAccumulator >= 0.25 {
+        // Safety probe: occasionally tick engine state for late tile completions.
+        idleProbeAccumulator = 0
+        bridge.markNeedsRender()
+      }
+    }
 
     metricsFrameCounter += 1
-    if metricsFrameCounter >= 20, let b = bridge, let cb = onMetrics {
+    if metricsFrameCounter >= 20, let cb = onMetrics {
       metricsFrameCounter = 0
       let m = CesiumMetrics(
-        fps: b.metricsFps,
-        tilesRendered: Double(b.metricsTilesRendered),
-        tilesLoading: Double(b.metricsTilesLoading),
-        tilesVisited: Double(b.metricsTilesVisited),
-        ionTokenConfigured: b.metricsIonTokenConfigured,
-        tilesetReady: b.metricsTilesetReady,
-        creditsPlainText: showCredits ? b.metricsCreditsPlainText : "",
-        terrainHeightBelowCamera: b.metricsTerrainHeight
+        fps: bridge.metricsFps,
+        tilesRendered: Double(bridge.metricsTilesRendered),
+        tilesLoading: Double(bridge.metricsTilesLoading),
+        tilesVisited: Double(bridge.metricsTilesVisited),
+        ionTokenConfigured: bridge.metricsIonTokenConfigured,
+        tilesetReady: bridge.metricsTilesetReady,
+        creditsPlainText: bridge.metricsCreditsPlainText
       )
       cb(m)
     }

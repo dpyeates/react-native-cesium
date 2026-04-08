@@ -13,16 +13,16 @@
 #error NitroModules cannot be found! Are you sure you installed NitroModules properly?
 #endif
 
-// Forward declaration of `CesiumMetrics` to properly resolve imports.
-namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 // Forward declaration of `CameraState` to properly resolve imports.
 namespace margelo::nitro::reactnativecesium { struct CameraState; }
+// Forward declaration of `CesiumMetrics` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 
 #include <string>
+#include "CameraState.hpp"
 #include "CesiumMetrics.hpp"
 #include <functional>
 #include <optional>
-#include "CameraState.hpp"
 #include <NitroModules/Promise.hpp>
 
 namespace margelo::nitro::reactnativecesium {
@@ -56,22 +56,8 @@ namespace margelo::nitro::reactnativecesium {
       virtual void setIonAccessToken(const std::string& ionAccessToken) = 0;
       virtual double getIonAssetId() = 0;
       virtual void setIonAssetId(double ionAssetId) = 0;
-      virtual double getCameraLatitude() = 0;
-      virtual void setCameraLatitude(double cameraLatitude) = 0;
-      virtual double getCameraLongitude() = 0;
-      virtual void setCameraLongitude(double cameraLongitude) = 0;
-      virtual double getCameraAltitude() = 0;
-      virtual void setCameraAltitude(double cameraAltitude) = 0;
-      virtual double getCameraHeading() = 0;
-      virtual void setCameraHeading(double cameraHeading) = 0;
-      virtual double getCameraPitch() = 0;
-      virtual void setCameraPitch(double cameraPitch) = 0;
-      virtual double getCameraRoll() = 0;
-      virtual void setCameraRoll(double cameraRoll) = 0;
-      virtual double getCameraVerticalFovDeg() = 0;
-      virtual void setCameraVerticalFovDeg(double cameraVerticalFovDeg) = 0;
-      virtual bool getDebugOverlay() = 0;
-      virtual void setDebugOverlay(bool debugOverlay) = 0;
+      virtual CameraState getInitialCamera() = 0;
+      virtual void setInitialCamera(const CameraState& initialCamera) = 0;
       virtual bool getPauseRendering() = 0;
       virtual void setPauseRendering(bool pauseRendering) = 0;
       virtual double getMaximumScreenSpaceError() = 0;
@@ -82,8 +68,6 @@ namespace margelo::nitro::reactnativecesium {
       virtual void setLoadingDescendantLimit(double loadingDescendantLimit) = 0;
       virtual double getMsaaSampleCount() = 0;
       virtual void setMsaaSampleCount(double msaaSampleCount) = 0;
-      virtual bool getShowCredits() = 0;
-      virtual void setShowCredits(bool showCredits) = 0;
       virtual double getIonImageryAssetId() = 0;
       virtual void setIonImageryAssetId(double ionImageryAssetId) = 0;
       virtual std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() = 0;
@@ -92,8 +76,7 @@ namespace margelo::nitro::reactnativecesium {
     public:
       // Methods
       virtual std::shared_ptr<Promise<CameraState>> getCameraState() = 0;
-      virtual void flyTo(double latitude, double longitude, double altitude, double heading, double pitch, double roll, double durationSeconds) = 0;
-      virtual void lookAt(double targetLatitude, double targetLongitude, double targetAltitude, double durationSeconds) = 0;
+      virtual void setCamera(const CameraState& camera) = 0;
 
     protected:
       // Hybrid Setup

@@ -17,6 +17,7 @@
 #include <react/renderer/components/view/ViewProps.h>
 
 #include <string>
+#include "CameraState.hpp"
 #include "CesiumMetrics.hpp"
 #include <functional>
 #include <optional>
@@ -45,20 +46,12 @@ namespace margelo::nitro::reactnativecesium::views {
   public:
     CachedProp<std::string> ionAccessToken;
     CachedProp<double> ionAssetId;
-    CachedProp<double> cameraLatitude;
-    CachedProp<double> cameraLongitude;
-    CachedProp<double> cameraAltitude;
-    CachedProp<double> cameraHeading;
-    CachedProp<double> cameraPitch;
-    CachedProp<double> cameraRoll;
-    CachedProp<double> cameraVerticalFovDeg;
-    CachedProp<bool> debugOverlay;
+    CachedProp<CameraState> initialCamera;
     CachedProp<bool> pauseRendering;
     CachedProp<double> maximumScreenSpaceError;
     CachedProp<double> maximumSimultaneousTileLoads;
     CachedProp<double> loadingDescendantLimit;
     CachedProp<double> msaaSampleCount;
-    CachedProp<bool> showCredits;
     CachedProp<double> ionImageryAssetId;
     CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> onMetrics;
     CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>> hybridRef;
