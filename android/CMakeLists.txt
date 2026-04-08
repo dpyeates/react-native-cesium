@@ -36,14 +36,14 @@ include_directories(
 find_library(LOG_LIB log)
 find_library(VULKAN_LIB vulkan)
 
-# Cesium Native (prebuilt via `yarn run build` — see README)
+# Cesium Native (vendor/android from `yarn run build` or Gradle ensure-native — see README)
 set(CESIUM_PREFIX "${CMAKE_SOURCE_DIR}/../vendor/android")
 if (NOT EXISTS "${CESIUM_PREFIX}/share/cesium-native/cmake/cesium-nativeConfig.cmake")
-  message(FATAL_ERROR "Cesium Native Android prebuilts missing. Maintainer: run `yarn run update` and `yarn run build` (see README). Expected: ${CESIUM_PREFIX}/share/cesium-native/cmake/cesium-nativeConfig.cmake")
+  message(FATAL_ERROR "Cesium Native Android artifacts missing under vendor/android. Gradle should run ensure-native.mjs before CMake; or run `npm run update` and `CESIUM_BUILD_ONLY=android npm run build` from the package root. Expected: ${CESIUM_PREFIX}/share/cesium-native/cmake/cesium-nativeConfig.cmake")
 endif()
 list(APPEND CMAKE_PREFIX_PATH "${CESIUM_PREFIX}")
 # Android NDK toolchain uses CMAKE_FIND_ROOT_PATH for package lookup; without this,
-# find_package ignores CMAKE_PREFIX_PATH and prebuilts are not found.
+# find_package ignores CMAKE_PREFIX_PATH and vendor prefixes are not found.
 list(APPEND CMAKE_FIND_ROOT_PATH "${CESIUM_PREFIX}")
 find_package(cesium-native CONFIG REQUIRED)
 

@@ -16,12 +16,14 @@ const MAX_ALT = 100_000_000;
 export type MapGestureHandlerProps = {
   children: ReactNode;
   camera: SharedValue<CameraState>;
+  initialCamera: CameraState;
 };
 
 /** Per-gesture anchor values; each gesture seeds this in `onBegin` from `camera`. */
 export function MapGestureHandler({
   children,
   camera,
+  initialCamera,
 }: MapGestureHandlerProps) {
   const snap = useSharedValue({
     lat: 0,
@@ -30,8 +32,8 @@ export function MapGestureHandler({
     hdg: 0,
   });
 
-  const panDecayLat = useSharedValue(camera.value.latitude);
-  const panDecayLon = useSharedValue(camera.value.longitude);
+  const panDecayLat = useSharedValue(initialCamera.latitude);
+  const panDecayLon = useSharedValue(initialCamera.longitude);
   useAnimatedReaction(
     () => ({ lat: panDecayLat.value, lon: panDecayLon.value }),
     cur => {

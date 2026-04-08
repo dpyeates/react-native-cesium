@@ -24,6 +24,8 @@ export function CreditsDialog({
       visible={visible}
       transparent
       animationType="fade"
+      presentationStyle="overFullScreen"
+      supportedOrientations={['portrait', 'portrait-upside-down', 'landscape', 'landscape-left', 'landscape-right']}
       onRequestClose={onClose}
     >
       <Pressable style={styles.overlay} onPress={onClose}>

@@ -9,9 +9,9 @@ buildscript {
   }
 }
 
-// Cesium Native prebuilts are arm64-v8a only (`yarn run build`). Do not follow the app’s
+// Cesium Native vendor/android is arm64-v8a only (`yarn run build` / ensure-native). Do not follow the app’s
 // reactNativeArchitectures list: a typical RN template sets all ABIs and CMake would run for
-// armeabi-v7a/x86/… and fail (no matching prebuilts). The JNI library is only built for arm64.
+// armeabi-v7a/x86/… and fail (no matching libs). The JNI library is only built for arm64.
 def cesiumNativeAbiFilters() {
   return ["arm64-v8a"]
 }
@@ -27,6 +27,34 @@ apply from: "./fix-prefab.gradle"
 
 if (isNewArchitectureEnabled()) {
   apply plugin: "com.facebook.react"
+}
+
+def reactNativeCesiumPackageDir = projectDir.parentFile
+
+tasks.register('ensureCesiumNativeAndroid') {
+  group 'cesium'
+  description 'If vendor/android Cesium Native is missing, runs scripts/cesium/ensure-native.mjs (update + build). Can take a long time.'
+  doLast {
+    def marker = new File(reactNativeCesiumPackageDir, 'vendor/android/share/cesium-native/cmake/cesium-nativeConfig.cmake')
+    if (marker.exists()) {
+      return
+    }
+    if (System.getenv('REACT_NATIVE_CESIUM_SKIP_NATIVE_BUILD') == '1') {
+      throw new RuntimeException(
+        'react-native-cesium: Android Cesium Native artifacts are missing under vendor/android. ' +
+          'Install the Android NDK (ANDROID_NDK_HOME), then from node_modules/react-native-cesium run: npm run update && CESIUM_BUILD_ONLY=android npm run build. ' +
+          'Or unset REACT_NATIVE_CESIUM_SKIP_NATIVE_BUILD to allow automatic build during Gradle. See package README.'
+      )
+    }
+    project.exec {
+      workingDir reactNativeCesiumPackageDir
+      commandLine 'node', 'scripts/cesium/ensure-native.mjs', '--android'
+    }
+  }
+}
+
+tasks.preBuild {
+  dependsOn 'ensureCesiumNativeAndroid'
 }
 
 def getExtOrDefault(name) {

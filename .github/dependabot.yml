@@ -39,3 +39,11 @@ updates:
         patterns:
           - 'nitrogen'
           - 'react-native-nitro-modules'
+
+  - package-ecosystem: 'npm'
+    directory: '/example'
+    schedule:
+      interval: 'daily'
+    labels:
+      - 'dependencies'
+      - 'example'

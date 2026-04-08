@@ -25,13 +25,15 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import { CESIUM_ION_ACCESS_TOKEN, ION_ACCESS_TOKEN } from '@env';
 import { Joystick } from './components/Joystick';
 import { LayerPicker } from './components/LayerPicker';
 import { CreditsDialog } from './components/CreditsDialog';
 import { MapGestureHandler } from './components/MapGestureHandler';
 
-const ION_ACCESS_TOKEN =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJhZGIzMGE2My1iODU3LTRkMzYtOTBmOS0wOGFjMWFkZmZiODIiLCJpZCI6MTcxMDczLCJpYXQiOjE3NzM4MjU0Mjd9.cckmnJRd3YpQYQGs7Y7_2YwcVco5elP3Gqhpj1tnoHs';
+const ionAccessToken = (CESIUM_ION_ACCESS_TOKEN ?? ION_ACCESS_TOKEN ?? '').trim();
+const hasIonToken = ionAccessToken.length > 0;
+const HUD_UPDATE_INTERVAL_MS = 100;
 
 const INITIAL_CAMERA: CameraState = {
   latitude: 46.02,
@@ -45,19 +47,31 @@ const INITIAL_CAMERA: CameraState = {
 
 function AppContent() {
   const insets = useSafeAreaInsets();
-  const nativeRef = useRef<CesiumViewMethods | null>(null);
+  const hudUpdateMsRef = useRef(0);
+  // Keep the HybridObject itself in React state so the worklet captures the
+  // latest serializable Nitro reference once the native view mounts.
+  const [cesiumView, setCesiumView] = useState<CesiumViewMethods | null>(null);
   const [imageryAssetId, setImageryAssetId] = useState(1);
   const [credits, setCredits] = useState('');
   const [creditsExpanded, setCreditsExpanded] = useState(false);
+  const [hudCamera, setHudCamera] = useState(INITIAL_CAMERA);
 
   // ── Camera shared demand (UI-thread, drives gestures + animations) ─────────
   const camera = useSharedValue<CameraState>(INITIAL_CAMERA);
+  const lastHudDispatchMs = useSharedValue(0);
 
   const joystickPitchRate = useSharedValue(0);
   const joystickRollRate = useSharedValue(0);
 
-  const applyCameraToNative = useCallback((nextCamera: CameraState) => {
-    nativeRef.current?.setCamera(nextCamera);
+  const updateHudCamera = useCallback((nextCamera: CameraState) => {
+    const now = Date.now();
+    if (now - hudUpdateMsRef.current < HUD_UPDATE_INTERVAL_MS) return;
+    hudUpdateMsRef.current = now;
+    setHudCamera(nextCamera);
+  }, []);
+
+  const handleCesiumRef = useCallback((ref: CesiumViewMethods | null) => {
+    setCesiumView(ref);
   }, []);
 
   // Joystick rates → pitch/roll. Both wrap ±180°; pitch loops like an aircraft.
@@ -86,20 +100,19 @@ function AppContent() {
 
   useFrameCallback(integrateJoystick);
 
-  // Bridge UI-thread camera shared value to native imperative method.
+  // Keep the text HUD in JS, but throttle updates so gesture/rendering stay on
+  // the native/UI side. The actual camera update stays on the worklet thread by
+  // calling Nitro's HybridObject directly.
   useAnimatedReaction(
-    () => ({
-      latitude: camera.value.latitude,
-      longitude: camera.value.longitude,
-      altitude: camera.value.altitude,
-      heading: camera.value.heading,
-      pitch: camera.value.pitch,
-      roll: camera.value.roll,
-      verticalFovDeg: camera.value.verticalFovDeg,
-    }),
+    () => camera.value,
     (cur) => {
-      scheduleOnRN(applyCameraToNative, cur);
+      cesiumView?.setCamera(cur);
+      const now = Date.now();
+      if (now - lastHudDispatchMs.value < HUD_UPDATE_INTERVAL_MS) return;
+      lastHudDispatchMs.value = now;
+      scheduleOnRN(updateHudCamera, cur);
     },
+    [cesiumView, lastHudDispatchMs, updateHudCamera],
   );
 
   const handleJoystickRates = useCallback(
@@ -112,7 +125,7 @@ function AppContent() {
 
   const handleMetrics = useCallback(
     (m: CesiumMetrics) => {
-      setCredits(m.creditsPlainText);
+      setCredits(prev => (prev === m.creditsPlainText ? prev : m.creditsPlainText));
     },
     [],
   );
@@ -121,13 +134,12 @@ function AppContent() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      <MapGestureHandler camera={camera}>
+      {/* Cesium ION 3D slippy map */}
+      <MapGestureHandler camera={camera} initialCamera={INITIAL_CAMERA}>
         <CesiumView
-          hybridRef={callback((ref: CesiumViewMethods | null) => {
-            nativeRef.current = ref;
-          })}
-          style={styles.map}
-          ionAccessToken={ION_ACCESS_TOKEN}
+          hybridRef={callback(handleCesiumRef)}
+          style={StyleSheet.absoluteFill}
+          ionAccessToken={ionAccessToken}
           ionAssetId={1}
           initialCamera={INITIAL_CAMERA}
           pauseRendering={false}
@@ -140,15 +152,38 @@ function AppContent() {
         />
       </MapGestureHandler>
 
+      {!hasIonToken && (
+        <View style={[styles.missingTokenBanner, { top: insets.top + 12 }]}>
+          <Text style={styles.missingTokenTitle}>Cesium Ion token missing</Text>
+          <Text style={styles.missingTokenBody}>
+            Create `example/.env` from `example/.env_example` and set
+            `CESIUM_ION_ACCESS_TOKEN`.
+          </Text>
+        </View>
+      )}
+
+      {/* Info overlay */}
+      {hasIonToken && (
+        <View style={[styles.cameraHud, { top: insets.top + 12, left: 30 }]}>
+          <Text style={styles.cameraHudText}>
+            Lat {hudCamera.latitude.toFixed(5)}°, Lon{' '}
+            {hudCamera.longitude.toFixed(5)}°
+          </Text>
+          <Text style={styles.cameraHudText}>
+            Alt {Math.round(hudCamera.altitude).toLocaleString()} m
+          </Text>
+          <Text style={styles.cameraHudText}>
+            Heading {hudCamera.heading.toFixed(1)}°
+          </Text>
+        </View>
+      )}
+
       {/* Joystick + layer picker */}
       <View
         style={[
           styles.bottomCenter,
           {
-            bottom:
-              insets.bottom +
-              16 +
-              (credits.length > 0 ? 24 : 0),
+            bottom: insets.bottom + 16 + (credits.length > 0 ? 24 : 0),
           },
         ]}
       >
@@ -196,7 +231,6 @@ function App() {
 const styles = StyleSheet.create({
   rootFill: { flex: 1 },
   container: { flex: 1, backgroundColor: '#000' },
-  map: { ...StyleSheet.absoluteFillObject },
   bottomCenter: {
     position: 'absolute',
     alignSelf: 'center',
@@ -222,6 +256,40 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 10,
     color: 'rgba(255,255,255,0.70)',
+  },
+  cameraHud: {
+    position: 'absolute',
+    left: 12,
+    backgroundColor: 'rgba(0,0,0,0.32)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 2,
+  },
+  cameraHudText: {
+    color: '#fff',
+    fontSize: 12,
+    fontVariant: ['tabular-nums'],
+  },
+  missingTokenBanner: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    backgroundColor: 'rgba(120, 20, 20, 0.92)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  missingTokenTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  missingTokenBody: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 12,
+    lineHeight: 18,
   },
 });
 

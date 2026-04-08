@@ -78,7 +78,7 @@ coverage/
 # Env / secrets
 .env
 .env.*
-!.env.example
+!.env_example
 
 # Local path to vcpkg for `yarn run build` (optional; see README)
 .vcpkg-root

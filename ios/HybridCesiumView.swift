@@ -98,6 +98,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
   private var usingLowRefreshRate = false
   private var hasConfiguredFrameRate = false
   private var lastPushedCameraState: CameraState?
+  private var lastBridgePixelSize: CGSize = .zero
 
   var view: UIView { metalView }
 
@@ -106,6 +107,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
     metalView = MTKView(frame: .zero, device: device)
     metalView.colorPixelFormat = .bgra8Unorm_srgb
     metalView.depthStencilPixelFormat = .depth32Float
+    metalView.autoResizeDrawable = false
     metalView.isPaused = true
     metalView.enableSetNeedsDisplay = false
     metalView.isMultipleTouchEnabled = true
@@ -141,6 +143,9 @@ class HybridCesiumView: HybridCesiumViewSpec {
     let scale = metalView.contentScaleFactor
     let w = Int(metalView.bounds.width * scale)
     let h = Int(metalView.bounds.height * scale)
+    let pixelSize = CGSize(width: w, height: h)
+    metalView.drawableSize = pixelSize
+    lastBridgePixelSize = pixelSize
 
     let cacheDir = NSSearchPathForDirectoriesInDomains(
       .cachesDirectory, .userDomainMask, true
@@ -237,8 +242,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
   @objc private func renderFrame() {
     guard !pauseRendering,
           let dl = displayLink,
-          let bridge,
-          let metalLayer = metalView.layer as? CAMetalLayer else { return }
+          let bridge else { return }
 
     let dt = max(dl.targetTimestamp - dl.timestamp, 1.0 / 120.0)
 
@@ -247,8 +251,10 @@ class HybridCesiumView: HybridCesiumViewSpec {
     let h = Int(metalView.bounds.height * scale)
 
     if w > 0 && h > 0 {
-      let layerSize = metalLayer.drawableSize
-      if Int(layerSize.width) != w || Int(layerSize.height) != h {
+      let pixelSize = CGSize(width: w, height: h)
+      if lastBridgePixelSize != pixelSize {
+        metalView.drawableSize = pixelSize
+        lastBridgePixelSize = pixelSize
         bridge.resize(Int32(w), height: Int32(h))
         bridge.markNeedsRender()
       }

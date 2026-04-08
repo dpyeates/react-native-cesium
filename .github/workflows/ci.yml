@@ -21,13 +21,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npx nitrogen --logLevel=error
+          cache: yarn
+          cache-dependency-path: yarn.lock
+      - run: corepack enable
+      - run: yarn install --frozen-lockfile
+      - run: yarn typecheck
+      - run: yarn exec nitrogen --logLevel=error
       - name: Ensure generated sources are committed
         working-directory: ${{ github.workspace }}
         run: git diff --exit-code
       - name: Verify publishable build (bob → lib/)
-        run: npm run build:js
+        run: yarn build:js

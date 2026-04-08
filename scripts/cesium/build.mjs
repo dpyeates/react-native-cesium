@@ -18,17 +18,17 @@ import {
   writeFileSync,
 } from 'node:fs'
 import os from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..', '..')
 const cesiumSrc = join(root, 'vendor', 'cesium-native')
-const vendorAndroid = join(root, 'vendor', 'android')
+const vendorAndroid = resolve(join(root, 'vendor', 'android'))
 const vendorIos = join(root, 'vendor', 'ios')
 const staging = join(root, 'vendor', '.cesium-staging')
-const stagingDevice = join(staging, 'ios-device')
-const stagingSim = join(staging, 'ios-sim')
+const stagingDevice = resolve(join(staging, 'ios-device'))
+const stagingSim = resolve(join(staging, 'ios-sim'))
 
 const VENDOR_ANDROID_README = `# Android Cesium Native prebuilts
 
@@ -72,7 +72,38 @@ function which(bin) {
   }
 }
 
-/** Prefer Ninja; fall back to Makefiles so only CMake is required on PATH. */
+/** Absolute path to an executable on PATH, or common install locations (Homebrew). */
+function resolveExecutablePath(name) {
+  try {
+    const p = execFileSync('/usr/bin/which', [name], { encoding: 'utf8' }).trim()
+    if (p && existsSync(p)) return p
+  } catch {
+    /* ignore */
+  }
+  for (const dir of ['/opt/homebrew/bin', '/usr/local/bin']) {
+    const p = join(dir, name)
+    if (existsSync(p)) return p
+  }
+  return null
+}
+
+/**
+ * vcpkg spawns nested CMake processes; a minimal PATH (e.g. from GUI / yarn) can hide Homebrew.
+ */
+function ensureDarwinBuildPath() {
+  if (process.platform !== 'darwin') return
+  const extra = ['/opt/homebrew/bin', '/usr/local/bin']
+  const cur = process.env.PATH ?? ''
+  const seen = new Set(cur.split(':').filter(Boolean))
+  const prepend = extra.filter((d) => existsSync(d) && !seen.has(d))
+  if (prepend.length === 0) return
+  process.env.PATH = [...prepend, ...cur.split(':').filter(Boolean)].join(':')
+  console.warn(
+    `Prepended to PATH for native builds: ${prepend.join(':')} (so cmake/vcpkg can find ninja, etc.)`
+  )
+}
+
+/** Prefer Ninja; on macOS require it (vcpkg + iOS builds break with Unix Makefiles when make/clang are not on PATH). */
 let cmakeGenerator = 'Ninja'
 
 function resolveCmakeGenerator() {
@@ -80,10 +111,28 @@ function resolveCmakeGenerator() {
     cmakeGenerator = 'Ninja'
     return
   }
-  if (process.platform === 'darwin' || process.platform === 'linux') {
+  if (process.platform === 'darwin') {
+    console.error(
+      'ninja is required on macOS for `yarn run build` (vcpkg + Cesium Native). It was not found on PATH.\n' +
+        'Install: brew install ninja\n' +
+        'Then ensure Homebrew is on PATH (Apple Silicon: /opt/homebrew/bin; Intel: /usr/local/bin).'
+    )
+    process.exit(1)
+  }
+  if (process.platform === 'linux') {
     cmakeGenerator = 'Unix Makefiles'
+    for (const p of ['/usr/bin/gmake', '/usr/bin/make']) {
+      if (existsSync(p)) {
+        process.env.CMAKE_MAKE_PROGRAM = p
+        break
+      }
+    }
     console.warn(
-      'ninja not found on PATH; using Unix Makefiles. For faster builds install Ninja (e.g. brew install ninja, or apt install ninja-build).'
+      'ninja not found on PATH; using Unix Makefiles' +
+        (process.env.CMAKE_MAKE_PROGRAM
+          ? ` (CMAKE_MAKE_PROGRAM=${process.env.CMAKE_MAKE_PROGRAM}).`
+          : '.') +
+        ' For faster builds: apt install ninja-build (or equivalent).'
     )
     return
   }
@@ -91,6 +140,69 @@ function resolveCmakeGenerator() {
     'ninja must be on PATH for CMake on this OS. Install Ninja: https://ninja-build.org/'
   )
   process.exit(1)
+}
+
+/**
+ * GUI-launched terminals sometimes have a minimal PATH; vcpkg/Cmake then fail with
+ * CMAKE_C_COMPILER not set. Pin host CC/CXX to Xcode clang when unset.
+ */
+function ensureDarwinClangEnv() {
+  if (process.platform !== 'darwin') return
+  try {
+    const cc = execFileSync('xcrun', ['--find', 'clang'], { encoding: 'utf8' }).trim()
+    const cxx = execFileSync('xcrun', ['--find', 'clang++'], { encoding: 'utf8' }).trim()
+    if (!cc || !cxx) {
+      throw new Error('xcrun returned empty compiler path')
+    }
+    if (!process.env.CC) process.env.CC = cc
+    if (!process.env.CXX) process.env.CXX = cxx
+  } catch {
+    console.error(
+      'Could not locate Apple clang via xcrun. Install Xcode or the Command Line Tools:\n' +
+        '  xcode-select --install\n' +
+        'If Xcode is installed: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer'
+    )
+    process.exit(1)
+  }
+}
+
+/**
+ * Host vcpkg ports (e.g. openssl for arm64-osx) need the macOS SDK; without SDKROOT, clang
+ * may not resolve system headers (stdlib.h, assert.h). EZVCPKG-driven CMake hits this with a
+ * minimal environment.
+ */
+function ensureDarwinSdkRoot() {
+  if (process.platform !== 'darwin') return
+  if (process.env.SDKROOT?.trim()) return
+  try {
+    const sdk = execFileSync('xcrun', ['--sdk', 'macosx', '--show-sdk-path'], {
+      encoding: 'utf8',
+    }).trim()
+    if (sdk) {
+      process.env.SDKROOT = sdk
+    }
+  } catch {
+    console.warn(
+      'Could not run `xcrun --sdk macosx --show-sdk-path`. If native builds fail with missing system headers, install Xcode or CLT and set:\n' +
+        '  export SDKROOT=$(xcrun --sdk macosx --show-sdk-path)'
+    )
+  }
+}
+
+/** Ninja must be an absolute path for nested vcpkg CMake configures (same as CC/CXX). */
+function ensureNinjaMakeProgram() {
+  if (cmakeGenerator !== 'Ninja') return
+  const existing = process.env.CMAKE_MAKE_PROGRAM?.trim()
+  if (existing && existsSync(existing)) return
+  const ninja = resolveExecutablePath('ninja')
+  if (!ninja) {
+    console.error(
+      'Could not resolve ninja to an absolute path. Install: brew install ninja\n' +
+        'Ensure /opt/homebrew/bin or /usr/local/bin is on PATH.'
+    )
+    process.exit(1)
+  }
+  process.env.CMAKE_MAKE_PROGRAM = ninja
 }
 
 function isValidVcpkgRoot(dir) {
@@ -253,7 +365,193 @@ function rsyncMerge(src, dst) {
   cpSync(src, dst, { recursive: true })
 }
 
+/**
+ * Stale CMakeCache from a previous generator (e.g. Unix Makefiles before we required Ninja
+ * on macOS) makes CMake abort with "Does not match the generator used previously".
+ */
+function normalizePathKey(p) {
+  return p.replace(/\/+$/, '')
+}
+
+/**
+ * cesium-native installs headers with `install(DIRECTORY ... DESTINATION \${CMAKE_INSTALL_PREFIX})`,
+ * so the prefix is frozen at configure time. A stale cache (e.g. /usr/local) breaks install.
+ * CMake may store CMAKE_INSTALL_PREFIX as PATH, STRING, etc. — match any cache line type.
+ */
+function ensureCmakeInstallPrefixCache(buildDir, expectedPrefix) {
+  const cacheFile = join(buildDir, 'CMakeCache.txt')
+  if (!existsSync(cacheFile)) return
+  const expected = normalizePathKey(resolve(expectedPrefix))
+  let text
+  try {
+    text = readFileSync(cacheFile, 'utf8')
+  } catch {
+    return
+  }
+  const m = text.match(/^CMAKE_INSTALL_PREFIX:[A-Za-z0-9_]+=(.*)$/m)
+  if (!m) return
+  const raw = m[1].trim()
+  if (raw === '') return
+  const cached = normalizePathKey(resolve(raw))
+  if (cached === expected) return
+  console.warn(
+    `Removing ${buildDir} (CMake cache CMAKE_INSTALL_PREFIX was:\n  ${cached}\nexpected:\n  ${expected}\nCesium Native bakes the prefix into install rules; it must match before configure.)`
+  )
+  rmSync(buildDir, { recursive: true, force: true })
+}
+
+function parseCmakeInstallPrefixFromArgs(extraArgs) {
+  const p = '-DCMAKE_INSTALL_PREFIX='
+  for (const a of extraArgs) {
+    if (typeof a === 'string' && a.startsWith(p)) {
+      return resolve(a.slice(p.length))
+    }
+  }
+  return null
+}
+
+/**
+ * Old cesium-native caches can still point at ezvcpkg (~/.ezvcpkg) host artifacts
+ * like arm64-osx even when this script now configures manifest-mode Android/iOS builds.
+ * If so, generated install rules and dependency paths are irreparably wrong; wipe the tree.
+ */
+function ensureNoEzvcpkgCache(buildDir) {
+  const cacheFile = join(buildDir, 'CMakeCache.txt')
+  if (!existsSync(cacheFile)) return
+  let text
+  try {
+    text = readFileSync(cacheFile, 'utf8')
+  } catch {
+    return
+  }
+  if (!text.includes('.ezvcpkg')) return
+  console.warn(
+    `Removing ${buildDir} (stale cache still references ~/.ezvcpkg host packages; this build must use manifest-mode vcpkg under the build directory).`
+  )
+  rmSync(buildDir, { recursive: true, force: true })
+}
+
+/**
+ * Manifest-mode vcpkg installs under ${buildDir}/vcpkg_installed. If an old cache pointed
+ * VCPKG_INSTALLED_DIR at $VCPKG_ROOT/installed (or anything else), cesium-native sets
+ * PACKAGE_BUILD_DIR wrong and find_package(modp_b64) etc. fail.
+ */
+function ensureVcpkgInstalledDirCache(buildDir) {
+  const cacheFile = join(buildDir, 'CMakeCache.txt')
+  if (!existsSync(cacheFile)) return
+  const expected = normalizePathKey(join(buildDir, 'vcpkg_installed'))
+  let text
+  try {
+    text = readFileSync(cacheFile, 'utf8')
+  } catch {
+    return
+  }
+  const m = text.match(/^VCPKG_INSTALLED_DIR:PATH=(.+)$/m)
+  if (!m) return
+  const cached = normalizePathKey(m[1].trim())
+  if (cached === expected) return
+  console.warn(
+    `Removing ${buildDir} (CMake cache VCPKG_INSTALLED_DIR was:\n  ${cached}\nexpected:\n  ${expected}\nClearing so vcpkg manifest installs land under the build directory.)`
+  )
+  rmSync(buildDir, { recursive: true, force: true })
+}
+
+function ensureCmakeBuildDirGenerator(buildDir) {
+  const cacheFile = join(buildDir, 'CMakeCache.txt')
+  if (!existsSync(cacheFile)) return
+  let text
+  try {
+    text = readFileSync(cacheFile, 'utf8')
+  } catch {
+    return
+  }
+  const m = text.match(/^CMAKE_GENERATOR:INTERNAL=(.+)$/m)
+  const prev = m?.[1]?.trim()
+  if (!prev || prev === cmakeGenerator) return
+  console.warn(
+    `Removing ${buildDir} (previous CMake generator was "${prev}"; this run uses "${cmakeGenerator}").`
+  )
+  rmSync(buildDir, { recursive: true, force: true })
+}
+
+/**
+ * Overlay ports (e.g. zstd without pthreads on iOS — see scripts/cesium/vcpkg-ports).
+ * Prepended so they override the registry; Cesium Native also uses ./extern/vcpkg/ports.
+ */
+function ensureVcpkgOverlayPorts() {
+  const overlayPorts = resolve(join(__dirname, 'vcpkg-ports'))
+  if (!existsSync(overlayPorts)) return
+  const sep = process.platform === 'win32' ? ';' : ':'
+  const parts = (process.env.VCPKG_OVERLAY_PORTS ?? '').split(sep).filter(Boolean)
+  if (!parts.includes(overlayPorts)) {
+    parts.unshift(overlayPorts)
+  }
+  process.env.VCPKG_OVERLAY_PORTS = parts.join(sep)
+}
+
+/**
+ * iOS vcpkg overlay + env fallback for CMake configure options that ports need:
+ * - HAVE_PIPE2=OFF (curl; iOS has no pipe2)
+ * - CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY (FindThreads / zstd → ktx; executable
+ *   try_compile often fails for iphoneOS targets)
+ *
+ * Triplet files under scripts/cesium/vcpkg-triplets/ are authoritative; env is a fallback.
+ */
+function ensureIosVcpkgTripletOverlay() {
+  const overlay = resolve(join(__dirname, 'vcpkg-triplets'))
+  if (!existsSync(overlay)) return
+  const sep = process.platform === 'win32' ? ';' : ':'
+  const parts = (process.env.VCPKG_OVERLAY_TRIPLETS ?? '')
+    .split(sep)
+    .filter(Boolean)
+  if (!parts.includes(overlay)) {
+    parts.unshift(overlay)
+  }
+  process.env.VCPKG_OVERLAY_TRIPLETS = parts.join(sep)
+}
+
+function ensureIosVcpkgPortOptions(extraArgs) {
+  const isIos = extraArgs.some(
+    (a) =>
+      a.includes('CMAKE_SYSTEM_NAME=iOS') ||
+      a.includes('iphoneos') ||
+      a.includes('iphonesimulator')
+  )
+  if (!isIos) return
+  ensureIosVcpkgTripletOverlay()
+  let cur = process.env.VCPKG_CMAKE_CONFIGURE_OPTIONS?.trim() ?? ''
+  if (!cur.includes('HAVE_PIPE2')) {
+    cur = cur ? `${cur};-DHAVE_PIPE2=OFF` : '-DHAVE_PIPE2=OFF'
+  }
+  if (!cur.includes('CMAKE_TRY_COMPILE_TARGET_TYPE')) {
+    cur = cur
+      ? `${cur};-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY`
+      : '-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY'
+  }
+  process.env.VCPKG_CMAKE_CONFIGURE_OPTIONS = cur
+}
+
 function cmakeConfigure(buildDir, extraArgs) {
+  ensureVcpkgOverlayPorts()
+  const installPrefix = parseCmakeInstallPrefixFromArgs(extraArgs)
+  if (installPrefix) {
+    ensureCmakeInstallPrefixCache(buildDir, installPrefix)
+  }
+  ensureNoEzvcpkgCache(buildDir)
+  ensureVcpkgInstalledDirCache(buildDir)
+  ensureCmakeBuildDirGenerator(buildDir)
+  ensureIosVcpkgPortOptions(extraArgs)
+  const vcpkgInstalledDir = join(buildDir, 'vcpkg_installed')
+  const toolchainArgs = [`-DVCPKG_INSTALLED_DIR=${vcpkgInstalledDir}`]
+  if (cmakeGenerator === 'Ninja' && process.env.CMAKE_MAKE_PROGRAM) {
+    toolchainArgs.push(`-DCMAKE_MAKE_PROGRAM=${process.env.CMAKE_MAKE_PROGRAM}`)
+  }
+  if (process.platform === 'darwin' && process.env.CC && process.env.CXX) {
+    toolchainArgs.push(
+      `-DCMAKE_C_COMPILER=${process.env.CC}`,
+      `-DCMAKE_CXX_COMPILER=${process.env.CXX}`
+    )
+  }
   const args = [
     '-S',
     cesiumSrc,
@@ -267,8 +565,13 @@ function cmakeConfigure(buildDir, extraArgs) {
     '-DCESIUM_TESTS_ENABLED=OFF',
     '-DCESIUM_ENABLE_CLANG_TIDY=OFF',
     `-DVCPKG_HOST_TRIPLET=${hostTriplet()}`,
+    ...toolchainArgs,
     ...extraArgs,
   ]
+  // Last flag wins: vcpkg / chainloaded toolchains must not leave CMAKE_INSTALL_PREFIX at /usr/local.
+  if (installPrefix) {
+    args.push(`-DCMAKE_INSTALL_PREFIX:PATH=${installPrefix}`)
+  }
   run('cmake', args, { cwd: root, env: process.env })
 }
 
@@ -457,6 +760,10 @@ function buildAndroid() {
   if (!existsSync(ndkToolchain)) {
     throw new Error(`Missing NDK CMake toolchain: ${ndkToolchain}`)
   }
+  // Cesium Native bakes absolute install destinations into generated install scripts.
+  // Reusing build-android-arm64 has repeatedly preserved stale /usr/local and ezvcpkg-host paths,
+  // even after we added cache guards. A clean Android configure is slower but consistent.
+  rmSync(buildDir, { recursive: true, force: true })
   // Required so vcpkg + dependencies compile with the NDK (ELF aarch64), not host Clang (Mach-O on macOS).
   cmakeConfigure(buildDir, [
     `-DCMAKE_INSTALL_PREFIX=${vendorAndroid}`,
@@ -559,13 +866,17 @@ function main() {
     console.error('vendor/cesium-native not found. Run: yarn run update')
     process.exit(1)
   }
-  if (!which('cmake')) {
+  ensureDarwinBuildPath()
+  if (!which('cmake') && !resolveExecutablePath('cmake')) {
     console.error(
       'cmake must be on PATH (CMake 3.15+). Install: https://cmake.org/download/ or brew install cmake'
     )
     process.exit(1)
   }
   resolveCmakeGenerator()
+  ensureNinjaMakeProgram()
+  ensureDarwinClangEnv()
+  ensureDarwinSdkRoot()
   resolveVcpkgRoot()
 
   const only = process.env.CESIUM_BUILD_ONLY
