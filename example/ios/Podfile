@@ -1,5 +1,10 @@
-require_relative "../node_modules/react-native-cesium/ios/react_native_cesium_ensure_native"
-require_relative "../node_modules/react-native-cesium/ios/react_native_cesium_post_install"
+begin
+  require_relative "../node_modules/react-native-cesium/ios/react_native_cesium_ensure_native"
+  require_relative "../node_modules/react-native-cesium/ios/react_native_cesium_post_install"
+rescue LoadError
+  require_relative "../../ios/react_native_cesium_ensure_native"
+  require_relative "../../ios/react_native_cesium_post_install"
+end
 
 # Resolve react_native_pods.rb with node to allow for hoisting
 require Pod::Executable.execute_command('node', ['-p',
