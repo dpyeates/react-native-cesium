@@ -20,6 +20,10 @@ const modules = Object.keys({
 module.exports = mergeConfig(getDefaultConfig(__dirname), {
   watchFolders: [monorepoRoot],
   resolver: {
+    // always resolve deps from the app's node_modules to
+    // avoid loading duplicate `react-native` instances.
+    disableHierarchicalLookup: true,
+    nodeModulesPaths: [path.join(projectRoot, 'node_modules')],
     extraNodeModules: modules.reduce((acc, name) => {
       acc[name] = path.join(projectRoot, 'node_modules', name);
       return acc;
