@@ -16,6 +16,14 @@ Experimental Cesium rendering for React Native using [Nitro Modules](https://git
 - Native engine: **Cesium Native**
 - React Native integration: **Nitro host component + imperative hybrid ref API**
 
+## Requirements
+
+- React Native **new architecture**
+- Node **18+**
+- Ensure you follow the instructions below as there are dependcies and actions on your part
+- A valid Cesium Ion access token and asset IDs for your content (get these from https://ion.cesium.com)
+- **Disk and time:** building Cesium Native pulls **vcpkg** dependencies and can use **several GB** of disk; first iOS build often takes **a long time**
+
 ## Installation
 
 Add the package to your app:
@@ -32,17 +40,10 @@ npm install react-native-cesium
 
 `react-native-nitro-modules` is installed automatically as a dependency of this package. You only need to add it yourself if you want to pin a specific compatible version.
 
-### Requirements
+### Building Cesium Native on your machine (not shipped in npm)
 
-- React Native **0.76+**
-- Node **18+**
-- macOS + **Xcode** (or Command Line Tools) for iOS builds
-- A valid Cesium Ion access token and asset IDs for your content
-- **Disk and time:** building Cesium Native pulls **vcpkg** dependencies and can use **several GB** of disk; first iOS build often takes **a long time**
-
-### Cesium Native on your machine (not shipped in npm)
-
-The npm package **does not ship** `CesiumNative.xcframework` or a built **`vendor/android`** tree. Those are produced by compiling **Cesium Native** on a machine with the right toolchains.
+The npm package **does not ship** the required iOS or Android Cesium Native libraries. 
+They are produced by compiling **Cesium Native** on your local machine with the right toolchains.
 
 **Automatic (default):** when native output is missing, the package tries to build it for you:
 
@@ -54,15 +55,8 @@ The npm package **does not ship** `CesiumNative.xcframework` or a built **`vendo
 **Manual (optional):** from the package directory (e.g. `node_modules/react-native-cesium`):
 
 ```bash
-yarn run update
-CESIUM_BUILD_ONLY=ios yarn run build
-```
-
-Or with npm:
-
-```bash
-npm run update
-CESIUM_BUILD_ONLY=ios npm run build
+yarn run update # this fecthes Cesium Native source to your local machine from Github
+yarn run build # this actually does the build for both iOS and Android and can take a long time!
 ```
 
 - `npm run update` / `yarn run update` checks out **Cesium Native `v0.59.0`** into `vendor/cesium-native` (created next to the package files; typically gitignored in app repos).

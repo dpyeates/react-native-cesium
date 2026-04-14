@@ -40,10 +40,6 @@ Pod::Spec.new do |s|
     "ios/CesiumBridge.h",
   ]
 
-  s.resource_bundles = {
-    "ReactNativeCesiumShaders" => ["ios/metal/*.metal"],
-  }
-
   # cacert.pem must land in the app's main bundle so that
   # [NSBundle mainBundle] pathForResource:@"cacert" ofType:@"pem"] resolves it.
   # resource_bundles would put it in a sub-bundle; s.resources copies it to root.

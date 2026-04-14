@@ -136,21 +136,26 @@ fragment float4 terrainFragment(
   float3 base=hypsometricColor(alt,steep);
   float3 lit=base*(amb+diff*.72f+rim);
 
-  // 1km grid aligned to lat/lon
+  // 1km grid aligned to lat/lon — fades to zero when sub-pixel (avoids
+  // Moiré circles and false gaps between imagery and fallback tiles at
+  // high altitude, where fwidth(lat) >> gridLat and gridA would otherwise
+  // saturate to 1 for every pixel).
   float pxy=sqrt(wp.x*wp.x+wp.y*wp.y);
   float lat=atan2(wp.z,pxy);
   float lon=atan2(wp.y,wp.x);
   float gridLat=1000.f/6371000.f;
   float cosLat=max(cos(lat),0.001f);
   float gridLon=gridLat/cosLat;
+  float wLat=fwidth(lat)*1.5f;
+  float wLon=fwidth(lon)*1.5f;
+  float gridVis=clamp(min(gridLat/max(wLat,1e-9f),
+                          gridLon/max(wLon,1e-9f)),0.f,1.f);
   float latCell=lat-gridLat*floor(lat/gridLat);
   float lonCell=lon-gridLon*floor(lon/gridLon);
   float dLat=min(latCell,gridLat-latCell);
   float dLon=min(lonCell,gridLon-lonCell);
-  float wLat=fwidth(lat)*1.5f;
-  float wLon=fwidth(lon)*1.5f;
   float gridA=max(1.f-smoothstep(0.f,wLat,dLat),
-                  1.f-smoothstep(0.f,wLon,dLon));
+                  1.f-smoothstep(0.f,wLon,dLon))*gridVis;
   float3 gridCol=float3(0.15f,0.15f,0.15f);
   lit=mix(lit,gridCol,gridA*0.6f);
 

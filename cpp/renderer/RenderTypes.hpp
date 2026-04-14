@@ -21,7 +21,7 @@ struct TilePrimitive {
 struct TileGPUResources {
   std::vector<TilePrimitive> primitives;
   uint64_t lastUsedFrame  = 0;
-  void*    overlayTexture = nullptr; // id<MTLTexture>; set by attachRasterInMainThread (main thread only)
+  void*    overlayTexture = nullptr; // platform GPU texture handle (void*); set by attachRasterInMainThread (main thread only)
   glm::vec2 overlayTranslation{0.0f, 0.0f};
   glm::vec2 overlayScale{1.0f, 1.0f};
 };
@@ -33,7 +33,7 @@ struct DrawPrimitive {
   uint32_t  indexCount           = 0;
   bool      hasUVs               = false;
   bool      isEllipsoidFallback  = false; // true for the synthetic fallback ellipsoid
-  void*     overlayTexture       = nullptr; // id<MTLTexture> or nullptr
+  void*     overlayTexture       = nullptr; // platform GPU texture handle (void*) or nullptr
   glm::vec2 overlayTranslation{0.0f, 0.0f};
   glm::vec2 overlayScale{1.0f, 1.0f};
 };
