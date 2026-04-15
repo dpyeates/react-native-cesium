@@ -10,7 +10,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "clean": "node scripts/cesium/clean.mjs",
-    "release": "semantic-release --repository-url \"git@github.com:dpyeates/react-native-cesium.git\"",
+    "release": "semantic-release --no-ci --repository-url \"git@github.com:dpyeates/react-native-cesium.git\"",
+    "release:dry": "semantic-release --dry-run --no-ci --repository-url \"git@github.com:dpyeates/react-native-cesium.git\"",
     "build": "node scripts/cesium/build.mjs",
     "build:js": "npm run typecheck && bob build",
     "update": "node scripts/cesium/clone.mjs",
