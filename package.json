@@ -36,8 +36,6 @@
     "NOTICE",
     "nitrogen",
     "scripts/cesium",
-    "vendor/android",
-    "vendor/ios",
     "cpp",
     "nitro.json",
     "android/build.gradle",
