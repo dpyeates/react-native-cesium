@@ -1,3 +1,9 @@
+## [1.0.1](https://github.com/dpyeates/react-native-cesium/compare/v1.0.0...v1.0.1) (2026-04-15)
+
+### 🛠️ Other changes
+
+* remove /vendor from package export ([1c25951](https://github.com/dpyeates/react-native-cesium/commit/1c25951a9261a2559a4b1b55bdea3594035d49ab))
+
 ## 1.0.0 (2026-04-15)
 
 ### 🛠️ Other changes
