@@ -18,13 +18,26 @@ Experimental Cesium rendering for React Native using [Nitro Modules](https://git
 ## Requirements
 
 - React Native **new architecture**
+- React Native Nitro Modules is a dependency
 - Follow the native build instructions below: additional setup is required by you.
 - A valid Cesium Ion access token and asset IDs for your content (get these from https://ion.cesium.com)
 - **Disk and time:** building Cesium Native pulls **vcpkg** dependencies, can use **several GB** of disk, and often takes a long time on first build.
 
 ## Installation
 
-Add the package to your app:
+First install the Nitro Modules runtime dependency:
+
+```bash
+yarn add react-native-nitro-modules
+```
+
+or:
+
+```bash
+npm install react-native-nitro-modules
+```
+
+Then add `react-native-cesium`:
 
 ```bash
 yarn add react-native-cesium
