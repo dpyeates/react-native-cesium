@@ -10,7 +10,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "clean": "node scripts/cesium/clean.mjs",
-    "release": "semantic-release",
+    "release": "semantic-release --repository-url \"git@github.com:dpyeates/react-native-cesium.git\"",
     "build": "node scripts/cesium/build.mjs",
     "build:js": "npm run typecheck && bob build",
     "update": "node scripts/cesium/clone.mjs",
@@ -56,12 +56,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/sensorworks/react-native-cesium.git"
+    "url": "https://github.com/dpyeates/react-native-cesium.git"
   },
-  "author": "Sensorworks",
+  "author": "Darren Yeates",
   "license": "MIT",
-  "bugs": "https://github.com/sensorworks/react-native-cesium/issues",
-  "homepage": "https://github.com/sensorworks/react-native-cesium#readme",
+  "bugs": "https://github.com/dpyeates/react-native-cesium/issues",
+  "homepage": "https://github.com/dpyeates/react-native-cesium#readme",
   "engines": {
     "node": ">=18"
   },
