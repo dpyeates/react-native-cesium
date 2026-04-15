@@ -3,26 +3,24 @@
 > [!WARNING]
 > This library is under development and may not work correctly in all cases yet.
 >
-> Current consumer support is **iOS only**. Android support is planned soon, but should be treated as in progress rather than production-ready today.
 
-Experimental Cesium rendering for React Native using [Nitro Modules](https://github.com/mrousavy/nitro), with the native renderer powered by [Cesium Native](https://github.com/CesiumGS/cesium-native) and Metal on iOS.
+Experimental Cesium rendering for React Native using [Nitro Modules](https://github.com/mrousavy/nitro), with the native Metal/Vulkan renderer powered by [Cesium Native](https://github.com/CesiumGS/cesium-native).
 
 ![react-native-cesium example screenshot](./example/react-native-cesium-example.jpg)
 
 ## Status
 
-- Consumer platform support today: **iOS**
-- Android status: **planned / under development**
+- Platform maturity: **under development**
+- Supported renderers: Metal (iOS) and Vulkan (Android)
 - Native engine: **Cesium Native**
 - React Native integration: **Nitro host component + imperative hybrid ref API**
 
 ## Requirements
 
 - React Native **new architecture**
-- Node **18+**
-- Ensure you follow the instructions below as there are dependcies and actions on your part
+- Follow the native build instructions below: additional setup is required by you.
 - A valid Cesium Ion access token and asset IDs for your content (get these from https://ion.cesium.com)
-- **Disk and time:** building Cesium Native pulls **vcpkg** dependencies and can use **several GB** of disk; first iOS build often takes **a long time**
+- **Disk and time:** building Cesium Native pulls **vcpkg** dependencies, can use **several GB** of disk, and often takes a long time on first build.
 
 ## Installation
 
@@ -38,45 +36,19 @@ or:
 npm install react-native-cesium
 ```
 
-`react-native-nitro-modules` is installed automatically as a dependency of this package. You only need to add it yourself if you want to pin a specific compatible version.
 
-### Building Cesium Native on your machine (not shipped in npm)
+## Building Cesium Native locally
 
-The npm package **does not ship** the required iOS or Android Cesium Native libraries. 
-They are produced by compiling **Cesium Native** on your local machine with the right toolchains.
+The package **does not include** the required iOS or Android Cesium Native libraries. Generate them locally by compiling **Cesium Native** with the required toolchains.
 
-**Automatic (default):** when native output is missing, the package tries to build it for you:
+### System dependencies
 
-- **iOS:** add **`pre_install`** in your app **`Podfile`** (one-time; see [Required Podfile hooks](#required-podfile-hooks-ios)) so **`pod install`** runs **`scripts/cesium/ensure-native.mjs --ios`**, which runs **`npm run update`** / **`yarn run update`** (if needed) and then **`CESIUM_BUILD_ONLY=ios`** build. The first run can take **a long time** and needs the same **system dependencies** as a manual build (CMake, Ninja, Xcode, disk space, etc.).
-- **Android:** the library’s Gradle **`preBuild`** runs **`ensure-native.mjs --android`** if **`vendor/android`** is incomplete, which runs **`CESIUM_BUILD_ONLY=android`** build. Requires **ANDROID_NDK_HOME** (or an NDK the build script can find).
+These are **not** installed by `yarn add` / `pod install`. Install them on your local machine first.
 
-**CI / headless machines:** set **`REACT_NATIVE_CESIUM_SKIP_NATIVE_BUILD=1`** so missing artifacts fail fast with a clear error instead of starting a multi-hour compile. Build the **`vendor/`** trees on a Mac (iOS) or a machine with the NDK (Android), commit them if your workflow allows, or cache them in CI.
-
-**Manual (optional):** from the package directory (e.g. `node_modules/react-native-cesium`):
-
-```bash
-yarn run update # this fecthes Cesium Native source to your local machine from Github
-yarn run build # this actually does the build for both iOS and Android and can take a long time!
-```
-
-- `npm run update` / `yarn run update` checks out **Cesium Native `v0.59.0`** into `vendor/cesium-native` (created next to the package files; typically gitignored in app repos).
-- `npm run build` / `yarn run build` runs `scripts/cesium/build.mjs` (**CMake**, **vcpkg** under `vendor/vcpkg` unless **`VCPKG_ROOT`** is set, **Ninja** on macOS) and writes **`vendor/ios/CesiumNative.xcframework`** and/or **`vendor/android`** depending on **`CESIUM_BUILD_ONLY`**.
-
-You can also run **`npm run ensure-native`** / **`yarn ensure-native`** with **`--ios`**, **`--android`**, or both flags to trigger the same checks outside CocoaPods/Gradle.
-
-Then install pods (iOS):
-
-```bash
-cd ios && pod install && cd ..
-```
-
-### System dependencies (Homebrew and Xcode)
-
-These are **not** installed by `yarn add` / `pod install`. You need them on the **host** so `yarn run build` can succeed:
+#### Shared (both iOS and Android)
 
 | Tool | Typical install (macOS) | Why |
 | --- | --- | --- |
-| **Xcode** or CLT | `xcode-select --install` or install Xcode from the App Store | Apple **clang**, **SDKs**, **xcodebuild** (XCFramework step) |
 | **CMake** | `brew install cmake` | Configures and drives the native build |
 | **Ninja** | `brew install ninja` | Required generator on macOS for the bundled build script |
 | **Git** | Xcode includes `/usr/bin/git` | Clones Cesium Native and vcpkg |
@@ -86,9 +58,33 @@ Optional but recommended for faster or more reliable builds (see [Cesium Native 
 
 - **`nasm`** — `brew install nasm` (speeds some JPEG-related builds in dependency trees)
 
-Ensure Homebrew’s binary directory is on your **`PATH`** when you run the build (Apple Silicon: `/opt/homebrew/bin`; Intel: `/usr/local/bin`). The build script tries to prepend those paths for nested CMake/vcpkg.
+Ensure Homebrew’s binary directory is on your **`PATH`** when you run the build (typically `/opt/homebrew/bin` on Apple Silicon or `/usr/local/bin` on Intel Macs). The build script also tries to prepend common Homebrew paths for nested CMake/vcpkg processes.
 
-The Android output under **`vendor/android`** is built with the **Android NDK**; set **`ANDROID_NDK_HOME`** or install the NDK via Android Studio so the script can find it when you run a full `yarn run build` without `CESIUM_BUILD_ONLY=ios`.
+<details>
+<summary><strong>Additional iOS specific requirements</strong></summary>
+
+- **Xcode** or Command Line Tools: `xcode-select --install` (or install Xcode from the App Store)
+- Needed for Apple `clang`, SDKs, and `xcodebuild` (XCFramework assembly)
+
+</details>
+
+<details>
+<summary><strong>Additional Android specific requirements</strong></summary>
+
+- Install **Android Studio**
+- In SDK Manager, install:
+  - **Android SDK**
+  - **NDK** (the project currently uses `27.1.12297006`)
+- Ensure **Java 17 (JDK)** is available (Android Studio bundled JDK is fine)
+
+For Android builds, make sure one of these is set so the NDK can be discovered:
+
+- `ANDROID_NDK_HOME` (explicit NDK path), or
+- `ANDROID_SDK_ROOT` / `ANDROID_HOME` with an installed NDK under `ndk/`
+
+If `ANDROID_NDK_HOME` is unset, the build script will try to auto-detect the latest installed NDK from your SDK directory.
+
+</details>
 
 ### Required Podfile hooks (iOS)
 
@@ -126,6 +122,29 @@ The **post-install** helper is currently needed to:
 
 - prepend this package's `cpp/` headers before the locally built XCFramework headers
 - exclude `x86_64` iOS simulator builds, because the simulator slice is Apple Silicon `arm64` only
+
+### Building
+
+**Automatic (default):** assuming you have done the above and have all the required dependencies in place, when the native output is missing, the package tries to build it for you:
+
+- **iOS:** add **`pre_install`** in your app **`Podfile`** (one-time; see [Required Podfile hooks](#required-podfile-hooks-ios)) so **`pod install`** runs **`scripts/cesium/ensure-native.mjs --ios`**, which runs **`npm run update`** / **`yarn run update`** (if needed) and then **`CESIUM_BUILD_ONLY=ios`** build. The first run can take **a long time** and needs the same **system dependencies** as a manual build (CMake, Ninja, Xcode, disk space, etc.).
+- **Android:** the library’s Gradle **`preBuild`** runs **`ensure-native.mjs --android`** if **`vendor/android`** is incomplete, which runs **`CESIUM_BUILD_ONLY=android`** build. Requires **ANDROID_NDK_HOME** (or an NDK the build script can find).
+
+**Manual (optional):** from the package directory (e.g. `node_modules/react-native-cesium`):
+
+```bash
+yarn run update # fetches Cesium Native source locally from GitHub
+yarn run build # builds iOS and Android artifacts; can take a long time
+```
+
+- `npm run update` / `yarn run update` checks out **Cesium Native `v0.59.0`** into `vendor/cesium-native` (created next to the package files; typically ignored in app repos).
+- `npm run build` / `yarn run build` runs `scripts/cesium/build.mjs` (**CMake**, **vcpkg** under `vendor/vcpkg` unless **`VCPKG_ROOT`** is set, **Ninja** on macOS) and writes **`vendor/ios/CesiumNative.xcframework`** and/or **`vendor/android`** depending on **`CESIUM_BUILD_ONLY`**.
+
+Then install pods (iOS):
+
+```bash
+cd ios && pod install && cd ..
+```
 
 ## Usage
 
@@ -203,18 +222,25 @@ When you pass a callback ref to `CesiumView`, wrap it with `callback(...)` from 
 
 `CesiumView` is a Nitro host component. In addition to standard view props like `style`, it currently expects these Cesium-specific props:
 
-| Prop | Type | Description |
-| --- | --- | --- |
-| `ionAccessToken` | `string` | Cesium Ion access token used to authenticate requests. |
-| `ionAssetId` | `number` | Cesium Ion asset ID for the main 3D tileset or terrain source. |
-| `initialCamera` | `CameraState` | Construction-time camera seed. Use `setCamera()` for runtime updates. |
-| `pauseRendering` | `boolean` | Temporarily pauses native rendering work. |
-| `maximumScreenSpaceError` | `number` | Tileset quality / refinement tuning. |
-| `maximumSimultaneousTileLoads` | `number` | Limits in-flight tile loading. |
-| `loadingDescendantLimit` | `number` | Limits descendant loading fan-out. |
-| `msaaSampleCount` | `number` | Anti-aliasing sample count. `1` disables MSAA. |
-| `ionImageryAssetId` | `number` | Optional imagery layer asset ID to drape over the scene. |
-| `onMetrics` | `(metrics: CesiumMetrics) => void` | Receives throttled runtime metrics and plain-text credits. |
+**Consumer-required props (TypeScript)**
+
+| Prop | Type | Default | Description                                                                                                                                                                                                  |
+| --- | --- | --- |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `ionAccessToken` | `string` | _none_ | Cesium Ion token for authenticated asset/imagery requests. An invalid token usually leaves the globe empty or partially loaded due to 401/403 responses.                                                     |
+| `ionAssetId` | `number` | _none_ | Main Ion asset to render (tileset/terrain).                                                                                                                                                                  |
+| `initialCamera` | `CameraState` | _none_ | Initial camera used when the view is created. This is only used for initial camera; use `setCamera()` for runtime moves.                                                                                     |
+| `pauseRendering` | `boolean` | `false` | Pauses the native render loop. Set `true` to stop rendering and reduce GPU/CPU usage.                                                                                                                        |
+| `maximumScreenSpaceError` | `number` | `32` | Quality/performance trade-off for tile refinement. Lower values are sharper (more work); higher values are faster/blurrier.                                                                                  |
+| `maximumSimultaneousTileLoads` | `number` | `12` | Max concurrent tile fetch/decode operations. Raising `8 -> 16` can improve fast camera moves on good networks but may increase memory/bandwidth spikes.                                                      |
+| `loadingDescendantLimit` | `number` | `20` | Caps descendant tile fan-out during traversal. Lower values like `10` smooth bursts on low-end devices; higher values like `40` can fill detail faster.                                                      |
+| `msaaSampleCount` | `number` | `1` | Anti-aliasing sample count. iOS uses `1`, `2`, or `4` (`>=4 -> 4`, `>=2 -> 2`, otherwise `1`); Android currently renders at `1` (MSAA setting is currently ignored in Vulkan backend). |
+| `ionImageryAssetId` | `number` | `1` | Imagery layer to drape over terrain/tiles. Use a satellite imagery asset for a photoreal look, or switch to a streets/map layer for legibility. See your Cesium Ion Asset IDs. |
+
+**Consumer-optional props (TypeScript)**
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `onMetrics` | `(metrics: CesiumMetrics) => void` | `undefined` | Receives throttled runtime stats and credits text. |
 
 ### `CameraState`
 
@@ -230,24 +256,34 @@ type CameraState = {
 }
 ```
 
+| Field | Type | Valid range / format | Description                                                                                                                     |
+| --- | --- | --- |---------------------------------------------------------------------------------------------------------------------------------|
+| `latitude` | `number` | `-90..90` | Camera latitude in degrees.                                                                                                     |
+| `longitude` | `number` | `-180..180` | Camera longitude in degrees.                                                                                                    |
+| `altitude` | `number` | Meters above ellipsoid | Camera height in meters.                                                                                                        |
+| `heading` | `number` | Degrees | Compass direction the camera faces. Example: `0` faces north, `90` faces east.                                                  |
+| `pitch` | `number` | Degrees | Tilt angle. Negative values look downward toward terrain; positive values tilt up toward horizon/sky.                           |
+| `roll` | `number` | Degrees | Bank/rotation around forward axis. Positive right bank, negative left bank.                                                     |
+| `verticalFovDeg` | `number` | `20..100` (clamped) | Vertical field of view. Example: `30` zooms in/narrows view; `90` gives wider peripheral view with more perspective distortion. |
+
 ### `CesiumViewMethods`
 
-Use the imperative ref API exposed through `hybridRef`:
-
-- `setCamera(camera: CameraState): void`
-- `getCameraState(): Promise<CameraState>`
+| Method | Signature | Description                                                                                                                                   |
+| --- | --- |-----------------------------------------------------------------------------------------------------------------------------------------------|
+| `setCamera` | `(camera: CameraState) => void` | Applies a new camera state at runtime. Example: animate route steps by calling `setCamera(...)` on each step. |
+| `getCameraState` | `() => Promise<CameraState>` | Returns the current native camera snapshot. |
 
 ### `CesiumMetrics`
 
-`onMetrics` currently reports:
-
-- `fps`
-- `tilesRendered`
-- `tilesLoading`
-- `tilesVisited`
-- `ionTokenConfigured`
-- `tilesetReady`
-- `creditsPlainText`
+| Field | Type | Description                                                                                                                                 |
+| --- | --- |---------------------------------------------------------------------------------------------------------------------------------------------|
+| `fps` | `number` | Smoothed frames-per-second estimate from the native render loop.                                                                            |
+| `tilesRendered` | `number` | Number of tiles currently rendered in the frame.                                                                                            |
+| `tilesLoading` | `number` | Number of tiles still loading. If this stays high for long periods, reduce load pressure (`maximumSimultaneousTileLoads`) or check network. |
+| `tilesVisited` | `number` | Number of tiles visited during traversal/culling.                                                                                           |
+| `ionTokenConfigured` | `boolean` | Whether a non-empty Ion token is configured natively. `false` is a quick signal to check `ionAccessToken`.                                  |
+| `tilesetReady` | `boolean` | Whether the primary tileset is initialized and ready.                                                                                       |
+| `creditsPlainText` | `string` | Plain-text attribution/credits from Cesium data sources. Display this in your app footer to satisfy attribution requirements.               |
 
 ## Example App
 
@@ -263,82 +299,10 @@ Before running the example, copy `example/.env_example` to `example/.env` and se
 
 The example project currently links this library locally via `link:..`.
 
-## Library development (this repository)
-
-If you are hacking on **react-native-cesium** itself (not only consuming it from an app), use the same native pipeline from the **repo root**: install devDependencies, then:
-
-```bash
-yarn run update
-yarn run build
-```
-
-`yarn run update` checks out **Cesium Native `v0.59.0`** (pinned for stability). `yarn run build` runs `scripts/cesium/build.mjs` and writes **`vendor/ios`** and **`vendor/android`** next to the package. `yarn run build:js` builds the published JS (`lib/`) and runs on `prepublishOnly`.
-
-Details and troubleshooting match **Cesium Native on your machine** and **System dependencies** above. In a git checkout, `vendor/` trees are gitignored; consumers and contributors alike generate them with `update` + `build` (or `npm run ensure-native`).
-
-### Troubleshooting `yarn build` (iOS / vcpkg)
-
-**EZVCPKG / openssl / `fatal error: 'stdlib.h' file not found'` (or `assert.h`, `sys/types.h`)**
-
-That log line usually means **Cesium Native was configured with embedded EZVCPKG** (`cmake/ezvcpkg`, builds under `~/.ezvcpkg`) instead of this package’s flow. The host **openssl** build for **`arm64-osx`** must see the **macOS SDK**; otherwise clang has no system headers.
-
-- **Use this library’s build:** from `node_modules/react-native-cesium`, run **`yarn run update`** then **`yarn run build`**. `scripts/cesium/build.mjs` passes **`-DCESIUM_USE_EZVCPKG=OFF`** and uses **`vendor/vcpkg`** with the same environment fixes as below—**do not** run raw CMake inside `vendor/cesium-native` unless you know how to mirror those flags.
-- **If you configure Cesium Native yourself:** export the SDK before CMake:
-
-  ```bash
-  export SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
-  ```
-
-  The build script sets **`SDKROOT`** on macOS when it is unset. Ensure **Xcode** or **Command Line Tools** are installed (`xcode-select --install`).
-
-If CMake reports **`CMAKE_MAKE_PROGRAM` is not set** (for **Ninja**), or **`CMAKE_C_COMPILER` / `CMAKE_CXX_COMPILER` not set** after vcpkg fails, nested CMake often cannot see Homebrew or Xcode tools (common with a minimal `PATH` from **GUI / Yarn**). The build script **prepends** `/opt/homebrew/bin` and `/usr/local/bin` on macOS, resolves **`ninja` to an absolute path** in `CMAKE_MAKE_PROGRAM`, and passes **`-DCMAKE_C_COMPILER` / `-DCMAKE_CXX_COMPILER`** from `xcrun`. If it still fails, open a normal terminal, run `which ninja` and `xcrun --find clang`, then run `yarn build` again.
-
-If the iOS simulator step fails while building **curl** with an error like `call to undeclared function 'pipe2'` in `socketpair.c`, that comes from vcpkg’s libcurl configure enabling `HAVE_PIPE2` even though iOS does not implement `pipe2()`. The build script prepends **`scripts/cesium/vcpkg-triplets`** to **`VCPKG_OVERLAY_TRIPLETS`** so **`arm64-ios`** / **`arm64-ios-simulator`** triplets set **`VCPKG_CMAKE_CONFIGURE_OPTIONS`** (including **`-DHAVE_PIPE2=OFF`**). If you still see a cached failure, delete the partial build and retry:
-
-```bash
-rm -rf vendor/cesium-native/build-ios-simulator vendor/vcpkg/buildtrees/curl
-CESIUM_BUILD_ONLY=ios yarn build
-```
-
-If **ktx** (or another port) fails CMake configure with **`Could NOT find Threads`** / **`CMAKE_HAVE_LIBC_PTHREAD` failed**, upstream **zstd** is built with **multithreading**, so **`zstdConfig.cmake` calls `find_dependency(Threads)`**, which **`FindThreads`** often cannot satisfy on **iOS**. This package adds a **vcpkg overlay** for **`zstd`** (`scripts/cesium/vcpkg-ports/zstd`) that sets **`ZSTD_MULTITHREAD_SUPPORT=0`** when **`VCPKG_TARGET_IS_IOS`**, so the exported CMake config no longer pulls **Threads** (slightly slower compression on device; acceptable for linking). The build script also sets **`-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY`** on iOS triplets as a secondary mitigation.
-
-After pulling updates, **clear cached zstd/ktx** and the iOS Cesium build dirs so vcpkg rebuilds **zstd** with the overlay:
-
-```bash
-rm -rf vendor/cesium-native/build-ios-device vendor/cesium-native/build-ios-simulator \
-  vendor/vcpkg/buildtrees/zstd vendor/vcpkg/buildtrees/ktx
-CESIUM_BUILD_ONLY=ios yarn build
-```
-
-If **vcpkg** still restores a cached **zstd** binary and skips the overlay, run once with **`VCPKG_BINARY_SOURCES=clear`** (or your cache’s equivalent) so **zstd** rebuilds from the overlay.
-
-If **ktx** fails the compile step with **`invalid version number in '--target=…-macabi'`** (or **`MacOSX`**.sdk / **macabi** in the compiler line), the **arm64-ios** triplet must set **`CMAKE_OSX_SYSROOT` to the iOS SDK**. Upstream vcpkg’s iOS toolchain does not set a sysroot for **device** **arm64** (only for simulator), so CMake can wrongly use the **host macOS SDK**. The overlay triplet **`scripts/cesium/vcpkg-triplets/arm64-ios.cmake`** sets **`VCPKG_OSX_SYSROOT` to `iphoneos`**. Clear **ktx** and the iOS build dirs, then rebuild:
-
-```bash
-rm -rf vendor/cesium-native/build-ios-device vendor/vcpkg/buildtrees/ktx
-CESIUM_BUILD_ONLY=ios yarn build
-```
-
-**Android / `Could NOT find modp_b64`**
-
-Cesium Native sets `PACKAGE_BUILD_DIR` from **`VCPKG_INSTALLED_DIR`**. That must be **`<build>/vcpkg_installed`** (manifest mode), not **`vendor/vcpkg/installed`**. A stale **CMakeCache** can leave the wrong path so **`find_package(modp_b64)`** runs before headers/libs are visible.
-
-The build script passes **`-DVCPKG_INSTALLED_DIR=…/vcpkg_installed`** and clears Android build dirs when the cached value mismatches. If you still hit this, remove the Android build tree and rebuild:
-
-```bash
-rm -rf vendor/cesium-native/build-android-arm64 vendor/android
-CESIUM_BUILD_ONLY=android yarn build
-```
-
-If install fails with **`/usr/local/include`** (or **`file INSTALL cannot make directory "/usr/local/include": File exists`**), the Android build tree was configured with CMake’s default **`CMAKE_INSTALL_PREFIX=/usr/local`**. Cesium Native bakes that path into install rules; **`cmake --install --prefix …` does not fix it.** The build script now drops **`build-android-arm64`** when the cached prefix does not match **`vendor/android`**. If needed, remove it manually and rebuild:
-
-```bash
-rm -rf vendor/cesium-native/build-android-arm64
-CESIUM_BUILD_ONLY=android yarn build
-```
-
 ## Credits
 
 - Native rendering is built on [Cesium Native](https://github.com/CesiumGS/cesium-native)
 - Cesium Native is licensed under Apache 2.0; see [`NOTICE`](./NOTICE)
 - React Native integration is built with [Nitro Modules](https://github.com/mrousavy/nitro)
+
+
