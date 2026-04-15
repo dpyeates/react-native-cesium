@@ -3,9 +3,10 @@
 #include <Cesium3DTilesSelection/Tile.h>
 #include <CesiumGltf/ImageAsset.h>
 #include <CesiumGltf/Model.h>
+#include <CesiumUtility/JsonValue.h>
 
 #include <cstring>
-
+#include <spdlog/spdlog.h>
 
 namespace reactnativecesium {
 
@@ -25,6 +26,57 @@ ResourcePreparer::prepareInLoadThread(
   TileGPUResources* res = new TileGPUResources();
   if (pModel) {
     res->primitives = GltfToMesh::convert(*pModel, transform);
+
+    if (!pModel->meshes.empty() && !pModel->meshes[0].primitives.empty()) {
+      const CesiumGltf::MeshPrimitive& prim = pModel->meshes[0].primitives[0];
+      const CesiumUtility::JsonValue&  ex   = prim.extras;
+
+      const auto* onlyWater = ex.getValuePtrForKey("OnlyWater");
+      const auto* onlyLand  = ex.getValuePtrForKey("OnlyLand");
+      const bool  isOnlyWater = onlyWater && onlyWater->getBool();
+      const bool  isOnlyLand  = onlyLand  && onlyLand->getBool();
+
+      const auto* texIdPtr = ex.getValuePtrForKey("WaterMaskTex");
+      const int64_t texId  = texIdPtr ? texIdPtr->getSafeNumber<int64_t>().value_or(-2) : -3;
+
+      const auto* wmTxPtr = ex.getValuePtrForKey("WaterMaskTranslationX");
+      const auto* wmTyPtr = ex.getValuePtrForKey("WaterMaskTranslationY");
+      const auto* wmSPtr  = ex.getValuePtrForKey("WaterMaskScale");
+      res->wmTranslation.x = wmTxPtr ? (float)wmTxPtr->getSafeNumber<double>().value_or(0.0) : 0.0f;
+      res->wmTranslation.y = wmTyPtr ? (float)wmTyPtr->getSafeNumber<double>().value_or(0.0) : 0.0f;
+      res->wmScale         = wmSPtr  ? (float)wmSPtr->getSafeNumber<double>().value_or(1.0)  : 1.0f;
+      res->isOnlyWater     = isOnlyWater;
+
+      if (!isOnlyWater && !isOnlyLand) {
+        if (texIdPtr && texId >= 0 &&
+            static_cast<size_t>(texId) < pModel->textures.size()) {
+          const int32_t srcId = pModel->textures[static_cast<size_t>(texId)].source;
+          if (srcId >= 0 && static_cast<size_t>(srcId) < pModel->images.size()) {
+            const auto& img = pModel->images[static_cast<size_t>(srcId)];
+            const bool assetOk = img.pAsset &&
+                                 img.pAsset->width == 256 &&
+                                 img.pAsset->height == 256 &&
+                                 img.pAsset->channels == 1 &&
+                                 img.pAsset->bytesPerChannel == 1 &&
+                                 img.pAsset->pixelData.size() == 65536;
+            if (assetOk) {
+              res->waterMaskPixels.resize(256 * 256 * 4);
+              const auto* src =
+                  reinterpret_cast<const uint8_t*>(img.pAsset->pixelData.data());
+              for (int i = 0; i < 256 * 256; ++i) {
+                const uint8_t v = src[i];
+                res->waterMaskPixels[i * 4 + 0] = v;
+                res->waterMaskPixels[i * 4 + 1] = v;
+                res->waterMaskPixels[i * 4 + 2] = v;
+                res->waterMaskPixels[i * 4 + 3] = 255;
+              }
+            } else {
+              spdlog::warn("[WM] tile srcId={} has unexpected image format", srcId);
+            }
+          }
+        }
+      }
+    }
   }
 
   return asyncSystem.createResolvedFuture(
@@ -34,8 +86,17 @@ ResourcePreparer::prepareInLoadThread(
 
 void* ResourcePreparer::prepareInMainThread(
     Cesium3DTilesSelection::Tile& /*tile*/, void* pLoadThreadResult) {
-  if (auto* res = static_cast<TileGPUResources*>(pLoadThreadResult)) {
+  auto* res = static_cast<TileGPUResources*>(pLoadThreadResult);
+  if (res) {
     res->lastUsedFrame = lifecycle_.currentFrame();
+    if (!res->waterMaskPixels.empty() && waterMaskCreator_) {
+      res->waterMaskTexture = waterMaskCreator_(
+          res->waterMaskPixels.data(), 256, 256);
+      res->waterMaskPixels.clear();
+      res->waterMaskPixels.shrink_to_fit();
+    } else if (!res->waterMaskPixels.empty() && !waterMaskCreator_) {
+      spdlog::error("[WM] waterMaskCreator_ is null — water mask will not be uploaded");
+    }
   }
   return pLoadThreadResult;
 }
@@ -43,10 +104,14 @@ void* ResourcePreparer::prepareInMainThread(
 void ResourcePreparer::free(Cesium3DTilesSelection::Tile& /*tile*/,
                              void* pLoadThreadResult,
                              void* pMainThreadResult) noexcept {
-  if (pLoadThreadResult) {
-    delete static_cast<TileGPUResources*>(pLoadThreadResult);
-  } else if (pMainThreadResult) {
-    delete static_cast<TileGPUResources*>(pMainThreadResult);
+  TileGPUResources* res = pLoadThreadResult
+      ? static_cast<TileGPUResources*>(pLoadThreadResult)
+      : static_cast<TileGPUResources*>(pMainThreadResult);
+  if (res) {
+    if (res->waterMaskTexture && waterMaskDeleter_) {
+      waterMaskDeleter_(res->waterMaskTexture);
+    }
+    delete res;
   }
 }
 
@@ -54,15 +119,13 @@ void ResourcePreparer::free(Cesium3DTilesSelection::Tile& /*tile*/,
 
 void* ResourcePreparer::prepareRasterInLoadThread(CesiumGltf::ImageAsset& image,
                                                    const std::any&) {
-  // Guard against invalid or compressed images.
   if (image.pixelData.empty() || image.width <= 0 || image.height <= 0) {
     return nullptr;
   }
-  // Skip GPU-compressed formats (cannot decode to RGBA8 on CPU here).
   if (image.compressedPixelFormat != CesiumGltf::GpuCompressedPixelFormat::NONE) {
     return nullptr;
   }
-  if (image.bytesPerChannel != 1) return nullptr; // only 8-bit supported
+  if (image.bytesPerChannel != 1) return nullptr;
 
   auto* data = new RasterPixelData();
   data->width  = image.width;
@@ -70,7 +133,7 @@ void* ResourcePreparer::prepareRasterInLoadThread(CesiumGltf::ImageAsset& image,
 
   const size_t pixelCount = static_cast<size_t>(image.width) *
                             static_cast<size_t>(image.height);
-  data->pixels.resize(pixelCount * 4); // RGBA8
+  data->pixels.resize(pixelCount * 4);
 
   const auto* src = reinterpret_cast<const uint8_t*>(image.pixelData.data());
 
@@ -92,7 +155,6 @@ void* ResourcePreparer::prepareRasterInLoadThread(CesiumGltf::ImageAsset& image,
       data->pixels[i * 4 + 3] = 255;
     }
   } else {
-    // Unsupported channel count — fill white placeholder.
     std::fill(data->pixels.begin(), data->pixels.end(), uint8_t(255));
   }
 
@@ -112,18 +174,16 @@ void* ResourcePreparer::prepareRasterInMainThread(
   }
 
   delete pixelData;
-  return texture; // platform GPU texture handle as void*
+  return texture;
 }
 
 void ResourcePreparer::freeRaster(
     const CesiumRasterOverlays::RasterOverlayTile& /*rasterTile*/,
     void* pLoadThreadResult,
     void* pMainThreadResult) noexcept {
-  // If prepareRasterInMainThread was never called, free the pixel data.
   if (pLoadThreadResult) {
     delete static_cast<RasterPixelData*>(pLoadThreadResult);
   }
-  // Release the GPU texture via the platform-supplied deleter.
   if (pMainThreadResult && gpuTextureDeleter_) {
     gpuTextureDeleter_(pMainThreadResult);
   }

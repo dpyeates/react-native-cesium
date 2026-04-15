@@ -42,6 +42,15 @@ public:
     gpuTextureDeleter_ = std::move(deleter);
   }
 
+  // Water mask texture lifecycle — identical signature to the imagery callbacks
+  // but the platform allocates from a different descriptor pool (Vulkan Set 2).
+  void setWaterMaskTextureCreator(GPUTextureCreator creator) {
+    waterMaskCreator_ = std::move(creator);
+  }
+  void setWaterMaskTextureDeleter(GPUTextureDeleter deleter) {
+    waterMaskDeleter_ = std::move(deleter);
+  }
+
   CesiumAsync::Future<Cesium3DTilesSelection::TileLoadResultAndRenderResources>
   prepareInLoadThread(
       const CesiumAsync::AsyncSystem& asyncSystem,
@@ -80,6 +89,8 @@ private:
   TileLifecycleManager& lifecycle_;
   GPUTextureCreator     gpuTextureCreator_;
   GPUTextureDeleter     gpuTextureDeleter_;
+  GPUTextureCreator     waterMaskCreator_;
+  GPUTextureDeleter     waterMaskDeleter_;
 };
 
 } // namespace reactnativecesium

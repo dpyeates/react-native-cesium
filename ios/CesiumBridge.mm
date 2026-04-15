@@ -179,6 +179,22 @@ static const double kEpsAngleDeg = 0.05;
       [](void* tex) {
         if (tex) CFRelease(tex);
       });
+  // Water mask textures are identical MTLTexture objects — createRasterTexture
+  // is reused.  On Metal, the binding slot (texture index 1) is set at draw
+  // time so no separate factory is needed.
+  NSLog(@"[WM-BRIDGE] Wiring up water mask texture creator/deleter");
+  _engine->getResourcePreparer()->setWaterMaskTextureCreator(
+      [backendPtr](const uint8_t* pixels, int32_t w, int32_t h) -> void* {
+        NSLog(@"[WM-BRIDGE] waterMaskCreator called w=%d h=%d pixels=%p", w, h, pixels);
+        void* tex = backendPtr->createRasterTexture(pixels, w, h);
+        NSLog(@"[WM-BRIDGE] waterMaskCreator => tex=%p", tex);
+        return tex;
+      });
+  _engine->getResourcePreparer()->setWaterMaskTextureDeleter(
+      [](void* tex) {
+        NSLog(@"[WM-BRIDGE] waterMaskDeleter called tex=%p", tex);
+        if (tex) CFRelease(tex);
+      });
 }
 
 - (void)updateIonAccessToken:(NSString *)token assetId:(int64_t)assetId {

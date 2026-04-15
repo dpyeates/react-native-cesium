@@ -99,6 +99,14 @@ void CesiumBridgeAndroid::buildEngine() {
       [backendPtr](void* tex) {
         if (tex) backendPtr->freeRasterTexture(tex);
       });
+  engine_->getResourcePreparer()->setWaterMaskTextureCreator(
+      [backendPtr](const uint8_t* pixels, int32_t w, int32_t h) -> void* {
+        return backendPtr->createWaterMaskTexture(pixels, w, h);
+      });
+  engine_->getResourcePreparer()->setWaterMaskTextureDeleter(
+      [backendPtr](void* tex) {
+        if (tex) backendPtr->freeWaterMaskTexture(tex);
+      });
 }
 
 void CesiumBridgeAndroid::shutdown() {

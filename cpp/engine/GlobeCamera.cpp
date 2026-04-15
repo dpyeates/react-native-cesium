@@ -154,4 +154,28 @@ glm::mat4 GlobeCamera::computeVPMatrix(double w, double h) const {
   return proj * viewRot;
 }
 
+glm::dmat4 GlobeCamera::computeVPMatrixDouble(double w, double h) const {
+  std::lock_guard<std::mutex> lk(mutex_);
+  recompute();
+
+  // Rotation-only view (camera-at-origin, ECEF-oriented) — same structure as
+  // computeVPMatrix but all operations stay in double.
+  glm::dmat4 fullView = glm::lookAt(ecefPosition_, ecefPosition_ + direction_, up_);
+  glm::dmat4 viewRot(
+      fullView[0], fullView[1], fullView[2], glm::dvec4(0.0, 0.0, 0.0, 1.0));
+
+  double aspect   = w / std::max(h, 1.0);
+  double vfov     = glm::radians(verticalFovDeg_);
+  double tanHalfV = std::tan(vfov * 0.5);
+  double tanHalfH = tanHalfV * aspect;
+
+  glm::dmat4 proj(0.0);
+  proj[0][0] = 1.0 / tanHalfH;
+  proj[1][1] = 1.0 / tanHalfV;
+  proj[2][3] = -1.0;
+  proj[3][2] = kNearPlane;
+
+  return proj * viewRot;
+}
+
 } // namespace reactnativecesium

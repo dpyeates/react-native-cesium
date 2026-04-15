@@ -1,12 +1,18 @@
 // VulkanBackend.cpp — Android Vulkan rendering backend
 //
 // Architecture mirrors MetalBackend.mm:
-//   - Eye-relative float positions computed on CPU (double precision).
+//   - RTC (Relative-to-Center) vertex positions: tile-local float offsets from
+//     each tile's ECEF centre, computed on the CPU.
+//   - Per-tile MVP matrix computed on the CPU in double precision (baking in the
+//     large camera↔tile-centre translation), then cast to float32 for the GPU.
+//   - Pre-computed vertex altitudes (ellipsoid height metres, double-precision
+//     Bowring formula on CPU), passed as a separate vertex attribute to avoid
+//     catastrophic cancellation in the shader.
 //   - Single merged vertex + index buffer uploaded each frame.
 //   - Reversed-Z infinite projection: depth clear = 0, compare = GREATER.
 //   - Sky drawn first (no depth write), terrain drawn after.
-//   - Imagery overlays: UV buffer alongside positions; push constants select
-//     overlay texture per draw.
+//   - Water mask: UV computed from geographic lat/lon + tile bounds (not fragUV).
+//   - Push constants split: bytes 0-63 vertex (MVP), bytes 64-127 fragment.
 //   - Triple-buffered persistent VkBuffers guarded by VkFence.
 
 #include "VulkanBackend.h"
@@ -41,25 +47,43 @@
   }                                                           \
 } while(0)
 
+// Per-frame UBO (set 0): camera ECEF for the fragment lighting view direction.
+// MVP is now per-draw via push constants; only cameraEcef stays in the UBO.
 struct TerrainUBO {
-  float vpMatrix[16];
-  float cameraEcef[4];
+  float cameraEcef[4];   // 16 bytes
 };
 
 struct SkyUBO {
-  float invVP[16];
-  float cameraEcef[4];
-  float lightDir[4];
+  float invVP[16];       // 64 bytes
+  float cameraEcef[4];   // 16 bytes
+  float lightDir[4];     // 16 bytes
+};                       // 96 bytes
+
+// Push constants split across vertex (bytes 0-63) and fragment (bytes 64-127).
+// Total = 128 bytes (the Vulkan spec minimum guarantee on all devices).
+struct TerrainVertexPC {
+  float mvpMatrix[16];   // 64 bytes — per-tile RTC MVP (double-precision source)
 };
 
-struct OverlayPushConstants {
-  uint32_t hasOverlay;
-  uint32_t isEllipsoidFallback;
-  float    translationX;
-  float    translationY;
-  float    scaleX;
-  float    scaleY;
-};
+struct TerrainFragmentPC {
+  // Fragment push constants occupy bytes 64-127 in the push constant block.
+  uint32_t hasOverlay;           // 4 bytes
+  uint32_t isEllipsoidFallback;  // 4 bytes
+  uint32_t isOnlyWater;          // 4 bytes
+  uint32_t hasWaterMask;         // 4 bytes
+  float    wmWest;               // 4 bytes — tile geographic bounds (radians)
+  float    wmSouth;              // 4 bytes
+  float    wmEast;               // 4 bytes
+  float    wmNorth;              // 4 bytes
+  float    rtcCenterX;           // 4 bytes — tile RTC centre ECEF (float)
+  float    rtcCenterY;           // 4 bytes
+  float    rtcCenterZ;           // 4 bytes
+  float    translationX;         // 4 bytes — overlay UV transform
+  float    translationY;         // 4 bytes
+  float    scaleX;               // 4 bytes
+  float    scaleY;               // 4 bytes
+  float    _pad;                 // 4 bytes
+};                               // 64 bytes
 
 namespace reactnativecesium {
 
@@ -89,10 +113,12 @@ void VulkanBackend::initialize(void* nativeSurface, int width, int height) {
   createSyncObjects();
   createDescriptorSetLayout();
   createDescriptorPool();
+  createWaterMaskPool();
   createPipelineLayout();
   createSkyPipeline();
   createTerrainPipeline();
   createFallbackTexture();
+  createWaterMaskFallback();
 
   // Allocate sky UBO + descriptor set (persistently mapped)
   createBuffer(sizeof(SkyUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -195,17 +221,26 @@ void VulkanBackend::shutdown() {
   {
     std::lock_guard<std::mutex> lk(pendingDeletesMutex_);
     while (!pendingDeletes_.empty()) {
-      destroyTexture(pendingDeletes_.front().tex);
+      auto& front = pendingDeletes_.front();
+      destroyTexture(front.tex, front.pool);
       pendingDeletes_.pop_front();
     }
   }
 
-  // Free fallback texture
+  // Free fallback imagery texture
   if (fallbackTexture_.sampler)     vkDestroySampler(device_, fallbackTexture_.sampler, nullptr);
   if (fallbackTexture_.imageView)   vkDestroyImageView(device_, fallbackTexture_.imageView, nullptr);
   if (fallbackTexture_.image)       vkDestroyImage(device_, fallbackTexture_.image, nullptr);
   if (fallbackTexture_.memory)      vkFreeMemory(device_, fallbackTexture_.memory, nullptr);
   fallbackTexture_ = {};
+
+  // Free fallback water mask texture (its descriptor set belongs to waterMaskPool_)
+  if (fallbackWaterMaskTex_.sampler)   vkDestroySampler(device_, fallbackWaterMaskTex_.sampler, nullptr);
+  if (fallbackWaterMaskTex_.imageView) vkDestroyImageView(device_, fallbackWaterMaskTex_.imageView, nullptr);
+  if (fallbackWaterMaskTex_.image)     vkDestroyImage(device_, fallbackWaterMaskTex_.image, nullptr);
+  if (fallbackWaterMaskTex_.memory)    vkFreeMemory(device_, fallbackWaterMaskTex_.memory, nullptr);
+  fallbackWaterMaskTex_     = {};
+  fallbackWaterMaskDescSet_ = VK_NULL_HANDLE;
 
   // Free sky UBO (unmap before destroy)
   if (skyUboMapped_)  { vkUnmapMemory(device_, skyUboMemory_); skyUboMapped_ = nullptr; }
@@ -223,7 +258,7 @@ void VulkanBackend::shutdown() {
     terrainUboMems_[i] = VK_NULL_HANDLE;
   }
 
-  // Free persistent frame buffers
+  // Free persistent frame buffers (position, index, UV, altitude)
   for (int i = 0; i < kMaxFramesInFlight; ++i) {
     if (vtxBufs_[i]) vkDestroyBuffer(device_, vtxBufs_[i], nullptr);
     if (vtxMems_[i]) vkFreeMemory(device_, vtxMems_[i], nullptr);
@@ -231,9 +266,11 @@ void VulkanBackend::shutdown() {
     if (idxMems_[i]) vkFreeMemory(device_, idxMems_[i], nullptr);
     if (uvBufs_[i])  vkDestroyBuffer(device_, uvBufs_[i], nullptr);
     if (uvMems_[i])  vkFreeMemory(device_, uvMems_[i], nullptr);
-    vtxBufs_[i] = idxBufs_[i] = uvBufs_[i] = VK_NULL_HANDLE;
-    vtxMems_[i] = idxMems_[i] = uvMems_[i] = VK_NULL_HANDLE;
-    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = 0;
+    if (altBufs_[i]) vkDestroyBuffer(device_, altBufs_[i], nullptr);
+    if (altMems_[i]) vkFreeMemory(device_, altMems_[i], nullptr);
+    vtxBufs_[i] = idxBufs_[i] = uvBufs_[i] = altBufs_[i] = VK_NULL_HANDLE;
+    vtxMems_[i] = idxMems_[i] = uvMems_[i] = altMems_[i] = VK_NULL_HANDLE;
+    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = altCaps_[i] = 0;
   }
 
   for (auto& s : imageAvailableSemaphores_) vkDestroySemaphore(device_, s, nullptr);
@@ -253,13 +290,14 @@ void VulkanBackend::shutdown() {
   if (terrainTexLayout_)      vkDestroyDescriptorSetLayout(device_, terrainTexLayout_, nullptr);
   if (skyDescSetLayout_)      vkDestroyDescriptorSetLayout(device_, skyDescSetLayout_, nullptr);
   if (descriptorPool_)        vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
+  if (waterMaskPool_)         vkDestroyDescriptorPool(device_, waterMaskPool_, nullptr);
   if (commandPool_)           vkDestroyCommandPool(device_, commandPool_, nullptr);
   if (renderPass_)            vkDestroyRenderPass(device_, renderPass_, nullptr);
 
   terrainPipeline_ = skyPipeline_ = VK_NULL_HANDLE;
   terrainPipelineLayout_ = skyPipelineLayout_ = VK_NULL_HANDLE;
   terrainDescSetLayout_ = terrainTexLayout_ = skyDescSetLayout_ = VK_NULL_HANDLE;
-  descriptorPool_ = VK_NULL_HANDLE;
+  descriptorPool_ = waterMaskPool_ = VK_NULL_HANDLE;
   commandPool_ = VK_NULL_HANDLE;
   renderPass_ = VK_NULL_HANDLE;
 
@@ -625,12 +663,13 @@ void VulkanBackend::createSyncObjects() {
 // ── Descriptor Layouts + Pipeline Layouts ──────────────────────────────────────
 
 void VulkanBackend::createDescriptorSetLayout() {
-  // Terrain set 0: UBO at binding 0 (vertex + fragment)
+  // Terrain set 0: UBO at binding 0 (fragment only — contains just cameraEcef).
+  // Vertex MVP is now in push constants; vertex stage no longer needs the UBO.
   VkDescriptorSetLayoutBinding uboBinding{};
   uboBinding.binding         = 0;
   uboBinding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   uboBinding.descriptorCount = 1;
-  uboBinding.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  uboBinding.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
 
   VkDescriptorSetLayoutCreateInfo uboLayoutInfo{};
   uboLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -666,20 +705,30 @@ void VulkanBackend::createDescriptorSetLayout() {
 }
 
 void VulkanBackend::createPipelineLayout() {
-  // Terrain: set 0 = UBO, set 1 = texture, plus push constants for overlay params
-  VkPushConstantRange pushRange{};
-  pushRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-  pushRange.offset     = 0;
-  pushRange.size       = sizeof(OverlayPushConstants);
+  // Two push constant ranges covering the 128-byte block (the Vulkan spec
+  // minimum guarantee): vertex reads bytes 0-63 (RTC MVP matrix), fragment
+  // reads bytes 64-127 (overlay + water mask + RTC centre params).
+  VkPushConstantRange pushRanges[2]{};
+  pushRanges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  pushRanges[0].offset     = 0;
+  pushRanges[0].size       = sizeof(TerrainVertexPC);    // 64 bytes
 
-  VkDescriptorSetLayout terrainSetLayouts[] = {terrainDescSetLayout_, terrainTexLayout_};
+  pushRanges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+  pushRanges[1].offset     = sizeof(TerrainVertexPC);    // 64
+  pushRanges[1].size       = sizeof(TerrainFragmentPC);  // 64 bytes
+
+  VkDescriptorSetLayout terrainSetLayouts[] = {
+      terrainDescSetLayout_,  // set 0: UBO (cameraEcef, fragment only)
+      terrainTexLayout_,      // set 1: imagery overlay
+      terrainTexLayout_,      // set 2: water mask (same layout, different pool)
+  };
 
   VkPipelineLayoutCreateInfo terrainLayoutInfo{};
   terrainLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-  terrainLayoutInfo.setLayoutCount         = 2;
+  terrainLayoutInfo.setLayoutCount         = 3;
   terrainLayoutInfo.pSetLayouts            = terrainSetLayouts;
-  terrainLayoutInfo.pushConstantRangeCount = 1;
-  terrainLayoutInfo.pPushConstantRanges    = &pushRange;
+  terrainLayoutInfo.pushConstantRangeCount = 2;
+  terrainLayoutInfo.pPushConstantRanges    = pushRanges;
   VK_CHECK(vkCreatePipelineLayout(device_, &terrainLayoutInfo, nullptr, &terrainPipelineLayout_));
 
   // Sky: no push constants
@@ -706,6 +755,105 @@ void VulkanBackend::createDescriptorPool() {
   poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
   poolInfo.pPoolSizes    = poolSizes.data();
   VK_CHECK(vkCreateDescriptorPool(device_, &poolInfo, nullptr, &descriptorPool_));
+}
+
+void VulkanBackend::createWaterMaskPool() {
+  // Separate pool for water mask descriptor sets (set 2).
+  // One per tile (up to kMaxRasterTextures) + 1 for the fallback.
+  VkDescriptorPoolSize poolSize{};
+  poolSize.type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  poolSize.descriptorCount = static_cast<uint32_t>(kMaxRasterTextures + 1);
+
+  VkDescriptorPoolCreateInfo poolInfo{};
+  poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  poolInfo.maxSets       = static_cast<uint32_t>(kMaxRasterTextures + 1);
+  poolInfo.poolSizeCount = 1;
+  poolInfo.pPoolSizes    = &poolSize;
+  VK_CHECK(vkCreateDescriptorPool(device_, &poolInfo, nullptr, &waterMaskPool_));
+}
+
+void VulkanBackend::createWaterMaskFallback() {
+  // 1×1 all-zero (land) fallback for tiles that carry no water mask texture.
+  // fwidth() on a uniform constant returns 0, so the coastline formula yields
+  // coastA = 0 and no outline is drawn — no special-casing needed in the shader.
+  const uint8_t zero[4] = {0, 0, 0, 255};
+
+  VkImageCreateInfo imgInfo{};
+  imgInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  imgInfo.imageType     = VK_IMAGE_TYPE_2D;
+  imgInfo.format        = VK_FORMAT_R8G8B8A8_UNORM;
+  imgInfo.extent        = {1, 1, 1};
+  imgInfo.mipLevels     = 1;
+  imgInfo.arrayLayers   = 1;
+  imgInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
+  imgInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+  imgInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+  imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  VK_CHECK(vkCreateImage(device_, &imgInfo, nullptr, &fallbackWaterMaskTex_.image));
+
+  VkMemoryRequirements memReqs;
+  vkGetImageMemoryRequirements(device_, fallbackWaterMaskTex_.image, &memReqs);
+
+  VkMemoryAllocateInfo allocInfo{};
+  allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  allocInfo.allocationSize  = memReqs.size;
+  allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits,
+                                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  VK_CHECK(vkAllocateMemory(device_, &allocInfo, nullptr, &fallbackWaterMaskTex_.memory));
+  VK_CHECK(vkBindImageMemory(device_, fallbackWaterMaskTex_.image, fallbackWaterMaskTex_.memory, 0));
+
+  VkBuffer staging;
+  VkDeviceMemory stagingMem;
+  createBuffer(4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               staging, stagingMem);
+  void* mapped;
+  vkMapMemory(device_, stagingMem, 0, 4, 0, &mapped);
+  memcpy(mapped, zero, 4);
+  vkUnmapMemory(device_, stagingMem);
+  uploadToImage(staging, fallbackWaterMaskTex_.image, 1, 1);
+  vkDestroyBuffer(device_, staging, nullptr);
+  vkFreeMemory(device_, stagingMem, nullptr);
+
+  VkImageViewCreateInfo viewInfo{};
+  viewInfo.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  viewInfo.image    = fallbackWaterMaskTex_.image;
+  viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  viewInfo.format   = VK_FORMAT_R8G8B8A8_UNORM;
+  viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+  VK_CHECK(vkCreateImageView(device_, &viewInfo, nullptr, &fallbackWaterMaskTex_.imageView));
+
+  VkSamplerCreateInfo samplerInfo{};
+  samplerInfo.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+  samplerInfo.magFilter    = VK_FILTER_LINEAR;
+  samplerInfo.minFilter    = VK_FILTER_LINEAR;
+  samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  VK_CHECK(vkCreateSampler(device_, &samplerInfo, nullptr, &fallbackWaterMaskTex_.sampler));
+
+  // Allocate a descriptor set from the water mask pool.
+  VkDescriptorSetAllocateInfo dsAlloc{};
+  dsAlloc.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  dsAlloc.descriptorPool     = waterMaskPool_;
+  dsAlloc.descriptorSetCount = 1;
+  dsAlloc.pSetLayouts        = &terrainTexLayout_;
+  VK_CHECK(vkAllocateDescriptorSets(device_, &dsAlloc, &fallbackWaterMaskDescSet_));
+
+  VkDescriptorImageInfo dsImgInfo{};
+  dsImgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  dsImgInfo.imageView   = fallbackWaterMaskTex_.imageView;
+  dsImgInfo.sampler     = fallbackWaterMaskTex_.sampler;
+
+  VkWriteDescriptorSet texWrite{};
+  texWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  texWrite.dstSet          = fallbackWaterMaskDescSet_;
+  texWrite.dstBinding      = 0;
+  texWrite.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  texWrite.descriptorCount = 1;
+  texWrite.pImageInfo      = &dsImgInfo;
+  vkUpdateDescriptorSets(device_, 1, &texWrite, 0, nullptr);
 }
 
 // ── Shader compilation ─────────────────────────────────────────────────────────
@@ -816,16 +964,22 @@ void VulkanBackend::createTerrainPipeline() {
   stages[1].module = fragModule;
   stages[1].pName  = "main";
 
-  // Vertex bindings: position (float3) at binding 0, UV (float2) at binding 1
-  VkVertexInputBindingDescription bindings[2]{};
+  // Vertex bindings:
+  //   binding 0 — position (float3, tile-local)
+  //   binding 1 — UV (float2)
+  //   binding 2 — altitude (float1, ellipsoid height metres, double-precision source)
+  VkVertexInputBindingDescription bindings[3]{};
   bindings[0].binding   = 0;
   bindings[0].stride    = 3 * sizeof(float);
   bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
   bindings[1].binding   = 1;
   bindings[1].stride    = 2 * sizeof(float);
   bindings[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+  bindings[2].binding   = 2;
+  bindings[2].stride    = sizeof(float);
+  bindings[2].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-  VkVertexInputAttributeDescription attrs[2]{};
+  VkVertexInputAttributeDescription attrs[3]{};
   attrs[0].binding  = 0;
   attrs[0].location = 0;
   attrs[0].format   = VK_FORMAT_R32G32B32_SFLOAT;
@@ -834,12 +988,16 @@ void VulkanBackend::createTerrainPipeline() {
   attrs[1].location = 1;
   attrs[1].format   = VK_FORMAT_R32G32_SFLOAT;
   attrs[1].offset   = 0;
+  attrs[2].binding  = 2;
+  attrs[2].location = 2;
+  attrs[2].format   = VK_FORMAT_R32_SFLOAT;
+  attrs[2].offset   = 0;
 
   VkPipelineVertexInputStateCreateInfo vertexInput{};
   vertexInput.sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-  vertexInput.vertexBindingDescriptionCount   = 2;
+  vertexInput.vertexBindingDescriptionCount   = 3;
   vertexInput.pVertexBindingDescriptions      = bindings;
-  vertexInput.vertexAttributeDescriptionCount = 2;
+  vertexInput.vertexAttributeDescriptionCount = 3;
   vertexInput.pVertexAttributeDescriptions    = attrs;
 
   VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -1197,18 +1355,116 @@ void* VulkanBackend::createRasterTexture(const uint8_t* pixels, int32_t width, i
 void VulkanBackend::freeRasterTexture(void* texPtr) {
   if (!texPtr || !device_) return;
   auto* tex = static_cast<VulkanTexture*>(texPtr);
-
-  // Enqueue for deferred deletion rather than stalling the GPU now.
-  // The texture will be destroyed once kMaxFramesInFlight frames have elapsed,
-  // guaranteeing no in-flight command buffer is still referencing it.
+  // Enqueue for deferred deletion — pool = descriptorPool_ (set 1 imagery pool).
   std::lock_guard<std::mutex> lk(pendingDeletesMutex_);
-  pendingDeletes_.push_back({tex, totalFrameCount_});
+  pendingDeletes_.push_back({tex, totalFrameCount_, descriptorPool_});
 }
 
-void VulkanBackend::destroyTexture(VulkanTexture* tex) {
+void* VulkanBackend::createWaterMaskTexture(const uint8_t* pixels, int32_t width, int32_t height) {
+  if (!device_ || !pixels || width <= 0 || height <= 0 || !waterMaskPool_) return nullptr;
+
+  auto* tex = new VulkanTexture();
+  VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
+
+  VkBuffer staging;
+  VkDeviceMemory stagingMem;
+  createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               staging, stagingMem);
+
+  void* mapped;
+  vkMapMemory(device_, stagingMem, 0, imageSize, 0, &mapped);
+  memcpy(mapped, pixels, static_cast<size_t>(imageSize));
+  vkUnmapMemory(device_, stagingMem);
+
+  VkImageCreateInfo imgInfo{};
+  imgInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  imgInfo.imageType     = VK_IMAGE_TYPE_2D;
+  imgInfo.format        = VK_FORMAT_R8G8B8A8_UNORM;
+  imgInfo.extent        = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+  imgInfo.mipLevels     = 1;
+  imgInfo.arrayLayers   = 1;
+  imgInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
+  imgInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+  imgInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+  imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  VK_CHECK(vkCreateImage(device_, &imgInfo, nullptr, &tex->image));
+
+  VkMemoryRequirements memReqs;
+  vkGetImageMemoryRequirements(device_, tex->image, &memReqs);
+
+  VkMemoryAllocateInfo allocInfo{};
+  allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  allocInfo.allocationSize  = memReqs.size;
+  allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits,
+                                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  VK_CHECK(vkAllocateMemory(device_, &allocInfo, nullptr, &tex->memory));
+  VK_CHECK(vkBindImageMemory(device_, tex->image, tex->memory, 0));
+
+  uploadToImage(staging, tex->image,
+                static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+
+  vkDestroyBuffer(device_, staging, nullptr);
+  vkFreeMemory(device_, stagingMem, nullptr);
+
+  VkImageViewCreateInfo viewInfo{};
+  viewInfo.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  viewInfo.image    = tex->image;
+  viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  viewInfo.format   = VK_FORMAT_R8G8B8A8_UNORM;
+  viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+  VK_CHECK(vkCreateImageView(device_, &viewInfo, nullptr, &tex->imageView));
+
+  VkSamplerCreateInfo samplerInfo{};
+  samplerInfo.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+  samplerInfo.magFilter    = VK_FILTER_LINEAR;
+  samplerInfo.minFilter    = VK_FILTER_LINEAR;
+  samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  VK_CHECK(vkCreateSampler(device_, &samplerInfo, nullptr, &tex->sampler));
+
+  // Allocate descriptor set from the water mask pool (set 2).
+  VkDescriptorSetAllocateInfo dsAllocInfo{};
+  dsAllocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  dsAllocInfo.descriptorPool     = waterMaskPool_;
+  dsAllocInfo.descriptorSetCount = 1;
+  dsAllocInfo.pSetLayouts        = &terrainTexLayout_;
+  VkResult dsResult = vkAllocateDescriptorSets(device_, &dsAllocInfo, &tex->descriptorSet);
+  if (dsResult != VK_SUCCESS) {
+    LOGE("Water mask descriptor set alloc FAILED: %d", dsResult);
+    tex->descriptorSet = VK_NULL_HANDLE;
+  } else {
+    VkDescriptorImageInfo dsImgInfo{};
+    dsImgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    dsImgInfo.imageView   = tex->imageView;
+    dsImgInfo.sampler     = tex->sampler;
+
+    VkWriteDescriptorSet texWrite{};
+    texWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    texWrite.dstSet          = tex->descriptorSet;
+    texWrite.dstBinding      = 0;
+    texWrite.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    texWrite.descriptorCount = 1;
+    texWrite.pImageInfo      = &dsImgInfo;
+    vkUpdateDescriptorSets(device_, 1, &texWrite, 0, nullptr);
+  }
+
+  return tex;
+}
+
+void VulkanBackend::freeWaterMaskTexture(void* texPtr) {
+  if (!texPtr || !device_) return;
+  auto* tex = static_cast<VulkanTexture*>(texPtr);
+  // Enqueue for deferred deletion — pool = waterMaskPool_ (set 2 pool).
+  std::lock_guard<std::mutex> lk(pendingDeletesMutex_);
+  pendingDeletes_.push_back({tex, totalFrameCount_, waterMaskPool_});
+}
+
+void VulkanBackend::destroyTexture(VulkanTexture* tex, VkDescriptorPool pool) {
   if (!tex) return;
-  if (tex->descriptorSet) {
-    vkFreeDescriptorSets(device_, descriptorPool_, 1, &tex->descriptorSet);
+  if (tex->descriptorSet && pool != VK_NULL_HANDLE) {
+    vkFreeDescriptorSets(device_, pool, 1, &tex->descriptorSet);
   }
   if (tex->sampler)   vkDestroySampler(device_, tex->sampler, nullptr);
   if (tex->imageView) vkDestroyImageView(device_, tex->imageView, nullptr);
@@ -1225,7 +1481,7 @@ void VulkanBackend::flushPendingDeletes() {
     const auto& front = pendingDeletes_.front();
     if (totalFrameCount_ < front.frameIndex + static_cast<uint64_t>(kMaxFramesInFlight))
       break;
-    destroyTexture(front.tex);
+    destroyTexture(front.tex, front.pool);
     pendingDeletes_.pop_front();
   }
 }
@@ -1369,67 +1625,88 @@ void VulkanBackend::drawScene(const FrameResult& frame) {
   }
 
   // ── Terrain pass ──────────────────────────────────────────────────────────
-  if (frame.draws.empty() || frame.eyeRelPositions.empty() || frame.indices.empty() ||
-      !terrainPipeline_) {
+  if (frame.draws.empty() || frame.localPositions.empty() || frame.indices.empty() ||
+      frame.altitudes.empty() || !terrainPipeline_) {
     return;
   }
 
   const int fi = frameIndex_;
 
-  const size_t vtxBytes = frame.eyeRelPositions.size() * sizeof(float);
-  const size_t idxBytes = frame.indices.size() * sizeof(uint32_t);
-  const size_t uvBytes  = frame.uvs.size() * sizeof(float);
+  const size_t vtxBytes = frame.localPositions.size() * sizeof(float);
+  const size_t idxBytes = frame.indices.size()        * sizeof(uint32_t);
+  const size_t uvBytes  = frame.uvs.size()            * sizeof(float);
+  const size_t altBytes = frame.altitudes.size()      * sizeof(float);
 
   ensureBuffer(vtxBufs_[fi], vtxMems_[fi], vtxCaps_[fi], vtxBytes,
-               frame.eyeRelPositions.data(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+               frame.localPositions.data(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
   ensureBuffer(idxBufs_[fi], idxMems_[fi], idxCaps_[fi], idxBytes,
                frame.indices.data(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
   ensureBuffer(uvBufs_[fi], uvMems_[fi], uvCaps_[fi], uvBytes,
                frame.uvs.data(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+  ensureBuffer(altBufs_[fi], altMems_[fi], altCaps_[fi], altBytes,
+               frame.altitudes.data(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
   if (!vtxBufs_[fi] || !idxBufs_[fi]) return;
 
-  // Update terrain UBO
+  // Per-frame UBO: just cameraEcef (fragment uses it for lighting view direction).
   TerrainUBO terrU{};
-  const float* vp = glm::value_ptr(frame.vpMatrix);
-  for (int i = 0; i < 16; ++i) terrU.vpMatrix[i] = vp[i];
   terrU.cameraEcef[0] = frame.cameraEcef.x;
   terrU.cameraEcef[1] = frame.cameraEcef.y;
   terrU.cameraEcef[2] = frame.cameraEcef.z;
-
+  terrU.cameraEcef[3] = 0.0f;
   memcpy(terrainUboMapped_[fi], &terrU, sizeof(TerrainUBO));
 
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, terrainPipeline_);
 
-  VkBuffer vertexBuffers[] = {vtxBufs_[fi], uvBufs_[fi]};
-  VkDeviceSize offsets[]   = {0, 0};
-  vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
+  // Bind vertex buffers: binding 0 = positions, 1 = UVs, 2 = altitudes.
+  VkBuffer     vertexBuffers[] = {vtxBufs_[fi], uvBufs_[fi], altBufs_[fi]};
+  VkDeviceSize offsets[]       = {0, 0, 0};
+  vkCmdBindVertexBuffers(cmd, 0, 3, vertexBuffers, offsets);
   vkCmdBindIndexBuffer(cmd, idxBufs_[fi], 0, VK_INDEX_TYPE_UINT32);
 
   // Bind set 0 (UBO) once for the whole terrain pass.
   vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, terrainPipelineLayout_,
                           0, 1, &terrainDescSets_[fi], 0, nullptr);
 
-  // Bind set 1 (texture) — start with fallback; rebind per draw as needed.
-  VkDescriptorSet lastTexSet = fallbackTexDescSet_;
+  // Bind set 1 (imagery) and set 2 (water mask) — start with fallbacks.
+  VkDescriptorSet lastTexSet      = fallbackTexDescSet_;
+  VkDescriptorSet lastWaterMaskSet = fallbackWaterMaskDescSet_;
   vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, terrainPipelineLayout_,
                           1, 1, &lastTexSet, 0, nullptr);
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, terrainPipelineLayout_,
+                          2, 1, &lastWaterMaskSet, 0, nullptr);
 
   for (const auto& draw : frame.draws) {
     if (draw.indexCount == 0) continue;
 
-    OverlayPushConstants ov{};
-    ov.hasOverlay          = (draw.overlayTexture && draw.hasUVs) ? 1u : 0u;
-    ov.isEllipsoidFallback = draw.isEllipsoidFallback ? 1u : 0u;
-    ov.translationX = draw.overlayTranslation.x;
-    ov.translationY = draw.overlayTranslation.y;
-    ov.scaleX       = draw.overlayScale.x;
-    ov.scaleY       = draw.overlayScale.y;
+    // ── Vertex push constants: per-tile RTC MVP (bytes 0-63) ─────────────────
+    TerrainVertexPC vpc{};
+    const float* mp = glm::value_ptr(draw.mvpMatrix);
+    for (int i = 0; i < 16; ++i) vpc.mvpMatrix[i] = mp[i];
+    vkCmdPushConstants(cmd, terrainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
+                       0, sizeof(TerrainVertexPC), &vpc);
 
+    // ── Fragment push constants: overlay + water mask + RTC (bytes 64-127) ───
+    TerrainFragmentPC fpc{};
+    fpc.hasOverlay          = (draw.overlayTexture && draw.hasUVs) ? 1u : 0u;
+    fpc.isEllipsoidFallback = draw.isEllipsoidFallback ? 1u : 0u;
+    fpc.isOnlyWater         = draw.isOnlyWater ? 1u : 0u;
+    fpc.hasWaterMask        = (draw.waterMaskTexture != nullptr) ? 1u : 0u;
+    fpc.wmWest              = draw.wmTileBounds.x;
+    fpc.wmSouth             = draw.wmTileBounds.y;
+    fpc.wmEast              = draw.wmTileBounds.z;
+    fpc.wmNorth             = draw.wmTileBounds.w;
+    fpc.rtcCenterX          = draw.rtcCenterEcef.x;
+    fpc.rtcCenterY          = draw.rtcCenterEcef.y;
+    fpc.rtcCenterZ          = draw.rtcCenterEcef.z;
+    fpc.translationX        = draw.overlayTranslation.x;
+    fpc.translationY        = draw.overlayTranslation.y;
+    fpc.scaleX              = draw.overlayScale.x;
+    fpc.scaleY              = draw.overlayScale.y;
     vkCmdPushConstants(cmd, terrainPipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT,
-                       0, sizeof(OverlayPushConstants), &ov);
+                       sizeof(TerrainVertexPC), sizeof(TerrainFragmentPC), &fpc);
 
-    // Determine which texture descriptor set to use for this draw.
+    // ── Set 1: imagery overlay ───────────────────────────────────────────────
     VkDescriptorSet texSet = fallbackTexDescSet_;
     if (draw.overlayTexture && draw.hasUVs) {
       auto* tex = static_cast<VulkanTexture*>(draw.overlayTexture);
@@ -1437,11 +1714,24 @@ void VulkanBackend::drawScene(const FrameResult& frame) {
         texSet = tex->descriptorSet;
       }
     }
-
     if (texSet != lastTexSet) {
       lastTexSet = texSet;
       vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, terrainPipelineLayout_,
                               1, 1, &lastTexSet, 0, nullptr);
+    }
+
+    // ── Set 2: water mask ────────────────────────────────────────────────────
+    VkDescriptorSet wmSet = fallbackWaterMaskDescSet_;
+    if (draw.waterMaskTexture) {
+      auto* wmTex = static_cast<VulkanTexture*>(draw.waterMaskTexture);
+      if (wmTex && wmTex->descriptorSet) {
+        wmSet = wmTex->descriptorSet;
+      }
+    }
+    if (wmSet != lastWaterMaskSet) {
+      lastWaterMaskSet = wmSet;
+      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, terrainPipelineLayout_,
+                              2, 1, &lastWaterMaskSet, 0, nullptr);
     }
 
     uint32_t firstIndex = draw.indexByteOffset / sizeof(uint32_t);

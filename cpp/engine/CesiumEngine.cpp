@@ -6,10 +6,13 @@
 #include "CesiumEngine.hpp"
 
 #include <Cesium3DTilesContent/registerAllTileContentTypes.h>
+#include <Cesium3DTilesSelection/BoundingVolume.h>
 #include <Cesium3DTilesSelection/Tile.h>
 #include <Cesium3DTilesSelection/Tileset.h>
 #include <Cesium3DTilesSelection/TilesetExternals.h>
 #include <Cesium3DTilesSelection/TilesetOptions.h>
+#include <CesiumGeospatial/BoundingRegion.h>
+#include <CesiumGeospatial/GlobeRectangle.h>
 #include <CesiumAsync/CachingAssetAccessor.h>
 #include <CesiumAsync/SqliteCache.h>
 #include <CesiumCurl/CurlAssetAccessor.h>
@@ -24,6 +27,7 @@
 
 #include <spdlog/spdlog.h>
 #include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -48,8 +52,6 @@ bool CesiumEngine::tilesetOptionsMatch(const EngineConfig& a,
 void CesiumEngine::buildEllipsoidMesh() {
   // Tessellate a WGS84 ellipsoid slightly inset so terrain tiles (at true
   // surface height) reliably overdraw it via the reversed-Z depth test.
-  // 20 m is enough separation at Earth scale; larger insets only push the
-  // fallback mesh further “under” the real globe without much benefit.
   constexpr int nLon = 128;
   constexpr int nLat = 64;
 
@@ -65,7 +67,7 @@ void CesiumEngine::buildEllipsoidMesh() {
   ellipsoidIndices_.reserve(static_cast<size_t>(nLat * nLon * 6));
 
   for (int lat = 0; lat <= nLat; ++lat) {
-    const double phi = M_PI * (static_cast<double>(lat) / nLat - 0.5); // -π/2 … +π/2
+    const double phi = M_PI * (static_cast<double>(lat) / nLat - 0.5);
     const double cosPhi = std::cos(phi);
     const double sinPhi = std::sin(phi);
     for (int lon = 0; lon < nLon; ++lon) {
@@ -84,38 +86,45 @@ void CesiumEngine::buildEllipsoidMesh() {
       const uint32_t v10 = static_cast<uint32_t>(lat       * nLon + (lon + 1) % nLon);
       const uint32_t v01 = static_cast<uint32_t>((lat + 1) * nLon + lon);
       const uint32_t v11 = static_cast<uint32_t>((lat + 1) * nLon + (lon + 1) % nLon);
-      // CCW winding when viewed from outside Earth.
       ellipsoidIndices_.push_back(v00); ellipsoidIndices_.push_back(v10); ellipsoidIndices_.push_back(v11);
       ellipsoidIndices_.push_back(v00); ellipsoidIndices_.push_back(v11); ellipsoidIndices_.push_back(v01);
     }
   }
 }
 
+// Append the fallback ellipsoid as a draw.
+// RTC convention for the fallback: the tile's "RTC centre" is the camera
+// position itself, so local positions == old camera-relative positions.  The
+// per-draw MVP is therefore the same rotation-only VP used before RTC was
+// introduced, keeping the fallback on the same code path.
 void CesiumEngine::appendEllipsoidDraws(FrameResult& result) const {
   if (ellipsoidPositions_.empty() || ellipsoidIndices_.empty()) return;
 
-  const glm::dvec3 cameraPos = camera_.getECEFPosition();
-  const size_t     baseVertex = result.eyeRelPositions.size() / 3;
-  const uint32_t indexByteOff = static_cast<uint32_t>(result.indices.size() * sizeof(uint32_t));
-  const size_t   vertexCount = ellipsoidPositions_.size();
-  const size_t   positionOffset = result.eyeRelPositions.size();
-  const size_t   uvOffset = result.uvs.size();
+  const glm::dvec3 cameraPos  = camera_.getECEFPosition();
+  const size_t     baseVertex  = result.localPositions.size() / 3;
+  const uint32_t   indexByteOff =
+      static_cast<uint32_t>(result.indices.size() * sizeof(uint32_t));
+  const size_t vertexCount = ellipsoidPositions_.size();
 
-  result.eyeRelPositions.resize(positionOffset + vertexCount * 3);
-  result.uvs.resize(uvOffset + vertexCount * 2);
+  result.localPositions.resize(result.localPositions.size() + vertexCount * 3);
+  result.altitudes.resize(result.altitudes.size() + vertexCount);
+  result.uvs.resize(result.uvs.size() + vertexCount * 2);
 
-  float* eyeRelOut = result.eyeRelPositions.data() + positionOffset;
-  float* uvOut = result.uvs.data() + uvOffset;
+  float* posOut = result.localPositions.data() + baseVertex * 3;
+  float* altOut = result.altitudes.data()      + baseVertex;
+  float* uvOut  = result.uvs.data()            + baseVertex * 2;
 
   for (const auto& posEcef : ellipsoidPositions_) {
-    const glm::dvec3 eyeRel = posEcef - cameraPos;
-    *eyeRelOut++ = static_cast<float>(eyeRel.x);
-    *eyeRelOut++ = static_cast<float>(eyeRel.y);
-    *eyeRelOut++ = static_cast<float>(eyeRel.z);
-    // The fallback mesh never samples an imagery overlay, but we keep the UV
-    // stream densely packed so the renderer can treat all draws uniformly.
-    *uvOut++ = 0.5f;
-    *uvOut++ = 0.5f;
+    // Local position = ECEF - camera (same as old eye-relative, since camera is the RTC centre).
+    const glm::dvec3 local = posEcef - cameraPos;
+    *posOut++ = static_cast<float>(local.x);
+    *posOut++ = static_cast<float>(local.y);
+    *posOut++ = static_cast<float>(local.z);
+    // Fallback geoid should represent land by default when terrain tiles are not
+    // loaded yet, so keep altitude at sea level for hypsometric land colouring.
+    *altOut++ = 0.0f;
+    *uvOut++  = 0.5f;
+    *uvOut++  = 0.5f;
   }
 
   const size_t indexOffset = result.indices.size();
@@ -131,6 +140,10 @@ void CesiumEngine::appendEllipsoidDraws(FrameResult& result) const {
   draw.hasUVs              = false;
   draw.isEllipsoidFallback = true;
   draw.overlayTexture      = nullptr;
+  // Ellipsoid RTC centre = camera → local pos = eye-relative → use the
+  // rotation-only VP (identical to the pre-RTC vertex transform).
+  draw.mvpMatrix           = result.vpMatrix;
+  draw.rtcCenterEcef       = result.cameraEcef;
   result.draws.push_back(draw);
 }
 
@@ -211,6 +224,7 @@ void CesiumEngine::createTileset(const std::string& token,
   opts.preloadAncestors = true;
   opts.preloadSiblings  = true;
   opts.forbidHoles      = true;
+  opts.contentOptions.enableWaterMask = true;
 
   tileset_ = std::make_unique<Cesium3DTilesSelection::Tileset>(
       externals, assetId, token, opts);
@@ -235,7 +249,8 @@ void CesiumEngine::setImageryAssetId(int64_t assetId) {
 }
 
 void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
-  result.eyeRelPositions.clear();
+  result.localPositions.clear();
+  result.altitudes.clear();
   result.uvs.clear();
   result.indices.clear();
   result.draws.clear();
@@ -245,39 +260,38 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   result.tilesetActive      = (tileset_ != nullptr);
   result.verticalFovDeg     = camera_.getVerticalFovDegrees();
 
+  const glm::dvec3 cameraPos = camera_.getECEFPosition();
+  result.cameraEcef = glm::vec3(cameraPos);
+
+  // Rotation-only VP (float) — used by the sky shader and the ellipsoid fallback.
+  result.vpMatrix = camera_.computeVPMatrix(w, h);
+  result.invVP    = glm::inverse(result.vpMatrix);
+
+  // Double-precision rotation-only VP — used to build per-tile MVP matrices
+  // so the camera↔tile-centre translation is resolved in double before the
+  // final cast to float32.
+  const glm::dmat4 vpDouble = camera_.computeVPMatrixDouble(w, h);
+
   if (!tileset_) {
-    // No Ion tileset configured yet — still render the ellipsoid fallback so
-    // the globe is always visible.
-    result.vpMatrix   = camera_.computeVPMatrix(w, h);
-    result.invVP      = glm::inverse(result.vpMatrix);
-    result.cameraEcef = glm::vec3(camera_.getECEFPosition());
     appendEllipsoidDraws(result);
     lifecycle_.advanceFrame();
     return;
   }
 
-  result.eyeRelPositions.reserve(512 * 1024);
+  result.localPositions.reserve(512 * 1024);
+  result.altitudes.reserve(512 * 1024 / 3);
   result.uvs.reserve(512 * 1024 * 2);
   result.indices.reserve(3 * 1024 * 1024);
 
   asyncSystem_.dispatchMainThreadTasks();
 
-  const glm::dvec3 cameraPos = camera_.getECEFPosition();
-  result.cameraEcef = glm::vec3(cameraPos);
-
-  result.vpMatrix = camera_.computeVPMatrix(w, h);
-  result.invVP    = glm::inverse(result.vpMatrix);
-
-  // Draw ellipsoid first so tile draws (appended below) overdraw it wherever
-  // terrain data is available (reversed-Z depth test: closer = higher value).
+  // Ellipsoid fallback is appended first so real terrain tiles (drawn later)
+  // overdraw it via the reversed-Z depth test.
   appendEllipsoidDraws(result);
 
   const auto viewState     = camera_.computeViewState(w, h);
   const auto& updateResult = tileset_->updateView({viewState});
 
-  // Include every active credit, not only shouldBeShownOnScreen==true. Cesium
-  // marks many provider strings (Bing, Google, etc.) for off-screen / popup
-  // attribution; we have no separate popup, so fold them into the footer.
   if (creditSystem_) {
     const CesiumUtility::CreditsSnapshot& snap =
         creditSystem_->getSnapshot(CesiumUtility::CreditFilteringMode::UniqueHtml);
@@ -301,42 +315,85 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
 
     lifecycle_.stampTileUsed(const_cast<TileGPUResources*>(res));
 
+    glm::vec4 wmTileBounds(0.0f);
+    const auto& bv = tile->getBoundingVolume();
+    const CesiumGeospatial::BoundingRegion* bRegion =
+        Cesium3DTilesSelection::getBoundingRegionFromBoundingVolume(bv);
+    if (bRegion) {
+      const auto& rect = bRegion->getRectangle();
+      wmTileBounds = glm::vec4(
+          static_cast<float>(rect.getWest()),
+          static_cast<float>(rect.getSouth()),
+          static_cast<float>(rect.getEast()),
+          static_cast<float>(rect.getNorth()));
+    }
+
     for (const auto& prim : res->primitives) {
-      if (prim.indices.empty() || prim.positionsEcef.empty()) continue;
+      if (prim.indices.empty() || prim.localPositions.empty()) continue;
 
-      const size_t   currentVertex   = result.eyeRelPositions.size() / 3;
-      const uint32_t indexByteOffset =
+      const size_t   baseVertex    = result.localPositions.size() / 3;
+      const uint32_t indexByteOff  =
           static_cast<uint32_t>(result.indices.size() * sizeof(uint32_t));
-      const bool hasPrimUVs =
-          !prim.uvs.empty() && prim.uvs.size() == prim.positionsEcef.size();
+      const size_t   vertexCount   = prim.localPositions.size();
+      const bool     hasPrimUVs    =
+          !prim.uvs.empty() && prim.uvs.size() == vertexCount;
 
-      for (size_t vi = 0; vi < prim.positionsEcef.size(); ++vi) {
-        const glm::dvec3& posEcef = prim.positionsEcef[vi];
-        const glm::dvec3 eyeRel = posEcef - cameraPos;
-        result.eyeRelPositions.push_back(static_cast<float>(eyeRel.x));
-        result.eyeRelPositions.push_back(static_cast<float>(eyeRel.y));
-        result.eyeRelPositions.push_back(static_cast<float>(eyeRel.z));
+      // ── RTC: copy tile-local positions & altitudes ────────────────────────
+      // Positions are already relative to prim.rtcCenter (small float values).
+      // Altitudes are computed in double in GltfToMesh — sub-millimetre precision.
+      result.localPositions.resize(result.localPositions.size() + vertexCount * 3);
+      result.altitudes.resize(result.altitudes.size() + vertexCount);
+      result.uvs.resize(result.uvs.size() + vertexCount * 2);
 
+      float* posOut = result.localPositions.data() + baseVertex * 3;
+      float* altOut = result.altitudes.data()      + baseVertex;
+      float* uvOut  = result.uvs.data()            + baseVertex * 2;
+
+      for (size_t vi = 0; vi < vertexCount; ++vi) {
+        const glm::vec3& lp = prim.localPositions[vi];
+        *posOut++ = lp.x;
+        *posOut++ = lp.y;
+        *posOut++ = lp.z;
+        *altOut++ = prim.altitudes.empty() ? 0.0f : prim.altitudes[vi];
         if (hasPrimUVs) {
-          result.uvs.push_back(prim.uvs[vi].x);
-          result.uvs.push_back(prim.uvs[vi].y);
+          *uvOut++ = prim.uvs[vi].x;
+          *uvOut++ = prim.uvs[vi].y;
         } else {
-          result.uvs.push_back(0.5f);
-          result.uvs.push_back(0.5f);
+          *uvOut++ = 0.5f;
+          *uvOut++ = 0.5f;
         }
       }
 
       for (uint32_t idx : prim.indices) {
-        result.indices.push_back(static_cast<uint32_t>(currentVertex) + idx);
+        result.indices.push_back(static_cast<uint32_t>(baseVertex) + idx);
       }
 
+      // ── RTC: per-tile MVP matrix (double → float) ─────────────────────────
+      // Compute the camera-relative offset of the tile's RTC centre in double
+      // and bake it into the MVP matrix before casting to float32.  This means
+      // the large camera↔tile translation is resolved with double precision;
+      // the vertex shader only ever adds small tile-local offsets on top of it.
+      const glm::dvec3 rtcCamRel =
+          prim.rtcCenter - glm::dvec3(cameraPos);
+      const glm::dmat4 translateD =
+          glm::translate(glm::dmat4(1.0), rtcCamRel);
+      const glm::mat4 perTileMVP =
+          glm::mat4(vpDouble * translateD);
+
       DrawPrimitive draw;
-      draw.indexByteOffset      = indexByteOffset;
+      draw.indexByteOffset      = indexByteOff;
       draw.indexCount           = static_cast<uint32_t>(prim.indices.size());
       draw.hasUVs               = hasPrimUVs;
       draw.overlayTexture       = res->overlayTexture;
       draw.overlayTranslation   = res->overlayTranslation;
       draw.overlayScale         = res->overlayScale;
+      draw.waterMaskTexture     = res->waterMaskTexture;
+      draw.isOnlyWater          = res->isOnlyWater;
+      draw.wmTileBounds         = wmTileBounds;
+      draw.wmTranslation        = res->wmTranslation;
+      draw.wmScale              = res->wmScale;
+      draw.mvpMatrix            = perTileMVP;
+      draw.rtcCenterEcef        = glm::vec3(prim.rtcCenter);
       result.draws.push_back(draw);
     }
   }

@@ -37,6 +37,11 @@ public:
   void* createRasterTexture(const uint8_t* pixels, int32_t width, int32_t height);
   void  freeRasterTexture(void* tex);
 
+  // Water mask textures — same pixel format but allocated from a separate pool
+  // so they can be bound at descriptor set 2 (vs imagery at set 1).
+  void* createWaterMaskTexture(const uint8_t* pixels, int32_t width, int32_t height);
+  void  freeWaterMaskTexture(void* tex);
+
   void setMsaaSampleCount(int sampleCount);
 
 private:
@@ -56,6 +61,8 @@ private:
   void createTerrainPipeline();
   void createFallbackTexture();
   void createDescriptorPool();
+  void createWaterMaskPool();
+  void createWaterMaskFallback();
 
   void cleanupSwapchain();
   void recreateSwapchain();
@@ -109,10 +116,13 @@ private:
   VkPipeline            terrainPipeline_       = VK_NULL_HANDLE;
   VkPipeline            skyPipeline_           = VK_NULL_HANDLE;
 
-  VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
+  VkDescriptorPool descriptorPool_     = VK_NULL_HANDLE;
+  VkDescriptorPool waterMaskPool_      = VK_NULL_HANDLE;
 
   VulkanTexture   fallbackTexture_;
-  VkDescriptorSet fallbackTexDescSet_ = VK_NULL_HANDLE;
+  VkDescriptorSet fallbackTexDescSet_     = VK_NULL_HANDLE;
+  VulkanTexture   fallbackWaterMaskTex_;
+  VkDescriptorSet fallbackWaterMaskDescSet_ = VK_NULL_HANDLE;
 
   // Sky UBO — persistently mapped
   VkBuffer        skyUboBuffer_  = VK_NULL_HANDLE;
@@ -132,7 +142,7 @@ private:
   uint32_t imageIndex_  = 0;
   bool     frameBegan_  = false;
 
-  // Triple-buffered persistent vertex/index/UV buffers
+  // Triple-buffered persistent vertex/index/UV/altitude buffers
   VkBuffer       vtxBufs_[kMaxFramesInFlight] = {};
   VkDeviceMemory vtxMems_[kMaxFramesInFlight] = {};
   size_t         vtxCaps_[kMaxFramesInFlight] = {};
@@ -145,7 +155,12 @@ private:
   VkDeviceMemory uvMems_[kMaxFramesInFlight]  = {};
   size_t         uvCaps_[kMaxFramesInFlight]  = {};
 
-  // Terrain UBO per frame — persistently mapped
+  VkBuffer       altBufs_[kMaxFramesInFlight] = {};  // float altitude per vertex
+  VkDeviceMemory altMems_[kMaxFramesInFlight] = {};
+  size_t         altCaps_[kMaxFramesInFlight] = {};
+
+  // Per-frame UBO: just cameraEcef (fragment stage, used for lighting vd).
+  // MVP is now per-draw via push constants.
   VkBuffer        terrainUboBufs_[kMaxFramesInFlight] = {};
   VkDeviceMemory  terrainUboMems_[kMaxFramesInFlight] = {};
   void*           terrainUboMapped_[kMaxFramesInFlight] = {};
@@ -157,16 +172,19 @@ private:
 
   // Deferred texture deletion — freeRasterTexture enqueues here so no GPU stall
   // on eviction; beginFrame flushes entries old enough to be safe.
+  // pool identifies which VkDescriptorPool owns the descriptor set; if
+  // VK_NULL_HANDLE the fallback / UBO pool (descriptorPool_) is used.
   struct PendingDelete {
-    VulkanTexture* tex;
-    uint64_t       frameIndex;
+    VulkanTexture*   tex;
+    uint64_t         frameIndex;
+    VkDescriptorPool pool = VK_NULL_HANDLE;
   };
   std::deque<PendingDelete> pendingDeletes_;
   std::mutex                pendingDeletesMutex_;
   uint64_t                  totalFrameCount_ = 0;
 
   void flushPendingDeletes();
-  void destroyTexture(VulkanTexture* tex);
+  void destroyTexture(VulkanTexture* tex, VkDescriptorPool pool);
 };
 
 } // namespace reactnativecesium

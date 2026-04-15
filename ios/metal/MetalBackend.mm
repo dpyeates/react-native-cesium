@@ -1,15 +1,23 @@
 // MetalBackend.mm — iOS Metal rendering backend
 //
 // Architecture:
-//   • Eye-relative float positions computed on CPU (double precision).
+//   • RTC (Relative-to-Centre) tile-local float positions on the GPU.
+//     Vertex positions are stored relative to each tile's RTC centre so that
+//     the values remain small (tile radius, not full ECEF magnitude), giving
+//     full float32 precision for geometry at any altitude.
+//   • Per-tile MVP matrix computed on the CPU in double precision:
+//       MVP = P_double * R_double * T_double(rtcCentre − camera)
+//     then cast to float32 for the GPU.  This avoids the large float32
+//     cancellation error that would arise from computing the camera offset
+//     on the GPU.
+//   • Vertex altitude attribute (metres, computed from double-precision Bowring
+//     formula on the CPU).  Passed straight to the fragment shader — eliminates
+//     the ±50 m float32 catastrophic-cancellation error of
+//     ellipsoidHeightMeters(wp) in the old shader.
 //   • Single merged vertex + index buffer uploaded each frame.
 //   • Reversed-Z infinite projection: depth clear = 0, compare = GREATER.
 //   • Sky drawn first (no depth write), terrain drawn after.
-//   • Imagery overlays: UV buffer alongside positions; each draw primitive can
-//     bind an optional overlay MTLTexture sampled in the shader.
-//   • Triple-buffered persistent MTLBuffers: one slot per in-flight frame,
-//     guarded by a dispatch_semaphore.  This eliminates per-frame GPU-memory
-//     allocation while keeping CPU-GPU safety.
+//   • Triple-buffered persistent MTLBuffers: one slot per in-flight frame.
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -22,12 +30,15 @@
 #include <cstring> // memcpy
 #include <algorithm> // std::max
 
-// Uniforms — float3 in MSL is 16-byte aligned (same as float4), so we always
-// use float[4] on the C++ side to keep sizes identical.
-struct TerrainUniforms {
-  float vpMatrix[16];   // column-major float4x4  (64 bytes)
-  float cameraEcef[4];  // xyz used, w=0          (16 bytes)
-};                      // total 80 bytes
+// ── CPU-side uniform structs ──────────────────────────────────────────────────
+// float3 in MSL is 16-byte aligned (same as float4), so we always use float[4]
+// on the C++ side to keep sizes identical between CPU and GPU structs.
+
+// Per-draw vertex uniforms: the tile's RTC MVP matrix (double-precision on CPU,
+// cast to float32 for the GPU).
+struct PerDrawVertexUniformsCPP {
+  float mvpMatrix[16];  // column-major float4x4 (64 bytes)
+};                      // total 64 bytes
 
 struct SkyUniforms {
   float invVP[16];      // column-major float4x4  (64 bytes)
@@ -35,12 +46,36 @@ struct SkyUniforms {
   float lightDir[4];    // xyz used, w=0          (16 bytes)
 };                      // total 96 bytes
 
+// Per-draw fragment uniforms: all overlay/water-mask parameters plus the RTC
+// centre and camera-in-tile-space needed to reconstruct world position.
 struct OverlayParamsCPP {
-  uint32_t hasOverlay;
-  uint32_t isEllipsoidFallback;
-  float    translation[2];
-  float    scale[2];
-};
+  uint32_t hasOverlay;           // offset  0
+  uint32_t isEllipsoidFallback;  // offset  4
+  uint32_t isOnlyWater;          // offset  8
+  uint32_t hasWaterMask;         // offset 12
+  float    translation[2];       // offset 16
+  float    scale[2];             // offset 24
+  float    wmWest;               // offset 32
+  float    wmSouth;              // offset 36
+  float    wmEast;               // offset 40
+  float    wmNorth;              // offset 44
+  float    wmTransX;             // offset 48
+  float    wmTransY;             // offset 52
+  float    wmScale;              // offset 56
+  float    _pad1;                // offset 60
+  // RTC centre in absolute ECEF (float3).  Fragment shader reconstructs world
+  // position as:  wp = in.localPos + rtcCentre  (see shader).
+  float    rtcCenterX;           // offset 64
+  float    rtcCenterY;           // offset 68
+  float    rtcCenterZ;           // offset 72
+  float    _pad2;                // offset 76
+  // Camera position in tile-local space (camera_ECEF − rtcCentre), cast to
+  // float32.  Used for the view direction vector in lighting.
+  float    cameraTilespaceX;     // offset 80
+  float    cameraTilespaceY;     // offset 84
+  float    cameraTilespaceZ;     // offset 88
+  float    _pad3;                // offset 92
+};                               // total 96 bytes
 
 // ── Shader source ─────────────────────────────────────────────────────────────
 
@@ -48,28 +83,58 @@ static NSString* const kTerrainShaderSrc = @R"MSL(
 #include <metal_stdlib>
 using namespace metal;
 
-struct TerrainUniforms {
-  float4x4 vpMatrix;
-  float4   cameraEcef; // xyz used, w=0 — float4 avoids float3 alignment surprise
-};
-struct TerrainVOut {
-  float4 position [[position]];
-  float3 eyeRelPos;
-  float2 uv;           // overlay UV coordinates
+// ── Vertex shader ────────────────────────────────────────────────────────────
+// RTC: vertex positions are stored relative to each tile's RTC centre (small
+// floats).  The per-tile MVP matrix was computed on the CPU entirely in double
+// precision, so the large camera↔centre translation is represented accurately.
+struct PerDrawVertexUniforms {
+  float4x4 mvpMatrix;  // per-tile MVP: P_d * R_d * T_d(rtcCentre − camera) → float
 };
 
-float ellipsoidHeightMeters(float3 p) {
-  const float a=6378137.f, b=6356752.31424518f;
-  const float e2=1.f-(b*b)/(a*a), ep2=(a*a-b*b)/(b*b);
-  float pxy=sqrt(p.x*p.x+p.y*p.y);
-  if(pxy<1e-6f)return abs(p.z)-b;
-  float theta=atan2(p.z*a,pxy*b);
-  float st=sin(theta),ct=cos(theta);
-  float lat=atan2(p.z+ep2*b*st*st*st,pxy-e2*a*ct*ct*ct);
-  float sinLat=sin(lat);
-  float N=a/sqrt(1.f-e2*sinLat*sinLat);
-  return pxy/cos(lat)-N;
+struct TerrainVOut {
+  float4 position [[position]];
+  float3 localPos;   // tile-local position (vertex − rtcCentre, float32)
+  float  altitude;   // ellipsoid height metres from vertex attribute (double source)
+  float2 uv;
+};
+
+vertex TerrainVOut terrainVertex(
+    uint                              vid       [[vertex_id]],
+    const device packed_float3*       pos       [[buffer(0)]],
+    const device float*               altitudes [[buffer(1)]],
+    constant PerDrawVertexUniforms&   u         [[buffer(2)]],
+    const device packed_float2*       uvs       [[buffer(3)]])
+{
+  TerrainVOut o;
+  float3 lp    = float3(pos[vid]);
+  o.position   = u.mvpMatrix * float4(lp, 1.0f);
+  o.localPos   = lp;
+  o.altitude   = altitudes[vid];
+  o.uv         = float2(uvs[vid]);
+  return o;
 }
+
+// ── Fragment shader ──────────────────────────────────────────────────────────
+struct OverlayParams {
+  uint  hasOverlay;
+  uint  isEllipsoidFallback;
+  uint  isOnlyWater;
+  uint  hasWaterMask;
+  float translation[2];
+  float scale[2];
+  float wmWest, wmSouth, wmEast, wmNorth;
+  float wmTransX, wmTransY;
+  float wmScale;
+  float _pad1;
+  // RTC centre in ECEF (float).  wp = in.localPos + rtcCentre gives a world
+  // position with ~0.75 m ULP (vs ~4 m for eyeRelPos + cameraEcef at altitude).
+  float rtcCenterX, rtcCenterY, rtcCenterZ;
+  float _pad2;
+  // Camera position in tile-local space: camera_ECEF − rtcCentre.
+  // Pre-computed on CPU in double, cast to float — used for lighting vd vector.
+  float cameraTilespaceX, cameraTilespaceY, cameraTilespaceZ;
+  float _pad3;
+};
 
 float3 hypsometricColor(float alt, float steep) {
   float3 cDeep=float3(.03f,.20f,.46f),cShallow=float3(.08f,.44f,.78f);
@@ -86,80 +151,115 @@ float3 hypsometricColor(float alt, float steep) {
   return mix(c,scree,rock);
 }
 
-vertex TerrainVOut terrainVertex(
-    uint vid [[vertex_id]],
-    const device packed_float3* pos  [[buffer(0)]],
-    constant TerrainUniforms& u      [[buffer(1)]],
-    const device packed_float2* uvs  [[buffer(2)]])
-{
-  TerrainVOut o;
-  float3 ep=float3(pos[vid]);
-  o.position=u.vpMatrix*float4(ep,1.f);
-  o.eyeRelPos=ep;
-  o.uv=float2(uvs[vid]);
-  return o;
-}
-
-struct OverlayParams {
-  uint  hasOverlay;
-  uint  isEllipsoidFallback;
-  float translation[2];
-  float scale[2];
-};
-
 fragment float4 terrainFragment(
-    TerrainVOut in                      [[stage_in]],
-    constant TerrainUniforms& u         [[buffer(0)]],
-    constant OverlayParams& ov          [[buffer(1)]],
-    texture2d<float> overlayTex         [[texture(0)]])
+    TerrainVOut              in           [[stage_in]],
+    constant OverlayParams&  ov           [[buffer(0)]],
+    texture2d<float>         overlayTex   [[texture(0)]],
+    texture2d<float>         waterMaskTex [[texture(1)]])
 {
+  constexpr sampler s(filter::linear, address::clamp_to_edge);
+
+  // ── World position (RTC reconstruction) ──────────────────────────────────
+  // wp = tile-local position + RTC centre (both float32, sum at ~6.4 Mm).
+  // Precision: ~0.75 m ULP — much better than eyeRelPos + cameraEcef which
+  // had ~4 m ULP at typical camera altitudes.  Used for lat/lon computation
+  // (water-mask UV) and lighting surface normal (up direction).
+  float3 rtcCentre = float3(ov.rtcCenterX, ov.rtcCenterY, ov.rtcCenterZ);
+  float3 wp  = in.localPos + rtcCentre;
+  float  pxy = sqrt(wp.x*wp.x + wp.y*wp.y);
+  float  lon = atan2(wp.y, wp.x);
+
+  // Geodetic latitude (Bowring iteration in float32 — good to ~0.1 m for
+  // water-mask UV, which is all we need here).
+  const float a_e=6378137.f, b_e=6356752.31424518f;
+  const float ep2=(a_e*a_e-b_e*b_e)/(b_e*b_e), e2=1.f-(b_e*b_e)/(a_e*a_e);
+  float theta_g=atan2(wp.z*a_e, pxy*b_e);
+  float sg=sin(theta_g), cg=cos(theta_g);
+  float lat=atan2(wp.z+ep2*b_e*sg*sg*sg, pxy-e2*a_e*cg*cg*cg);
+
+  // ── Water-mask UV ─────────────────────────────────────────────────────────
+  // Cesium GEOGRAPHIC UV convention:
+  //   U: 0=west … 1=east     (unchanged for Metal texture)
+  //   V: 0=south … 1=north   (geographic, must be flipped for texture)
+  float wmU   = (lon - ov.wmWest)  / max(ov.wmEast  - ov.wmWest,  1e-7f);
+  float v_geo = (lat - ov.wmSouth) / max(ov.wmNorth - ov.wmSouth, 1e-7f);
+  float2 geoUV = float2(wmU, v_geo) * ov.wmScale + float2(ov.wmTransX, ov.wmTransY);
+  float2 wmUV  = clamp(float2(geoUV.x, 1.0f - geoUV.y), 0.0f, 1.0f);
+
+  float waterVal = (ov.isOnlyWater != 0u)
+      ? 1.0f
+      : waterMaskTex.sample(s, wmUV).r;
+
+  float3 lit;
+
   if (ov.hasOverlay != 0u) {
-    constexpr sampler s(filter::linear, address::clamp_to_edge);
     float2 texUV = in.uv * float2(ov.scale[0], ov.scale[1])
                  + float2(ov.translation[0], ov.translation[1]);
-    texUV.y = 1.0 - texUV.y;
-    return overlayTex.sample(s, texUV);
+    texUV.y = 1.0f - texUV.y;
+    lit = overlayTex.sample(s, texUV).rgb;
+  } else {
+    // ── Lighting ──────────────────────────────────────────────────────────
+    // Normals from screen-space derivatives of tile-local position.
+    // (Using localPos rather than eyeRelPos makes no difference for the
+    // direction of the normal — only the scale changes.)
+    float3 dpdx = dfdx(in.localPos), dpdy = dfdy(in.localPos);
+    float3 rawN  = cross(dpdx, dpdy);
+    float  nLen  = length(rawN);
+    float3 n     = (nLen > 1e-8f) ? rawN / nLen : float3(0.f, 0.f, 1.f);
+
+    // View direction: camera−tile-centre minus vertex−tile-centre.
+    float3 cameraLocal = float3(ov.cameraTilespaceX, ov.cameraTilespaceY, ov.cameraTilespaceZ);
+    float3 vd = normalize(cameraLocal - in.localPos);
+    if (dot(n, vd) < 0.f) n = -n;
+
+    float3 gu  = normalize(wp);  // surface up (towards space)
+    float3 sun = normalize(gu + float3(0.3f, 0.2f, 0.1f));
+    float  diff  = saturate(dot(n, sun));
+    float  amb   = 0.18f;
+    float  rim   = saturate(1.f - dot(n, vd)) * 0.06f;
+    float  steep = 1.f - saturate(abs(dot(n, gu)));
+
+    // ── Altitude (from vertex attribute — double-precision source) ────────
+    // In.altitude was computed on the CPU with Bowring formula in double
+    // (sub-mm accuracy).  This completely avoids the ±50 m float32
+    // catastrophic cancellation of the old  pxy/cos(lat) − N  in the shader.
+    // The ellipsoid fallback is tessellated at −20 m → renders as ocean.
+    float rawAlt = in.altitude;
+
+    float3 oceanBlue = float3(0.04f, 0.26f, 0.52f);
+    // When a real water-mask texture is present it controls ocean pixels via
+    // waterVal, so clamp land altitude ≥ 0 to prevent residual float noise
+    // from ocean vertices colouring land blue.  Without a water mask, use
+    // raw altitude so bathymetric depth renders as ocean.
+    float landAlt = (ov.hasWaterMask != 0u) ? max(rawAlt, 0.0f) : rawAlt;
+    float3 landLit = hypsometricColor(landAlt, steep) * (amb + diff * 0.72f + rim);
+    lit = mix(landLit, oceanBlue, waterVal);
+
+    // 1 km lat/lon grid — fades when sub-pixel to suppress Moiré.
+    float gridLat = 1000.f / 6371000.f;
+    float cosLat  = max(cos(lat), 0.001f);
+    float gridLon = gridLat / cosLat;
+    float wLat = fwidth(lat) * 1.5f, wLon = fwidth(lon) * 1.5f;
+    float gridVis = clamp(min(gridLat / max(wLat, 1e-9f),
+                              gridLon / max(wLon, 1e-9f)), 0.f, 1.f);
+    float latCell = lat - gridLat * floor(lat / gridLat);
+    float lonCell = lon - gridLon * floor(lon / gridLon);
+    float dLat = min(latCell, gridLat - latCell);
+    float dLon = min(lonCell, gridLon - lonCell);
+    float gridA = max(1.f - smoothstep(0.f, wLat, dLat),
+                      1.f - smoothstep(0.f, wLon, dLon)) * gridVis;
+    lit = mix(lit, float3(0.15f, 0.15f, 0.15f), gridA * 0.6f);
   }
-  float3 dpdx=dfdx(in.eyeRelPos), dpdy=dfdy(in.eyeRelPos);
-  float3 rawN=cross(dpdx,dpdy);
-  float nLen=length(rawN);
-  float3 n=(nLen>1e-8f)?rawN/nLen:float3(0,0,1);
-  float3 wp=in.eyeRelPos+u.cameraEcef.xyz;
-  float3 vd=normalize(-in.eyeRelPos);
-  if(dot(n,vd)<0.f)n=-n;
-  float3 gu=normalize(wp);
-  float3 sun=normalize(gu+float3(.3f,.2f,.1f));
-  float diff=saturate(dot(n,sun));
-  float amb=.18f, rim=saturate(1.f-dot(n,vd))*.06f;
-  float steep=1.f-saturate(abs(dot(n,gu)));
-  float alt=(ov.isEllipsoidFallback != 0u) ? 0.f : ellipsoidHeightMeters(wp);
-  float3 base=hypsometricColor(alt,steep);
-  float3 lit=base*(amb+diff*.72f+rim);
 
-  // 1km grid aligned to lat/lon — fades to zero when sub-pixel (avoids
-  // Moiré circles and false gaps between imagery and fallback tiles at
-  // high altitude, where fwidth(lat) >> gridLat and gridA would otherwise
-  // saturate to 1 for every pixel).
-  float pxy=sqrt(wp.x*wp.x+wp.y*wp.y);
-  float lat=atan2(wp.z,pxy);
-  float lon=atan2(wp.y,wp.x);
-  float gridLat=1000.f/6371000.f;
-  float cosLat=max(cos(lat),0.001f);
-  float gridLon=gridLat/cosLat;
-  float wLat=fwidth(lat)*1.5f;
-  float wLon=fwidth(lon)*1.5f;
-  float gridVis=clamp(min(gridLat/max(wLat,1e-9f),
-                          gridLon/max(wLon,1e-9f)),0.f,1.f);
-  float latCell=lat-gridLat*floor(lat/gridLat);
-  float lonCell=lon-gridLon*floor(lon/gridLon);
-  float dLat=min(latCell,gridLat-latCell);
-  float dLon=min(lonCell,gridLon-lonCell);
-  float gridA=max(1.f-smoothstep(0.f,wLat,dLat),
-                  1.f-smoothstep(0.f,wLon,dLon))*gridVis;
-  float3 gridCol=float3(0.15f,0.15f,0.15f);
-  lit=mix(lit,gridCol,gridA*0.6f);
+  // Coastline outline from water mask (magenta for easy diagnostics).
+  if (ov.isEllipsoidFallback == 0u) {
+    float dWater  = fwidth(waterVal);
+    float coastPx = abs(waterVal - 0.5f) / max(dWater * 0.5f, 0.01f);
+    float coastA  = 1.f - smoothstep(0.f, 1.5f, coastPx);
+    lit = mix(lit, float3(0.18f, 0.14f, 0.10f), coastA * 0.7f);
+  }
 
-  return float4(lit,1.f);
+  return float4(lit, 1.f);
 }
 )MSL";
 
@@ -267,12 +367,13 @@ MetalBackend::MetalBackend()
       terrainPipeline_(nullptr), skyPipeline_(nullptr),
       terrainDepthState_(nullptr), skyDepthState_(nullptr),
       depthTexture_(nullptr), fallbackTexture_(nullptr),
+      fallbackWaterMaskTexture_(nullptr),
       currentDrawable_(nullptr), currentCommandBuffer_(nullptr),
       currentEncoder_(nullptr),
       frameSemaphore_(nullptr), frameIndex_(0) {
   for (int i = 0; i < kMaxFramesInFlight; ++i) {
-    vtxBufs_[i] = idxBufs_[i] = uvBufs_[i] = nullptr;
-    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = 0;
+    vtxBufs_[i] = idxBufs_[i] = uvBufs_[i] = altBufs_[i] = nullptr;
+    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = altCaps_[i] = 0;
   }
 }
 
@@ -299,6 +400,7 @@ void MetalBackend::initialize(void* nativeSurface, int width, int height) {
   buildRenderPipelines();
   createDepthTexture();
   createFallbackTexture();
+  createWaterMaskFallback();
 }
 
 void MetalBackend::buildRenderPipelines() {
@@ -410,17 +512,19 @@ void MetalBackend::shutdown() {
     if (vtxBufs_[i]) { CFRelease(vtxBufs_[i]); vtxBufs_[i] = nullptr; }
     if (idxBufs_[i]) { CFRelease(idxBufs_[i]); idxBufs_[i] = nullptr; }
     if (uvBufs_[i])  { CFRelease(uvBufs_[i]);  uvBufs_[i]  = nullptr; }
-    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = 0;
+    if (altBufs_[i]) { CFRelease(altBufs_[i]); altBufs_[i] = nullptr; }
+    vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = altCaps_[i] = 0;
   }
 
-  if (device_)            { CFRelease(device_);            device_           = nullptr; }
-  if (commandQueue_)      { CFRelease(commandQueue_);      commandQueue_     = nullptr; }
-  if (terrainPipeline_)   { CFRelease(terrainPipeline_);   terrainPipeline_  = nullptr; }
-  if (skyPipeline_)       { CFRelease(skyPipeline_);       skyPipeline_      = nullptr; }
-  if (terrainDepthState_) { CFRelease(terrainDepthState_); terrainDepthState_= nullptr; }
-  if (skyDepthState_)     { CFRelease(skyDepthState_);     skyDepthState_    = nullptr; }
-  if (depthTexture_)      { CFRelease(depthTexture_);      depthTexture_     = nullptr; }
-  if (fallbackTexture_)   { CFRelease(fallbackTexture_);   fallbackTexture_  = nullptr; }
+  if (device_)                   { CFRelease(device_);                   device_                  = nullptr; }
+  if (commandQueue_)             { CFRelease(commandQueue_);             commandQueue_            = nullptr; }
+  if (terrainPipeline_)          { CFRelease(terrainPipeline_);          terrainPipeline_         = nullptr; }
+  if (skyPipeline_)              { CFRelease(skyPipeline_);              skyPipeline_             = nullptr; }
+  if (terrainDepthState_)        { CFRelease(terrainDepthState_);        terrainDepthState_       = nullptr; }
+  if (skyDepthState_)            { CFRelease(skyDepthState_);            skyDepthState_           = nullptr; }
+  if (depthTexture_)             { CFRelease(depthTexture_);             depthTexture_            = nullptr; }
+  if (fallbackTexture_)          { CFRelease(fallbackTexture_);          fallbackTexture_         = nullptr; }
+  if (fallbackWaterMaskTexture_) { CFRelease(fallbackWaterMaskTexture_); fallbackWaterMaskTexture_= nullptr; }
 }
 
 void MetalBackend::createDepthTexture() {
@@ -463,6 +567,33 @@ void MetalBackend::createFallbackTexture() {
            withBytes:white
          bytesPerRow:4];
   fallbackTexture_ = (__bridge_retained void*)tex;
+}
+
+void MetalBackend::createWaterMaskFallback() {
+  if (!device_) return;
+  id<MTLDevice> dev = (__bridge id<MTLDevice>)device_;
+
+  if (fallbackWaterMaskTexture_) {
+    CFRelease(fallbackWaterMaskTexture_);
+    fallbackWaterMaskTexture_ = nullptr;
+  }
+
+  MTLTextureDescriptor* td =
+      [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                         width:1
+                                                        height:1
+                                                     mipmapped:NO];
+  td.usage       = MTLTextureUsageShaderRead;
+  td.storageMode = MTLStorageModeShared;
+  id<MTLTexture> tex = [dev newTextureWithDescriptor:td];
+
+  // All-zero = land; fwidth(0.0) = 0.0 so coastA = 0 for solid-land tiles.
+  const uint8_t zero[4] = {0, 0, 0, 255};
+  [tex replaceRegion:MTLRegionMake2D(0, 0, 1, 1)
+         mipmapLevel:0
+           withBytes:zero
+         bytesPerRow:4];
+  fallbackWaterMaskTexture_ = (__bridge_retained void*)tex;
 }
 
 void* MetalBackend::createRasterTexture(const uint8_t* pixels,
@@ -583,64 +714,94 @@ void MetalBackend::drawScene(const FrameResult& frame) {
   }
 
   // ── Terrain pass ──────────────────────────────────────────────────────────
-  if (frame.draws.empty() || frame.eyeRelPositions.empty() || frame.indices.empty() ||
+  if (frame.draws.empty() || frame.localPositions.empty() || frame.indices.empty() ||
       !terrainPipeline_ || !terrainDepthState_) {
     return;
   }
 
   const int fi = frameIndex_;
 
-  // Write CPU data into the current frame's persistent Metal buffers.
-  // ensureBuffer grows the buffer if needed (amortised doubling) without
-  // allocating a new MTLBuffer on every frame once at steady-state.
-  const size_t vtxBytes = frame.eyeRelPositions.size() * sizeof(float);
-  const size_t idxBytes = frame.indices.size()         * sizeof(uint32_t);
-  const size_t uvBytes  = frame.uvs.size()             * sizeof(float);
+  // Upload merged geometry to the current frame's persistent Metal buffers.
+  const size_t vtxBytes = frame.localPositions.size() * sizeof(float);
+  const size_t idxBytes = frame.indices.size()        * sizeof(uint32_t);
+  const size_t uvBytes  = frame.uvs.size()            * sizeof(float);
+  const size_t altBytes = frame.altitudes.size()      * sizeof(float);
 
   id<MTLBuffer> vtxBuf = ensureBuffer(&vtxBufs_[fi], &vtxCaps_[fi],
-                                       vtxBytes, frame.eyeRelPositions.data(), dev);
+                                       vtxBytes, frame.localPositions.data(), dev);
   id<MTLBuffer> idxBuf = ensureBuffer(&idxBufs_[fi], &idxCaps_[fi],
                                        idxBytes, frame.indices.data(), dev);
   id<MTLBuffer> uvBuf  = ensureBuffer(&uvBufs_[fi],  &uvCaps_[fi],
                                        uvBytes,  frame.uvs.data(), dev);
+  id<MTLBuffer> altBuf = ensureBuffer(&altBufs_[fi], &altCaps_[fi],
+                                       altBytes, frame.altitudes.data(), dev);
 
-  if (!vtxBuf || !idxBuf) return;
-
-  TerrainUniforms terrU{};
-  const float* vp = glm::value_ptr(frame.vpMatrix);
-  for (int i = 0; i < 16; ++i) terrU.vpMatrix[i] = vp[i];
-  terrU.cameraEcef[0] = frame.cameraEcef.x;
-  terrU.cameraEcef[1] = frame.cameraEcef.y;
-  terrU.cameraEcef[2] = frame.cameraEcef.z;
+  if (!vtxBuf || !idxBuf || !altBuf) return;
 
   [enc setRenderPipelineState:(__bridge id<MTLRenderPipelineState>)terrainPipeline_];
   [enc setDepthStencilState:(__bridge id<MTLDepthStencilState>)terrainDepthState_];
   [enc setFrontFacingWinding:MTLWindingCounterClockwise];
   [enc setCullMode:MTLCullModeBack];
 
+  // Set vertex buffers that are shared across all draws.
+  // buffer(0): tile-local positions, buffer(1): altitudes, buffer(3): UVs.
+  // buffer(2) is the per-draw MVP set in the loop below.
   [enc setVertexBuffer:vtxBuf offset:0 atIndex:0];
-  [enc setVertexBytes:&terrU length:sizeof(terrU) atIndex:1];
-  if (uvBuf) [enc setVertexBuffer:uvBuf offset:0 atIndex:2];
-  [enc setFragmentBytes:&terrU length:sizeof(terrU) atIndex:0];
+  [enc setVertexBuffer:altBuf offset:0 atIndex:1];
+  if (uvBuf) [enc setVertexBuffer:uvBuf offset:0 atIndex:3];
 
-  id<MTLTexture> fallbackTex = (__bridge id<MTLTexture>)fallbackTexture_;
+  id<MTLTexture> fallbackTex   = (__bridge id<MTLTexture>)fallbackTexture_;
+  id<MTLTexture> fallbackWMTex = (__bridge id<MTLTexture>)fallbackWaterMaskTexture_;
+
+  if (fallbackWMTex) [enc setFragmentTexture:fallbackWMTex atIndex:1];
 
   for (const auto& draw : frame.draws) {
     if (draw.indexCount == 0) continue;
 
+    // ── Per-draw vertex uniforms: the tile's RTC MVP matrix ───────────────
+    PerDrawVertexUniformsCPP vdu{};
+    const float* mp = glm::value_ptr(draw.mvpMatrix);
+    for (int i = 0; i < 16; ++i) vdu.mvpMatrix[i] = mp[i];
+    [enc setVertexBytes:&vdu length:sizeof(vdu) atIndex:2];
+
+    // ── Per-draw fragment uniforms ─────────────────────────────────────────
     OverlayParamsCPP ov{};
-    ov.hasOverlay = (draw.overlayTexture && draw.hasUVs) ? 1u : 0u;
+    ov.hasOverlay          = (draw.overlayTexture && draw.hasUVs) ? 1u : 0u;
     ov.isEllipsoidFallback = draw.isEllipsoidFallback ? 1u : 0u;
-    ov.translation[0] = draw.overlayTranslation.x;
-    ov.translation[1] = draw.overlayTranslation.y;
-    ov.scale[0]       = draw.overlayScale.x;
-    ov.scale[1]       = draw.overlayScale.y;
-    [enc setFragmentBytes:&ov length:sizeof(ov) atIndex:1];
+    ov.isOnlyWater         = draw.isOnlyWater         ? 1u : 0u;
+    ov.hasWaterMask        = draw.waterMaskTexture     ? 1u : 0u;
+    ov.translation[0]      = draw.overlayTranslation.x;
+    ov.translation[1]      = draw.overlayTranslation.y;
+    ov.scale[0]            = draw.overlayScale.x;
+    ov.scale[1]            = draw.overlayScale.y;
+    ov.wmWest              = draw.wmTileBounds.x;
+    ov.wmSouth             = draw.wmTileBounds.y;
+    ov.wmEast              = draw.wmTileBounds.z;
+    ov.wmNorth             = draw.wmTileBounds.w;
+    ov.wmTransX            = draw.wmTranslation.x;
+    ov.wmTransY            = draw.wmTranslation.y;
+    ov.wmScale             = draw.wmScale;
+    // RTC: tile centre and camera-in-tile-space for fragment world-position
+    // reconstruction and view-direction lighting.
+    ov.rtcCenterX          = draw.rtcCenterEcef.x;
+    ov.rtcCenterY          = draw.rtcCenterEcef.y;
+    ov.rtcCenterZ          = draw.rtcCenterEcef.z;
+    // cameraTilespace = cameraEcef − rtcCentre.  Calculated here to keep the
+    // fragment shader free of subtraction of two large float3 values.
+    ov.cameraTilespaceX    = frame.cameraEcef.x - draw.rtcCenterEcef.x;
+    ov.cameraTilespaceY    = frame.cameraEcef.y - draw.rtcCenterEcef.y;
+    ov.cameraTilespaceZ    = frame.cameraEcef.z - draw.rtcCenterEcef.z;
+    [enc setFragmentBytes:&ov length:sizeof(ov) atIndex:0];
 
     id<MTLTexture> tex = (draw.overlayTexture && draw.hasUVs)
         ? (__bridge id<MTLTexture>)draw.overlayTexture
         : fallbackTex;
     if (tex) [enc setFragmentTexture:tex atIndex:0];
+
+    id<MTLTexture> wmTex = draw.waterMaskTexture
+        ? (__bridge id<MTLTexture>)draw.waterMaskTexture
+        : fallbackWMTex;
+    if (wmTex) [enc setFragmentTexture:wmTex atIndex:1];
 
     [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                     indexCount:draw.indexCount

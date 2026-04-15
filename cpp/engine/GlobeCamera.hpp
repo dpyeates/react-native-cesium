@@ -40,7 +40,12 @@ public:
 
   glm::dvec3 getECEFPosition() const;
 
-  glm::mat4 computeVPMatrix(double viewportWidth, double viewportHeight) const;
+  glm::mat4  computeVPMatrix(double viewportWidth, double viewportHeight) const;
+
+  // Double-precision rotation-only VP matrix (same projection, no translation).
+  // Used by CesiumEngine to build per-tile MVP = vpDouble * translate(rtcCenter-camera)
+  // entirely in double before casting the result to float32 for the GPU.
+  glm::dmat4 computeVPMatrixDouble(double viewportWidth, double viewportHeight) const;
 
 private:
   void recompute() const;
