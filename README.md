@@ -136,22 +136,54 @@ The **post-install** helper is currently needed to:
 - prepend this package's `cpp/` headers before the locally built XCFramework headers
 - exclude `x86_64` iOS simulator builds, because the simulator slice is Apple Silicon `arm64` only
 
+### Android (Gradle automatic ensure-native)
+
+Unlike iOS, you **do not** need to copy anything into your **application’s** `android/build.gradle` (or `settings.gradle`) so Cesium Native can be cloned and built automatically. React Native already includes this package as an Android library dependency; this repo’s **`android/build.gradle`** registers **`ensureCesiumNativeAndroid`** and makes **`preBuild`** depend on it.
+
+What happens on **`./gradlew`** / Android Studio build:
+
+1. **`preBuild`** runs **`ensureCesiumNativeAndroid`** before CMake compiles the JNI/native code.
+2. That task checks for a marker file under the installed package:  
+   `vendor/android/share/cesium-native/cmake/cesium-nativeConfig.cmake`.
+3. If the marker **exists**, the task does nothing.
+4. If the marker is **missing**, it runs (from the package root, e.g. `node_modules/react-native-cesium`):  
+   `node scripts/cesium/ensure-native.mjs --android`  
+   which may run **`update`** then a **`CESIUM_BUILD_ONLY=android`** **`build`**, same as a manual run (can take a long time).
+5. If **`REACT_NATIVE_CESIUM_SKIP_NATIVE_BUILD=1`** is set and artifacts are still missing, the build **fails fast** with an error instead of running the script.
+
+You still need a discoverable **Android NDK** (expand **Additional Android specific requirements** under [System dependencies](#system-dependencies) above) so that build can succeed.
+
 ### Building
 
 **Automatic (default):** assuming you have done the above and have all the required dependencies in place, when the native output is missing, the package tries to build it for you:
 
 - **iOS:** add **`pre_install`** in your app **`Podfile`** (one-time; see [Required Podfile hooks](#required-podfile-hooks-ios)) so **`pod install`** runs **`scripts/cesium/ensure-native.mjs --ios`**, which runs **`npm run update`** / **`yarn run update`** (if needed) and then **`CESIUM_BUILD_ONLY=ios`** build. The first run can take **a long time** and needs the same **system dependencies** as a manual build (CMake, Ninja, Xcode, disk space, etc.).
-- **Android:** the library’s Gradle **`preBuild`** runs **`ensure-native.mjs --android`** if **`vendor/android`** is incomplete, which runs **`CESIUM_BUILD_ONLY=android`** build. Requires **ANDROID_NDK_HOME** (or an NDK the build script can find).
+- **Android:** no extra hooks in your app; see [Android (Gradle automatic ensure-native)](#android-gradle-automatic-ensure-native). Needs a discoverable **NDK**.
 
-**Manual (optional):** from the package directory (e.g. `node_modules/react-native-cesium`):
+**Manual (optional):** run the **`update`** and **`build`** scripts defined in **`react-native-cesium`’s `package.json`**. They are **not** available as top-level commands in your app; you must run them **in the context of the installed package**.
+
+From your **application project root** (where your app’s `package.json` lives), after `yarn add` / `npm install`:
+
+**Yarn:**
 
 ```bash
-yarn run update # fetches Cesium Native source locally from GitHub
-yarn run build # builds iOS and Android artifacts; can take a long time
+yarn --cwd node_modules/react-native-cesium run update
+yarn --cwd node_modules/react-native-cesium run build
 ```
 
-- `npm run update` / `yarn run update` checks out **Cesium Native `v0.59.0`** into `vendor/cesium-native` (created next to the package files; typically ignored in app repos).
-- `npm run build` / `yarn run build` runs `scripts/cesium/build.mjs` (**CMake**, **vcpkg** under `vendor/vcpkg` unless **`VCPKG_ROOT`** is set, **Ninja** on macOS) and writes **`vendor/ios/CesiumNative.xcframework`** and/or **`vendor/android`** depending on **`CESIUM_BUILD_ONLY`**.
+**npm:**
+
+```bash
+npm run update --prefix node_modules/react-native-cesium
+npm run build --prefix node_modules/react-native-cesium
+```
+
+**Alternative:** `cd node_modules/react-native-cesium` and run `yarn run update` / `yarn run build` (or the equivalent `npm run …`).
+
+**Yarn/npm workspaces:** if `react-native-cesium` is a workspace package in your monorepo, use your tool’s workspace runner, e.g. `yarn workspace react-native-cesium run update` (exact syntax depends on your workspace layout).
+
+- `update` checks out **Cesium Native `v0.59.0`** into `vendor/cesium-native` under the package (next to its other files; typically ignored in app repos).
+- `build` runs `scripts/cesium/build.mjs` (**CMake**, **vcpkg** under `vendor/vcpkg` unless **`VCPKG_ROOT`** is set, **Ninja** on macOS) and writes **`vendor/ios/CesiumNative.xcframework`** and/or **`vendor/android`** depending on **`CESIUM_BUILD_ONLY`**.
 
 Then install pods (iOS):
 
