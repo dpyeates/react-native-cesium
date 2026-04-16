@@ -1,3 +1,12 @@
+## [1.0.2](https://github.com/dpyeates/react-native-cesium/compare/v1.0.1...v1.0.2) (2026-04-16)
+
+### 🛠️ Other changes
+
+* add react-native-nitro-modules as dependency ([ca7d462](https://github.com/dpyeates/react-native-cesium/commit/ca7d4624781608c822f63916a7085341b51dfc2a))
+* added setCameraQuaternion ([7056ca8](https://github.com/dpyeates/react-native-cesium/commit/7056ca8d3352bfd301e0b79ccbdde809b6f021b9))
+* bundle id updated for example app ([0c3d5d1](https://github.com/dpyeates/react-native-cesium/commit/0c3d5d18db3c6b76917e1e31d4264bb4cd7d651d))
+* removed old logging output ([4774b40](https://github.com/dpyeates/react-native-cesium/commit/4774b40f41cc0727d2fc788a4462717e9e7c4022))
+
 ## [1.0.1](https://github.com/dpyeates/react-native-cesium/compare/v1.0.0...v1.0.1) (2026-04-15)
 
 ### 🛠️ Other changes
