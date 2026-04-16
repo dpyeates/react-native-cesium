@@ -5,6 +5,7 @@
 #include <Cesium3DTilesSelection/ViewState.h>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <mutex>
 
 namespace reactnativecesium {
@@ -16,6 +17,8 @@ struct CameraParams {
   double heading   = 220.0;
   double pitch     = -10.0;
   double roll      = 0.0;
+  /// Camera-space rotation applied after HPR (unit quaternion; w,x,y,z).
+  glm::dquat viewCorrection{1.0, 0.0, 0.0, 0.0};
 };
 
 class GlobeCamera {

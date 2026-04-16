@@ -22,6 +22,9 @@ struct CesiumBridgeAndroid {
   void updateImageryAssetId(int64_t assetId);
   void updateCamera(double lat, double lon, double alt,
                     double heading, double pitch, double roll);
+  void updateCameraQuaternion(double lat, double lon, double alt,
+                              double heading, double pitch, double roll,
+                              double qw, double qx, double qy, double qz);
   void setVerticalFovDeg(double degrees);
   void setMaximumScreenSpaceError(double v);
   void setMaximumSimultaneousTileLoads(int v);
@@ -40,6 +43,10 @@ struct CesiumBridgeAndroid {
   double readCameraPitch();
   double readCameraRoll();
   double readVerticalFovDeg();
+  double readViewCorrectionW();
+  double readViewCorrectionX();
+  double readViewCorrectionY();
+  double readViewCorrectionZ();
 
   // Metrics
   double metricsFps() const { return metricsFps_; }
@@ -52,7 +59,6 @@ struct CesiumBridgeAndroid {
 
 private:
   void buildEngine();
-  reactnativecesium::CameraParams makeCamTarget();
 
   std::unique_ptr<reactnativecesium::VulkanBackend> vulkanBackend_;
   std::unique_ptr<reactnativecesium::CesiumEngine>  engine_;
@@ -78,6 +84,10 @@ private:
   double camTargetHeading_ = 129.0;
   double camTargetPitch_   = -45.0;
   double camTargetRoll_    = 0.0;
+  double camTargetViewQw_  = 1.0;
+  double camTargetViewQx_  = 0.0;
+  double camTargetViewQy_  = 0.0;
+  double camTargetViewQz_  = 0.0;
   bool   forceRenderNextFrame_ = true;
 
   // Metrics

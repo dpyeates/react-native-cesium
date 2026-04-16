@@ -3,6 +3,7 @@
 #include <CesiumGeospatial/GlobeTransforms.h>
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -74,6 +75,27 @@ void GlobeCamera::recompute() const {
     camUp = glm::normalize(glm::cross(rolledRight, fwd));
     right = glm::normalize(rolledRight);
   }
+
+  // 4. Optional camera-space correction (columns: right, camUp, forward).
+  const glm::dquat& qIn = params_.viewCorrection;
+  const double         ql2 =
+      qIn.w * qIn.w + qIn.x * qIn.x + qIn.y * qIn.y + qIn.z * qIn.z;
+  glm::dquat qCorr;
+  if (ql2 < 1e-20) {
+    qCorr = glm::dquat(1.0, 0.0, 0.0, 0.0);
+  } else {
+    const double inv = 1.0 / std::sqrt(ql2);
+    qCorr = glm::dquat(qIn.w * inv, qIn.x * inv, qIn.y * inv, qIn.z * inv);
+  }
+  glm::dmat3 R_basis(right, camUp, fwd);
+  glm::dmat3 R_corr  = glm::mat3_cast(qCorr);
+  glm::dmat3 R_final = R_basis * R_corr;
+  glm::dvec3 r0      = glm::normalize(glm::dvec3(R_final[0]));
+  glm::dvec3 r2      = glm::normalize(glm::dvec3(R_final[2]));
+  // Gram–Schmidt: preserve forward (column 2), rebuild right/up (matches right × fwd = camUp).
+  fwd   = r2;
+  right = glm::normalize(r0 - glm::dot(r0, fwd) * fwd);
+  camUp = glm::normalize(glm::cross(right, fwd));
 
   direction_ = fwd;
   up_        = camUp;

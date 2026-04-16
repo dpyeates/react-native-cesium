@@ -17,6 +17,8 @@
 namespace margelo::nitro::reactnativecesium { struct CameraState; }
 // Forward declaration of `CesiumMetrics` to properly resolve imports.
 namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
+// Forward declaration of `Quaternion` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct Quaternion; }
 
 #include <string>
 #include "CameraState.hpp"
@@ -24,6 +26,7 @@ namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 #include <functional>
 #include <optional>
 #include <NitroModules/Promise.hpp>
+#include "Quaternion.hpp"
 
 namespace margelo::nitro::reactnativecesium {
 
@@ -77,6 +80,8 @@ namespace margelo::nitro::reactnativecesium {
       // Methods
       virtual std::shared_ptr<Promise<CameraState>> getCameraState() = 0;
       virtual void setCamera(const CameraState& camera) = 0;
+      virtual void setCameraQuaternion(const CameraState& camera, const Quaternion& viewCorrection) = 0;
+      virtual std::shared_ptr<Promise<Quaternion>> getViewCorrection() = 0;
 
     protected:
       // Hybrid Setup

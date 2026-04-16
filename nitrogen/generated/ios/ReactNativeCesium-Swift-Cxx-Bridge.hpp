@@ -14,6 +14,8 @@ namespace margelo::nitro::reactnativecesium { struct CameraState; }
 namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 // Forward declaration of `HybridCesiumViewSpec` to properly resolve imports.
 namespace margelo::nitro::reactnativecesium { class HybridCesiumViewSpec; }
+// Forward declaration of `Quaternion` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct Quaternion; }
 
 // Forward declarations of Swift defined types
 // Forward declaration of `HybridCesiumViewSpec_cxx` to properly resolve imports.
@@ -23,6 +25,7 @@ namespace ReactNativeCesium { class HybridCesiumViewSpec_cxx; }
 #include "CameraState.hpp"
 #include "CesiumMetrics.hpp"
 #include "HybridCesiumViewSpec.hpp"
+#include "Quaternion.hpp"
 #include <NitroModules/Promise.hpp>
 #include <NitroModules/PromiseHolder.hpp>
 #include <NitroModules/Result.hpp>
@@ -131,6 +134,40 @@ namespace margelo::nitro::reactnativecesium::bridge::swift {
     return Func_void_std__exception_ptr_Wrapper(std::move(value));
   }
   
+  // pragma MARK: std::shared_ptr<Promise<Quaternion>>
+  /**
+   * Specialized version of `std::shared_ptr<Promise<Quaternion>>`.
+   */
+  using std__shared_ptr_Promise_Quaternion__ = std::shared_ptr<Promise<Quaternion>>;
+  inline std::shared_ptr<Promise<Quaternion>> create_std__shared_ptr_Promise_Quaternion__() noexcept {
+    return Promise<Quaternion>::create();
+  }
+  inline PromiseHolder<Quaternion> wrap_std__shared_ptr_Promise_Quaternion__(std::shared_ptr<Promise<Quaternion>> promise) noexcept {
+    return PromiseHolder<Quaternion>(std::move(promise));
+  }
+  
+  // pragma MARK: std::function<void(const Quaternion& /* result */)>
+  /**
+   * Specialized version of `std::function<void(const Quaternion&)>`.
+   */
+  using Func_void_Quaternion = std::function<void(const Quaternion& /* result */)>;
+  /**
+   * Wrapper class for a `std::function<void(const Quaternion& / * result * /)>`, this can be used from Swift.
+   */
+  class Func_void_Quaternion_Wrapper final {
+  public:
+    explicit Func_void_Quaternion_Wrapper(std::function<void(const Quaternion& /* result */)>&& func): _function(std::make_unique<std::function<void(const Quaternion& /* result */)>>(std::move(func))) {}
+    inline void call(Quaternion result) const noexcept {
+      _function->operator()(result);
+    }
+  private:
+    std::unique_ptr<std::function<void(const Quaternion& /* result */)>> _function;
+  } SWIFT_NONCOPYABLE;
+  Func_void_Quaternion create_Func_void_Quaternion(void* NON_NULL swiftClosureWrapper) noexcept;
+  inline Func_void_Quaternion_Wrapper wrap_Func_void_Quaternion(Func_void_Quaternion value) noexcept {
+    return Func_void_Quaternion_Wrapper(std::move(value));
+  }
+  
   // pragma MARK: std::shared_ptr<HybridCesiumViewSpec>
   /**
    * Specialized version of `std::shared_ptr<HybridCesiumViewSpec>`.
@@ -159,6 +196,15 @@ namespace margelo::nitro::reactnativecesium::bridge::swift {
   }
   inline Result_void_ create_Result_void_(const std::exception_ptr& error) noexcept {
     return Result<void>::withError(error);
+  }
+  
+  // pragma MARK: Result<std::shared_ptr<Promise<Quaternion>>>
+  using Result_std__shared_ptr_Promise_Quaternion___ = Result<std::shared_ptr<Promise<Quaternion>>>;
+  inline Result_std__shared_ptr_Promise_Quaternion___ create_Result_std__shared_ptr_Promise_Quaternion___(const std::shared_ptr<Promise<Quaternion>>& value) noexcept {
+    return Result<std::shared_ptr<Promise<Quaternion>>>::withValue(value);
+  }
+  inline Result_std__shared_ptr_Promise_Quaternion___ create_Result_std__shared_ptr_Promise_Quaternion___(const std::exception_ptr& error) noexcept {
+    return Result<std::shared_ptr<Promise<Quaternion>>>::withError(error);
   }
 
 } // namespace margelo::nitro::reactnativecesium::bridge::swift

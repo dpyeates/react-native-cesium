@@ -14,11 +14,14 @@ namespace margelo::nitro::reactnativecesium { struct CameraState; }
 namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 // Forward declaration of `HybridCesiumViewSpec` to properly resolve imports.
 namespace margelo::nitro::reactnativecesium { class HybridCesiumViewSpec; }
+// Forward declaration of `Quaternion` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct Quaternion; }
 
 // Include C++ defined types
 #include "CameraState.hpp"
 #include "CesiumMetrics.hpp"
 #include "HybridCesiumViewSpec.hpp"
+#include "Quaternion.hpp"
 #include <NitroModules/Promise.hpp>
 #include <NitroModules/Result.hpp>
 #include <exception>

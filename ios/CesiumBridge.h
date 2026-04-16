@@ -18,6 +18,17 @@ NS_ASSUME_NONNULL_BEGIN
                      heading:(double)heading
                        pitch:(double)pitch
                         roll:(double)roll;
+/// Same as `updateCameraLatitude:...` plus camera-space view correction (w,x,y,z). Does not replace HPR; applied after HPR in the engine.
+- (void)updateCameraQuaternionLatitude:(double)lat
+                             longitude:(double)lon
+                              altitude:(double)alt
+                               heading:(double)heading
+                                 pitch:(double)pitch
+                                  roll:(double)roll
+                       viewCorrectionW:(double)qw
+                                     x:(double)qx
+                                     y:(double)qy
+                                     z:(double)qz;
 - (void)resize:(int)width height:(int)height;
 - (BOOL)shouldRenderNextFrame;
 - (void)markNeedsRender;
@@ -49,6 +60,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (double)readCameraPitch;
 - (double)readCameraRoll;
 - (double)readVerticalFovDeg;
+- (double)readViewCorrectionW;
+- (double)readViewCorrectionX;
+- (double)readViewCorrectionY;
+- (double)readViewCorrectionZ;
 
 @end
 

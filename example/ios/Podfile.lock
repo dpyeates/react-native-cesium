@@ -1838,7 +1838,7 @@ PODS:
     - React-perflogger (= 0.85.1)
     - React-utils (= 0.85.1)
     - ReactNativeDependencies
-  - ReactNativeCesium (0.1.0):
+  - ReactNativeCesium (1.0.1):
     - hermes-engine
     - NitroModules
     - RCTRequired
@@ -2349,7 +2349,7 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: 52da2413bc956c40a4de19ad32a92b87248f7ce8
   ReactCodegen: aac672d7021359dc55fbd6d63f56192651664f09
   ReactCommon: 66763e5bd1b778828ff6cb82d771b7162a5215c2
-  ReactNativeCesium: 4a3569ec8f5560e38c6d611e587e5a5a70e7a4b5
+  ReactNativeCesium: 525381cc5d24d0a13028039d670a0e56b89ccfba
   ReactNativeDependencies: f8240eb6f7b9a80900280516ba799212e9990901
   RNGestureHandler: 187c5c7936abf427bc4d22d6c3b1ac80ad1f63c0
   RNReanimated: c4e6659e58b793885ae6da476cb514fc913e7b85

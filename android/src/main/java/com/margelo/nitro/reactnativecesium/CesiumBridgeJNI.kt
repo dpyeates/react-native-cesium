@@ -25,6 +25,19 @@ class CesiumBridgeJNI {
   fun updateImageryAssetId(assetId: Long) = nativeUpdateImageryAssetId(nativePtr, assetId)
   fun updateCamera(lat: Double, lon: Double, alt: Double, heading: Double, pitch: Double, roll: Double) =
     nativeUpdateCamera(nativePtr, lat, lon, alt, heading, pitch, roll)
+
+  fun updateCameraQuaternion(
+    lat: Double,
+    lon: Double,
+    alt: Double,
+    heading: Double,
+    pitch: Double,
+    roll: Double,
+    qw: Double,
+    qx: Double,
+    qy: Double,
+    qz: Double,
+  ) = nativeUpdateCameraQuaternion(nativePtr, lat, lon, alt, heading, pitch, roll, qw, qx, qy, qz)
   fun setVerticalFovDeg(deg: Double) = nativeSetVerticalFovDeg(nativePtr, deg)
   fun setMaxSSE(v: Double) = nativeSetMaxSSE(nativePtr, v)
   fun setMaxSimLoads(v: Int) = nativeSetMaxSimLoads(nativePtr, v)
@@ -43,6 +56,11 @@ class CesiumBridgeJNI {
   fun getCameraRoll(): Double = nativeGetCameraRoll(nativePtr)
   fun getVerticalFovDeg(): Double = nativeGetVerticalFovDeg(nativePtr)
 
+  fun getViewCorrectionW(): Double = nativeGetViewCorrectionW(nativePtr)
+  fun getViewCorrectionX(): Double = nativeGetViewCorrectionX(nativePtr)
+  fun getViewCorrectionY(): Double = nativeGetViewCorrectionY(nativePtr)
+  fun getViewCorrectionZ(): Double = nativeGetViewCorrectionZ(nativePtr)
+
   fun getMetricsFps(): Double = nativeGetMetricsFps(nativePtr)
   fun getMetricsTilesRendered(): Int = nativeGetMetricsTilesRendered(nativePtr)
   fun getMetricsTilesLoading(): Int = nativeGetMetricsTilesLoading(nativePtr)
@@ -59,6 +77,19 @@ class CesiumBridgeJNI {
   private external fun nativeUpdateIonAccessToken(ptr: Long, token: String, assetId: Long)
   private external fun nativeUpdateImageryAssetId(ptr: Long, assetId: Long)
   private external fun nativeUpdateCamera(ptr: Long, lat: Double, lon: Double, alt: Double, heading: Double, pitch: Double, roll: Double)
+  private external fun nativeUpdateCameraQuaternion(
+    ptr: Long,
+    lat: Double,
+    lon: Double,
+    alt: Double,
+    heading: Double,
+    pitch: Double,
+    roll: Double,
+    qw: Double,
+    qx: Double,
+    qy: Double,
+    qz: Double,
+  )
   private external fun nativeSetVerticalFovDeg(ptr: Long, deg: Double)
   private external fun nativeSetMaxSSE(ptr: Long, v: Double)
   private external fun nativeSetMaxSimLoads(ptr: Long, v: Int)
@@ -74,6 +105,10 @@ class CesiumBridgeJNI {
   private external fun nativeGetCameraPitch(ptr: Long): Double
   private external fun nativeGetCameraRoll(ptr: Long): Double
   private external fun nativeGetVerticalFovDeg(ptr: Long): Double
+  private external fun nativeGetViewCorrectionW(ptr: Long): Double
+  private external fun nativeGetViewCorrectionX(ptr: Long): Double
+  private external fun nativeGetViewCorrectionY(ptr: Long): Double
+  private external fun nativeGetViewCorrectionZ(ptr: Long): Double
   private external fun nativeGetMetricsFps(ptr: Long): Double
   private external fun nativeGetMetricsTilesRendered(ptr: Long): Int
   private external fun nativeGetMetricsTilesLoading(ptr: Long): Int

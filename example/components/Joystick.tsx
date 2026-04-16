@@ -33,7 +33,9 @@ export const Joystick = memo(function Joystick({ onRateChange }: JoystickProps) 
       const factor = clamp / JOYSTICK_RADIUS;
       const scale = factor * JOYSTICK_MAX_RATE_DEG_S;
       const pitchRate = (ty / dist) * scale;
-      const rollRate = -(tx / dist) * scale;
+      // Matches GlobeCamera roll: positive = left wing down, negative = right wing down.
+      // Stick left (tx < 0) must increase roll → negate tx.
+      const rollRate = (-tx / dist) * scale;
       onRateChange(pitchRate, rollRate);
     },
     [onRateChange],

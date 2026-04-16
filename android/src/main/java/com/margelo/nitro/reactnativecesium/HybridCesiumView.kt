@@ -17,6 +17,7 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
   private var usingLowRefreshRate = false
   private var lastFrameTimeNanos = 0L
   private var lastPushedCamera: CameraState? = null
+  private var lastPushedViewCorrection: Quaternion? = null
   private var renderLoopActive = false
 
   override var ionAccessToken: String = ""
@@ -174,6 +175,24 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
     pushCameraIfChanged(camera)
   }
 
+  override fun setCameraQuaternion(camera: CameraState, viewCorrection: Quaternion) {
+    initialCamera = camera
+    pushCameraQuaternionIfChanged(camera, viewCorrection)
+  }
+
+  override fun getViewCorrection(): Promise<Quaternion> {
+    val b = bridge
+      ?: return Promise.resolved(Quaternion(w = 1.0, x = 0.0, y = 0.0, z = 0.0))
+    return Promise.resolved(
+      Quaternion(
+        w = b.getViewCorrectionW(),
+        x = b.getViewCorrectionX(),
+        y = b.getViewCorrectionY(),
+        z = b.getViewCorrectionZ(),
+      ),
+    )
+  }
+
   private fun pushCameraIfChanged(camera: CameraState) {
     val b = bridge ?: return
     val last = lastPushedCamera
@@ -190,6 +209,42 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
     lastPushedCamera = camera
     b.updateCamera(camera.latitude, camera.longitude, camera.altitude,
                    camera.heading, camera.pitch, camera.roll)
+    b.setVerticalFovDeg(camera.verticalFovDeg)
+  }
+
+  private fun pushCameraQuaternionIfChanged(camera: CameraState, viewCorrection: Quaternion) {
+    val b = bridge ?: return
+    val last = lastPushedCamera
+    val lastQ = lastPushedViewCorrection
+    if (last != null && lastQ != null &&
+      last.latitude == camera.latitude &&
+      last.longitude == camera.longitude &&
+      last.altitude == camera.altitude &&
+      last.heading == camera.heading &&
+      last.pitch == camera.pitch &&
+      last.roll == camera.roll &&
+      last.verticalFovDeg == camera.verticalFovDeg &&
+      lastQ.w == viewCorrection.w &&
+      lastQ.x == viewCorrection.x &&
+      lastQ.y == viewCorrection.y &&
+      lastQ.z == viewCorrection.z
+    ) {
+      return
+    }
+    lastPushedCamera = camera
+    lastPushedViewCorrection = viewCorrection
+    b.updateCameraQuaternion(
+      camera.latitude,
+      camera.longitude,
+      camera.altitude,
+      camera.heading,
+      camera.pitch,
+      camera.roll,
+      viewCorrection.w,
+      viewCorrection.x,
+      viewCorrection.y,
+      viewCorrection.z,
+    )
     b.setVerticalFovDeg(camera.verticalFovDeg)
   }
 

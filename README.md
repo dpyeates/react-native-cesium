@@ -197,6 +197,7 @@ The public JS surface is exported from `react-native-cesium`:
 
 - `CesiumView`
 - `CameraState`
+- `Quaternion`
 - `CesiumMetrics`
 - `CesiumViewProps`
 - `CesiumViewMethods`
@@ -311,12 +312,34 @@ type CameraState = {
 | `roll` | `number` | Degrees | Bank/rotation around forward axis. Positive right bank, negative left bank.                                                     |
 | `verticalFovDeg` | `number` | `20..100` (clamped) | Vertical field of view. Example: `30` zooms in/narrows view; `90` gives wider peripheral view with more perspective distortion. |
 
+### `Quaternion`
+
+Used for **camera-space view correction** with `setCameraQuaternion` (see below). Components are `w, x, y, z` (Hamilton convention). Non-unit values are normalized on the native side.
+
+```ts
+type Quaternion = {
+  w: number
+  x: number
+  y: number
+  z: number
+}
+```
+
 ### `CesiumViewMethods`
 
 | Method | Signature | Description                                                                                                                                   |
 | --- | --- |-----------------------------------------------------------------------------------------------------------------------------------------------|
-| `setCamera` | `(camera: CameraState) => void` | Applies a new camera state at runtime. Example: animate route steps by calling `setCamera(...)` on each step. |
-| `getCameraState` | `() => Promise<CameraState>` | Returns the current native camera snapshot. |
+| `setCamera` | `(camera: CameraState) => void` | Applies a new camera state at runtime (position, heading, pitch, roll, vertical FOV). Does **not** change the stored view-correction quaternion; use `setCameraQuaternion` when you need to update that. |
+| `setCameraQuaternion` | `(camera: CameraState, viewCorrection: Quaternion) => void` | Same camera fields as `setCamera`, plus a rotation applied **in camera space after** heading/pitch/roll. Use this for screen-fixed adjustments (e.g. boresight calibration, aligning a synthetic horizon overlay) without expressing the offset as extra Euler angles. |
+| `getCameraState` | `() => Promise<CameraState>` | Returns the current native camera snapshot (lat/lon/alt, HPR, VFOV). This is the underlying globe attitude; it does **not** encode the view correction into HPR. |
+| `getViewCorrection` | `() => Promise<Quaternion>` | Returns the **smoothed** view-correction quaternion currently applied (identity `w=1,x=y=z=0` if you have never called `setCameraQuaternion`). |
+
+#### `setCamera` vs `setCameraQuaternion`
+
+- Use **`setCamera`** alone when you only need the classic globe camera.
+- Use **`setCameraQuaternion`** when you need both the usual `CameraState` **and** a small rotation relative to the uncorrected camera (HUD alignment, horizon line offset in screen space, lens/display calibration, etc.).
+- You may **mix** the two: calling `setCamera` updates position and HPR but leaves the last view-correction target unchanged, so a calibration quaternion set earlier continues to apply until you change it with `setCameraQuaternion`.
+- Prefer **`setCameraQuaternion`** on frames where you need to drive both the globe camera and the correction together so the native target stays consistent.
 
 ### `CesiumMetrics`
 

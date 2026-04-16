@@ -6,6 +6,8 @@
 #include <android/native_window_jni.h>
 #include <android/log.h>
 
+#include <glm/gtc/quaternion.hpp>
+
 #include <cmath>
 #include <regex>
 #include <sstream>
@@ -19,9 +21,15 @@ static const double kSmoothAlt   = 25.0;
 static const double kSmoothHdg   = 30.0;
 static const double kSmoothRoll  = 50.0;
 static const double kSmoothPitch = 50.0;
+static const double kSmoothViewCorr = 50.0;
 static const double kEpsLatLon   = 1e-7;
 static const double kEpsAlt      = 0.1;
 static const double kEpsAngleDeg = 0.05;
+static const double kEpsQuatDot  = 1e-8;
+
+static double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
+  return std::abs(glm::dot(glm::normalize(a), glm::normalize(b)));
+}
 
 static double lerpAngleDeg(double a, double b, double t) {
   double diff = std::fmod(b - a + 540.0, 360.0) - 180.0;
@@ -89,6 +97,10 @@ void CesiumBridgeAndroid::buildEngine() {
   camTargetHeading_ = params.heading;
   camTargetPitch_   = params.pitch;
   camTargetRoll_    = params.roll;
+  camTargetViewQw_  = params.viewCorrection.w;
+  camTargetViewQx_  = params.viewCorrection.x;
+  camTargetViewQy_  = params.viewCorrection.y;
+  camTargetViewQz_  = params.viewCorrection.z;
 
   auto* backendPtr = vulkanBackend_.get();
   engine_->getResourcePreparer()->setGPUTextureCreator(
@@ -155,6 +167,32 @@ void CesiumBridgeAndroid::updateCamera(double lat, double lon, double alt,
   camTargetHeading_ = heading;
   camTargetPitch_   = pitch;
   camTargetRoll_    = roll;
+  // Does not change camTargetViewQ* (view correction target).
+  forceRenderNextFrame_ = true;
+}
+
+void CesiumBridgeAndroid::updateCameraQuaternion(double lat, double lon, double alt,
+                                                 double heading, double pitch, double roll,
+                                                 double qw, double qx, double qy, double qz) {
+  if (!initialized_) return;
+  camTargetLat_     = lat;
+  camTargetLon_     = lon;
+  camTargetAlt_     = alt;
+  camTargetHeading_ = heading;
+  camTargetPitch_   = pitch;
+  camTargetRoll_    = roll;
+  const double ql2 = qw * qw + qx * qx + qy * qy + qz * qz;
+  glm::dquat   q;
+  if (ql2 < 1e-20) {
+    q = glm::dquat(1.0, 0.0, 0.0, 0.0);
+  } else {
+    const double inv = 1.0 / std::sqrt(ql2);
+    q = glm::dquat(qw * inv, qx * inv, qy * inv, qz * inv);
+  }
+  camTargetViewQw_ = q.w;
+  camTargetViewQx_ = q.x;
+  camTargetViewQy_ = q.y;
+  camTargetViewQz_ = q.z;
   forceRenderNextFrame_ = true;
 }
 
@@ -204,13 +242,15 @@ bool CesiumBridgeAndroid::shouldRenderNextFrame() {
   if (!initialized_ || !engine_) return false;
 
   const auto cur = engine_->camera().getParams();
+  glm::dquat tgt(camTargetViewQw_, camTargetViewQx_, camTargetViewQy_, camTargetViewQz_);
   const bool cameraDirty =
       std::abs(camTargetLat_ - cur.latitude) > kEpsLatLon ||
       std::abs(camTargetLon_ - cur.longitude) > kEpsLatLon ||
       std::abs(camTargetAlt_ - cur.altitude) > kEpsAlt ||
       angleDeltaAbsDeg(cur.heading, camTargetHeading_) > kEpsAngleDeg ||
       angleDeltaAbsDeg(cur.pitch, camTargetPitch_) > kEpsAngleDeg ||
-      angleDeltaAbsDeg(cur.roll, camTargetRoll_) > kEpsAngleDeg;
+      angleDeltaAbsDeg(cur.roll, camTargetRoll_) > kEpsAngleDeg ||
+      (1.0 - quatDotAbs(cur.viewCorrection, tgt)) > kEpsQuatDot;
 
   return forceRenderNextFrame_ ||
          frameResult_->tilesLoading > 0 ||
@@ -231,11 +271,18 @@ void CesiumBridgeAndroid::renderFrame(double dt) {
   const double aHdg   = 1.0 - std::exp(-kSmoothHdg * dt);
   const double aPitch = 1.0 - std::exp(-kSmoothPitch * dt);
   const double aRoll  = 1.0 - std::exp(-kSmoothRoll * dt);
+  const double aViewQ = 1.0 - std::exp(-kSmoothViewCorr * dt);
 
   cur.altitude = cur.altitude + aAlt * (camTargetAlt_ - cur.altitude);
   cur.heading  = lerpAngleDeg(cur.heading, camTargetHeading_, aHdg);
   cur.pitch    = lerpAngleDeg(cur.pitch, camTargetPitch_, aPitch);
   cur.roll     = lerpAngleDeg(cur.roll, camTargetRoll_, aRoll);
+
+  glm::dquat cq = glm::normalize(cur.viewCorrection);
+  glm::dquat tq = glm::normalize(glm::dquat(camTargetViewQw_, camTargetViewQx_, camTargetViewQy_, camTargetViewQz_));
+  if (glm::dot(cq, tq) < 0.0)
+    tq = -tq;
+  cur.viewCorrection = glm::normalize(glm::slerp(cq, tq, aViewQ));
 
   if (std::abs(camTargetAlt_ - cur.altitude) <= kEpsAlt)
     cur.altitude = camTargetAlt_;
@@ -245,6 +292,8 @@ void CesiumBridgeAndroid::renderFrame(double dt) {
     cur.pitch = camTargetPitch_;
   if (angleDeltaAbsDeg(cur.roll, camTargetRoll_) <= kEpsAngleDeg)
     cur.roll = camTargetRoll_;
+  if ((1.0 - quatDotAbs(cur.viewCorrection, tq)) <= kEpsQuatDot)
+    cur.viewCorrection = tq;
 
   engine_->camera().setParams(cur);
   engine_->updateFrame(viewportWidth_, viewportHeight_, *frameResult_);
@@ -313,6 +362,19 @@ double CesiumBridgeAndroid::readVerticalFovDeg() {
   return engine_ ? engine_->camera().getVerticalFovDegrees() : 60.0;
 }
 
+double CesiumBridgeAndroid::readViewCorrectionW() {
+  return engine_ ? engine_->camera().getParams().viewCorrection.w : 1.0;
+}
+double CesiumBridgeAndroid::readViewCorrectionX() {
+  return engine_ ? engine_->camera().getParams().viewCorrection.x : 0.0;
+}
+double CesiumBridgeAndroid::readViewCorrectionY() {
+  return engine_ ? engine_->camera().getParams().viewCorrection.y : 0.0;
+}
+double CesiumBridgeAndroid::readViewCorrectionZ() {
+  return engine_ ? engine_->camera().getParams().viewCorrection.z : 0.0;
+}
+
 // ── JNI native method implementations ──────────────────────────────────────────
 
 static CesiumBridgeAndroid* getBridge(jlong ptr) {
@@ -371,6 +433,14 @@ Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeUpdateCamera(
     JNIEnv*, jobject, jlong ptr, jdouble lat, jdouble lon, jdouble alt,
     jdouble heading, jdouble pitch, jdouble roll) {
   getBridge(ptr)->updateCamera(lat, lon, alt, heading, pitch, roll);
+}
+
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeUpdateCameraQuaternion(
+    JNIEnv*, jobject, jlong ptr, jdouble lat, jdouble lon, jdouble alt,
+    jdouble heading, jdouble pitch, jdouble roll,
+    jdouble qw, jdouble qx, jdouble qy, jdouble qz) {
+  getBridge(ptr)->updateCameraQuaternion(lat, lon, alt, heading, pitch, roll, qw, qx, qy, qz);
 }
 
 JNIEXPORT void JNICALL
@@ -447,6 +517,23 @@ Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeGetCameraRoll(JNI
 JNIEXPORT jdouble JNICALL
 Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeGetVerticalFovDeg(JNIEnv*, jobject, jlong ptr) {
   return getBridge(ptr)->readVerticalFovDeg();
+}
+
+JNIEXPORT jdouble JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeGetViewCorrectionW(JNIEnv*, jobject, jlong ptr) {
+  return getBridge(ptr)->readViewCorrectionW();
+}
+JNIEXPORT jdouble JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeGetViewCorrectionX(JNIEnv*, jobject, jlong ptr) {
+  return getBridge(ptr)->readViewCorrectionX();
+}
+JNIEXPORT jdouble JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeGetViewCorrectionY(JNIEnv*, jobject, jlong ptr) {
+  return getBridge(ptr)->readViewCorrectionY();
+}
+JNIEXPORT jdouble JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeGetViewCorrectionZ(JNIEnv*, jobject, jlong ptr) {
+  return getBridge(ptr)->readViewCorrectionZ();
 }
 
 JNIEXPORT jdouble JNICALL

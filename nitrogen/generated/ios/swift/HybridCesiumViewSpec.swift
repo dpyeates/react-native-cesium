@@ -24,6 +24,8 @@ public protocol HybridCesiumViewSpec_protocol: HybridObject, HybridView {
   // Methods
   func getCameraState() throws -> Promise<CameraState>
   func setCamera(camera: CameraState) throws -> Void
+  func setCameraQuaternion(camera: CameraState, viewCorrection: Quaternion) throws -> Void
+  func getViewCorrection() throws -> Promise<Quaternion>
 }
 
 public extension HybridCesiumViewSpec_protocol {

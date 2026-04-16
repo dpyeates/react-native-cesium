@@ -75,6 +75,8 @@ namespace margelo::nitro::reactnativecesium {
     // Methods
     std::shared_ptr<Promise<CameraState>> getCameraState() override;
     void setCamera(const CameraState& camera) override;
+    void setCameraQuaternion(const CameraState& camera, const Quaternion& viewCorrection) override;
+    std::shared_ptr<Promise<Quaternion>> getViewCorrection() override;
 
   private:
     jni::global_ref<JHybridCesiumViewSpec::JavaPart> _javaPart;

@@ -38,6 +38,14 @@ namespace margelo::nitro::reactnativecesium::bridge::swift {
     };
   }
   
+  // pragma MARK: std::function<void(const Quaternion& /* result */)>
+  Func_void_Quaternion create_Func_void_Quaternion(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = ReactNativeCesium::Func_void_Quaternion::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)](const Quaternion& result) mutable -> void {
+      swiftClosure.call(result);
+    };
+  }
+  
   // pragma MARK: std::shared_ptr<HybridCesiumViewSpec>
   std::shared_ptr<HybridCesiumViewSpec> create_std__shared_ptr_HybridCesiumViewSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
     ReactNativeCesium::HybridCesiumViewSpec_cxx swiftPart = ReactNativeCesium::HybridCesiumViewSpec_cxx::fromUnsafe(swiftUnsafePointer);

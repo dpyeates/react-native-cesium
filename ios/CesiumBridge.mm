@@ -4,6 +4,8 @@
 #include "engine/CesiumEngine.hpp"
 #include "metal/MetalBackend.h"
 
+#include <glm/gtc/quaternion.hpp>
+
 #include <atomic>
 #include <cmath>
 #include <memory>
@@ -46,9 +48,15 @@ static const double kSmoothAlt = 25.0;
 static const double kSmoothHdg = 30.0;
 static const double kSmoothRoll = 50.0;
 static const double kSmoothPitch = 50.0;
+static const double kSmoothViewCorr = 50.0;
 static const double kEpsLatLon = 1e-7;
 static const double kEpsAlt = 0.1;
 static const double kEpsAngleDeg = 0.05;
+static const double kEpsQuatDot = 1e-8;
+
+static double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
+  return std::abs(glm::dot(glm::normalize(a), glm::normalize(b)));
+}
 
 @implementation CesiumBridge {
   std::unique_ptr<reactnativecesium::MetalBackend> _metalBackend;
@@ -219,6 +227,36 @@ static const double kEpsAngleDeg = 0.05;
   _camTarget.heading   = heading;
   _camTarget.pitch     = pitch;
   _camTarget.roll      = roll;
+  // Intentionally does not modify `_camTarget.viewCorrection`.
+  _forceRenderNextFrame = YES;
+}
+
+- (void)updateCameraQuaternionLatitude:(double)lat
+                             longitude:(double)lon
+                              altitude:(double)alt
+                               heading:(double)heading
+                                 pitch:(double)pitch
+                                  roll:(double)roll
+                       viewCorrectionW:(double)qw
+                                     x:(double)qx
+                                     y:(double)qy
+                                     z:(double)qz {
+  if (!_initialized) return;
+  _camTarget.latitude  = lat;
+  _camTarget.longitude = lon;
+  _camTarget.altitude  = alt;
+  _camTarget.heading   = heading;
+  _camTarget.pitch     = pitch;
+  _camTarget.roll      = roll;
+  const double ql2 = qw * qw + qx * qx + qy * qy + qz * qz;
+  glm::dquat   q;
+  if (ql2 < 1e-20) {
+    q = glm::dquat(1.0, 0.0, 0.0, 0.0);
+  } else {
+    const double inv = 1.0 / std::sqrt(ql2);
+    q = glm::dquat(qw * inv, qx * inv, qy * inv, qz * inv);
+  }
+  _camTarget.viewCorrection = q;
   _forceRenderNextFrame = YES;
 }
 
@@ -275,7 +313,8 @@ static const double kEpsAngleDeg = 0.05;
       std::abs(_camTarget.altitude - cur.altitude) > kEpsAlt ||
       angleDeltaAbsDeg(cur.heading, _camTarget.heading) > kEpsAngleDeg ||
       angleDeltaAbsDeg(cur.pitch, _camTarget.pitch) > kEpsAngleDeg ||
-      angleDeltaAbsDeg(cur.roll, _camTarget.roll) > kEpsAngleDeg;
+      angleDeltaAbsDeg(cur.roll, _camTarget.roll) > kEpsAngleDeg ||
+      (1.0 - quatDotAbs(cur.viewCorrection, _camTarget.viewCorrection)) > kEpsQuatDot;
 
   return _forceRenderNextFrame ||
          _frameResult.tilesLoading > 0 ||
@@ -298,10 +337,17 @@ static const double kEpsAngleDeg = 0.05;
     const double aHdg = 1.0 - std::exp(-kSmoothHdg * dt);
     const double aPitch = 1.0 - std::exp(-kSmoothPitch * dt);
     const double aRoll = 1.0 - std::exp(-kSmoothRoll * dt);
+    const double aViewQ = 1.0 - std::exp(-kSmoothViewCorr * dt);
     cur.altitude = cur.altitude + aAlt * (_camTarget.altitude - cur.altitude);
     cur.heading  = lerpAngleDeg(cur.heading, _camTarget.heading, aHdg);
     cur.pitch  = lerpAngleDeg(cur.pitch, _camTarget.pitch, aPitch);
     cur.roll  = lerpAngleDeg(cur.roll, _camTarget.roll, aRoll);
+
+    glm::dquat cq = glm::normalize(cur.viewCorrection);
+    glm::dquat tq = glm::normalize(_camTarget.viewCorrection);
+    if (glm::dot(cq, tq) < 0.0)
+      tq = -tq;
+    cur.viewCorrection = glm::normalize(glm::slerp(cq, tq, aViewQ));
 
     if (std::abs(_camTarget.altitude - cur.altitude) <= kEpsAlt) {
       cur.altitude = _camTarget.altitude;
@@ -314,6 +360,9 @@ static const double kEpsAngleDeg = 0.05;
     }
     if (angleDeltaAbsDeg(cur.roll, _camTarget.roll) <= kEpsAngleDeg) {
       cur.roll = _camTarget.roll;
+    }
+    if ((1.0 - quatDotAbs(cur.viewCorrection, _camTarget.viewCorrection)) <= kEpsQuatDot) {
+      cur.viewCorrection = _camTarget.viewCorrection;
     }
     _engine->camera().setParams(cur);
 
@@ -377,6 +426,23 @@ static const double kEpsAngleDeg = 0.05;
 - (double)readCameraPitch     { return _engine ? _engine->camera().getParams().pitch     : 0.0; }
 - (double)readCameraRoll      { return _engine ? _engine->camera().getParams().roll      : 0.0; }
 - (double)readVerticalFovDeg  { return _engine ? _engine->camera().getVerticalFovDegrees() : 60.0; }
+
+- (double)readViewCorrectionW {
+  if (!_engine) return 1.0;
+  return _engine->camera().getParams().viewCorrection.w;
+}
+- (double)readViewCorrectionX {
+  if (!_engine) return 0.0;
+  return _engine->camera().getParams().viewCorrection.x;
+}
+- (double)readViewCorrectionY {
+  if (!_engine) return 0.0;
+  return _engine->camera().getParams().viewCorrection.y;
+}
+- (double)readViewCorrectionZ {
+  if (!_engine) return 0.0;
+  return _engine->camera().getParams().viewCorrection.z;
+}
 
 - (void)shutdown {
   [[NSNotificationCenter defaultCenter] removeObserver:self];

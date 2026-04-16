@@ -16,6 +16,8 @@ namespace ReactNativeCesium { class HybridCesiumViewSpec_cxx; }
 namespace margelo::nitro::reactnativecesium { struct CameraState; }
 // Forward declaration of `CesiumMetrics` to properly resolve imports.
 namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
+// Forward declaration of `Quaternion` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct Quaternion; }
 
 #include <string>
 #include "CameraState.hpp"
@@ -23,6 +25,7 @@ namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 #include <functional>
 #include <optional>
 #include <NitroModules/Promise.hpp>
+#include "Quaternion.hpp"
 
 #include "ReactNativeCesium-Swift-Cxx-Umbrella.hpp"
 
@@ -148,6 +151,20 @@ namespace margelo::nitro::reactnativecesium {
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }
+    }
+    inline void setCameraQuaternion(const CameraState& camera, const Quaternion& viewCorrection) override {
+      auto __result = _swiftPart.setCameraQuaternion(std::forward<decltype(camera)>(camera), std::forward<decltype(viewCorrection)>(viewCorrection));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline std::shared_ptr<Promise<Quaternion>> getViewCorrection() override {
+      auto __result = _swiftPart.getViewCorrection();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
     }
 
   private:

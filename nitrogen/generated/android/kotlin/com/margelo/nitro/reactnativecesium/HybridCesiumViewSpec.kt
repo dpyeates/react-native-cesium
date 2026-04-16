@@ -103,6 +103,14 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @DoNotStrip
   @Keep
   abstract fun setCamera(camera: CameraState): Unit
+  
+  @DoNotStrip
+  @Keep
+  abstract fun setCameraQuaternion(camera: CameraState, viewCorrection: Quaternion): Unit
+  
+  @DoNotStrip
+  @Keep
+  abstract fun getViewCorrection(): Promise<Quaternion>
 
   // Default implementation of `HybridObject.toString()`
   override fun toString(): String {

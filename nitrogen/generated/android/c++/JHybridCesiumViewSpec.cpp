@@ -11,6 +11,8 @@
 namespace margelo::nitro::reactnativecesium { struct CameraState; }
 // Forward declaration of `CesiumMetrics` to properly resolve imports.
 namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
+// Forward declaration of `Quaternion` to properly resolve imports.
+namespace margelo::nitro::reactnativecesium { struct Quaternion; }
 
 #include <string>
 #include "CameraState.hpp"
@@ -23,6 +25,8 @@ namespace margelo::nitro::reactnativecesium { struct CesiumMetrics; }
 #include "JCesiumMetrics.hpp"
 #include <NitroModules/Promise.hpp>
 #include <NitroModules/JPromise.hpp>
+#include "Quaternion.hpp"
+#include "JQuaternion.hpp"
 
 namespace margelo::nitro::reactnativecesium {
 
@@ -173,6 +177,26 @@ namespace margelo::nitro::reactnativecesium {
   void JHybridCesiumViewSpec::setCamera(const CameraState& camera) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JCameraState> /* camera */)>("setCamera");
     method(_javaPart, JCameraState::fromCpp(camera));
+  }
+  void JHybridCesiumViewSpec::setCameraQuaternion(const CameraState& camera, const Quaternion& viewCorrection) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JCameraState> /* camera */, jni::alias_ref<JQuaternion> /* viewCorrection */)>("setCameraQuaternion");
+    method(_javaPart, JCameraState::fromCpp(camera), JQuaternion::fromCpp(viewCorrection));
+  }
+  std::shared_ptr<Promise<Quaternion>> JHybridCesiumViewSpec::getViewCorrection() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>()>("getViewCorrection");
+    auto __result = method(_javaPart);
+    return [&]() {
+      auto __promise = Promise<Quaternion>::create();
+      __result->cthis()->addOnResolvedListener([=](const jni::alias_ref<jni::JObject>& __boxedResult) {
+        auto __result = jni::static_ref_cast<JQuaternion>(__boxedResult);
+        __promise->resolve(__result->toCpp());
+      });
+      __result->cthis()->addOnRejectedListener([=](const jni::alias_ref<jni::JThrowable>& __throwable) {
+        jni::JniException __jniError(__throwable);
+        __promise->reject(std::make_exception_ptr(__jniError));
+      });
+      return __promise;
+    }();
   }
 
 } // namespace margelo::nitro::reactnativecesium

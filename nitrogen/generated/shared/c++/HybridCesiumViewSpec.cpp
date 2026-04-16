@@ -36,6 +36,8 @@ namespace margelo::nitro::reactnativecesium {
       prototype.registerHybridSetter("onMetrics", &HybridCesiumViewSpec::setOnMetrics);
       prototype.registerHybridMethod("getCameraState", &HybridCesiumViewSpec::getCameraState);
       prototype.registerHybridMethod("setCamera", &HybridCesiumViewSpec::setCamera);
+      prototype.registerHybridMethod("setCameraQuaternion", &HybridCesiumViewSpec::setCameraQuaternion);
+      prototype.registerHybridMethod("getViewCorrection", &HybridCesiumViewSpec::getViewCorrection);
     });
   }
 

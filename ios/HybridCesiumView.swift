@@ -87,6 +87,26 @@ class HybridCesiumView: HybridCesiumViewSpec {
     pushCameraStateIfChanged(camera)
   }
 
+  func setCameraQuaternion(camera: CameraState, viewCorrection: Quaternion) throws {
+    initialCamera = camera
+    pushCameraQuaternionIfChanged(camera, viewCorrection: viewCorrection)
+  }
+
+  func getViewCorrection() throws -> Promise<Quaternion> {
+    guard let b = bridge else {
+      return Promise.resolved(
+        withResult: Quaternion(w: 1, x: 0, y: 0, z: 0)
+      )
+    }
+    let q = Quaternion(
+      w: b.readViewCorrectionW(),
+      x: b.readViewCorrectionX(),
+      y: b.readViewCorrectionY(),
+      z: b.readViewCorrectionZ()
+    )
+    return Promise.resolved(withResult: q)
+  }
+
   // MARK: - View
 
   private let metalView: MTKView
@@ -98,6 +118,8 @@ class HybridCesiumView: HybridCesiumViewSpec {
   private var usingLowRefreshRate = false
   private var hasConfiguredFrameRate = false
   private var lastPushedCameraState: CameraState?
+  /// Last quaternion pushed via `setCameraQuaternion`; `nil` if only `setCamera` has been used.
+  private var lastPushedViewCorrection: Quaternion?
   private var lastBridgePixelSize: CGSize = .zero
 
   var view: UIView { metalView }
@@ -216,6 +238,40 @@ class HybridCesiumView: HybridCesiumViewSpec {
       heading: camera.heading,
       pitch: camera.pitch,
       roll: camera.roll
+    )
+    bridge?.setVerticalFovDeg(camera.verticalFovDeg)
+  }
+
+  private func pushCameraQuaternionIfChanged(_ camera: CameraState, viewCorrection: Quaternion) {
+    guard bridge != nil else { return }
+    if let lastCam = lastPushedCameraState,
+       let lastQ = lastPushedViewCorrection,
+       lastCam.latitude == camera.latitude,
+       lastCam.longitude == camera.longitude,
+       lastCam.altitude == camera.altitude,
+       lastCam.heading == camera.heading,
+       lastCam.pitch == camera.pitch,
+       lastCam.roll == camera.roll,
+       lastCam.verticalFovDeg == camera.verticalFovDeg,
+       lastQ.w == viewCorrection.w,
+       lastQ.x == viewCorrection.x,
+       lastQ.y == viewCorrection.y,
+       lastQ.z == viewCorrection.z {
+      return
+    }
+    lastPushedCameraState = camera
+    lastPushedViewCorrection = viewCorrection
+    bridge?.updateCameraQuaternionLatitude(
+      camera.latitude,
+      longitude: camera.longitude,
+      altitude: camera.altitude,
+      heading: camera.heading,
+      pitch: camera.pitch,
+      roll: camera.roll,
+      viewCorrectionW: viewCorrection.w,
+      x: viewCorrection.x,
+      y: viewCorrection.y,
+      z: viewCorrection.z
     )
     bridge?.setVerticalFovDeg(camera.verticalFovDeg)
   }
