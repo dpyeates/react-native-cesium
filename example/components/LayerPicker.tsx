@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useCallback } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export type LayerOption = { label: string; assetId: number };
@@ -10,6 +10,35 @@ export const LAYER_OPTIONS: LayerOption[] = [
   { label: 'Contour', assetId: 3830186 },
 ];
 
+type LayerPillProps = {
+  option: LayerOption;
+  active: boolean;
+  onSelect: (assetId: number) => void;
+};
+
+const LayerPill = memo(function LayerPill({
+  option,
+  active,
+  onSelect,
+}: LayerPillProps) {
+  const handlePress = useCallback(
+    () => onSelect(option.assetId),
+    [onSelect, option.assetId],
+  );
+
+  return (
+    <TouchableOpacity
+      style={[styles.pill, active && styles.pillActive]}
+      onPress={handlePress}
+      activeOpacity={0.75}
+    >
+      <Text style={[styles.label, active && styles.labelActive]}>
+        {option.label}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
 export type LayerPickerProps = {
   selected: number;
   onSelect: (assetId: number) => void;
@@ -18,21 +47,14 @@ export type LayerPickerProps = {
 export function LayerPicker({ selected, onSelect }: LayerPickerProps) {
   return (
     <View style={styles.row}>
-      {LAYER_OPTIONS.map(opt => {
-        const active = opt.assetId === selected;
-        return (
-          <TouchableOpacity
-            key={opt.assetId}
-            style={[styles.pill, active && styles.pillActive]}
-            onPress={() => onSelect(opt.assetId)}
-            activeOpacity={0.75}
-          >
-            <Text style={[styles.label, active && styles.labelActive]}>
-              {opt.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+      {LAYER_OPTIONS.map((opt) => (
+        <LayerPill
+          key={opt.assetId}
+          option={opt}
+          active={opt.assetId === selected}
+          onSelect={onSelect}
+        />
+      ))}
     </View>
   );
 }

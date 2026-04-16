@@ -4,5 +4,6 @@ export type {
   CesiumMetrics,
   CesiumViewProps,
   CesiumViewMethods,
+  CesiumView as CesiumViewRef,
   Quaternion,
 } from './specs/cesium-view.nitro'

@@ -8,6 +8,9 @@ import {
   TouchableOpacity,
 } from 'react-native';
 
+// Stable no-op used to stop tap events propagating through the dialog backdrop.
+const NOOP = () => {};
+
 export type CreditsDialogProps = {
   visible: boolean;
   creditsText: string;
@@ -29,7 +32,7 @@ export function CreditsDialog({
       onRequestClose={onClose}
     >
       <Pressable style={styles.overlay} onPress={onClose}>
-        <Pressable style={styles.dialog} onPress={() => {}}>
+        <Pressable style={styles.dialog} onPress={NOOP}>
           <Text style={styles.title}>Data Attribution</Text>
           <ScrollView
             style={styles.scroll}

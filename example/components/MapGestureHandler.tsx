@@ -16,6 +16,10 @@ const MAX_ALT = 100_000_000;
 export type MapGestureHandlerProps = {
   children: ReactNode;
   camera: SharedValue<CameraState>;
+  /**
+   * Seeds the pan-decay shared values at mount time only. Changes to this prop
+   * after the component mounts are ignored — it is not reactive.
+   */
   initialCamera: CameraState;
 };
 
