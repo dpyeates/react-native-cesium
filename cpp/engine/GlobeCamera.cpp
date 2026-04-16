@@ -58,7 +58,8 @@ void GlobeCamera::recompute() const {
 
   double hdgRad   = glm::radians(params_.heading);
   double pitchRad = glm::radians(params_.pitch);
-  double rollRad  = glm::radians(params_.roll);
+  // Aviation-style sign: positive roll = right wing down, negative = left wing down.
+  double rollRad  = -glm::radians(params_.roll);
 
   // 1. Heading: forward and right in the horizontal plane.
   glm::dvec3 fwdH  = north * std::cos(hdgRad) + east * std::sin(hdgRad);
