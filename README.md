@@ -302,15 +302,27 @@ type CameraState = {
 }
 ```
 
-| Field | Type | Valid range / format | Description                                                                                                                     |
-| --- | --- | --- |---------------------------------------------------------------------------------------------------------------------------------|
-| `latitude` | `number` | `-90..90` | Camera latitude in degrees.                                                                                                     |
-| `longitude` | `number` | `-180..180` | Camera longitude in degrees.                                                                                                    |
-| `altitude` | `number` | Meters above ellipsoid | Camera height in meters.                                                                                                        |
-| `heading` | `number` | Degrees | Compass direction the camera faces. Example: `0` faces north, `90` faces east.                                                  |
-| `pitch` | `number` | Degrees | Tilt angle. Negative values look downward toward terrain; positive values tilt up toward horizon/sky.                           |
-| `roll` | `number` | Degrees | Bank/rotation around forward axis. Positive right bank, negative left bank.                                                     |
-| `verticalFovDeg` | `number` | `20..100` (clamped) | Vertical field of view. Example: `30` zooms in/narrows view; `90` gives wider peripheral view with more perspective distortion. |
+| Field | Type | Valid range / format | Description                                                                                           |
+| --- | --- | --- |-------------------------------------------------------------------------------------------------------|
+| `latitude` | `number` | `-90..90` | Camera latitude in degrees.                                                                           |
+| `longitude` | `number` | `-180..180` | Camera longitude in degrees.                                                                          |
+| `altitude` | `number` | Meters above ellipsoid | Camera height in meters.                                                                              |
+| `heading` | `number` | Degrees | Compass direction the camera faces. Example: `0` faces north, `90` faces east.                        |
+| `pitch` | `number` | Degrees | Tilt angle. Negative values look downward toward terrain; positive values tilt up toward horizon/sky. |
+| `roll` | `number` | Degrees | Bank/rotation around forward axis. Positive right bank, negative left bank.                           |
+| `verticalFovDeg` | `number` | `20..100` (clamped) | Vertical field of view in degrees; see **Field of view** (next section).                              |
+
+### Field of view: vertical vs horizontal, full vs half, and Cesium alignment
+
+Use this when matching **Skia**, **custom HUDs**, or **CesiumJS** math to the same frustum as this view.
+
+| Concept | What this library uses |
+| --- | --- |
+| **API field** | `verticalFovDeg` is the **full** vertical aperture in **degrees** (top to bottom through the view axis), not a half-angle and not the horizontal FOV. |
+| **Horizontal FOV** | Not stored. With viewport width `w` and height `h` in pixels and `aspect = w / h`, the native tile `ViewState` uses **full** vertical FOV `vfov_rad = radians(verticalFovDeg)` and **full** horizontal FOV `hfov_rad = 2 * atan(tan(vfov_rad / 2) * aspect)`. |
+| **Half-angles** | The projection uses the usual symmetric perspective form: `tan(vfov_rad / 2)` (and the same pattern horizontally via aspect). Those are **half** of the full vertical/horizontal FOV, in radians—standard for `tan` of frustum slopes, not an alternate “FOV definition.” |
+| **Cesium Native `ViewState`** | `GlobeCamera` passes that `vfov_rad` and `hfov_rad` into `Cesium3DTilesSelection::ViewState` together with the viewport size—consistent with **full-angle** vertical/horizontal FOV in radians for culling. |
+| **CesiumJS `PerspectiveFrustum` / `Camera.frustum`** | **Comparable vertical angle:** In CesiumJS, `PerspectiveFrustum#fovy` is the **full vertical** FOV in **radians** (derived from `fov` and `aspectRatio`). This package’s `verticalFovDeg` is always **vertical** in **degrees**; use `vfov_rad = Cesium.Math.toRadians(verticalFovDeg)` (or equivalent) to compare to `fovy` when the **same aspect ratio** and symmetric frustum assumptions apply. This repo uses **Cesium Native**, not CesiumJS—tile culling uses `ViewState` with `vfov_rad` / `hfov_rad` as above, not the JS frustum object. |
 
 ### `Quaternion`
 
@@ -333,6 +345,15 @@ type Quaternion = {
 | `setCameraQuaternion` | `(camera: CameraState, viewCorrection: Quaternion) => void` | Same camera fields as `setCamera`, plus a rotation applied **in camera space after** heading/pitch/roll. Use this for screen-fixed adjustments (e.g. boresight calibration, aligning a synthetic horizon overlay) without expressing the offset as extra Euler angles. |
 | `getCameraState` | `() => Promise<CameraState>` | Returns the current native camera snapshot (lat/lon/alt, HPR, VFOV). This is the underlying globe attitude; it does **not** encode the view correction into HPR. |
 | `getViewCorrection` | `() => Promise<Quaternion>` | Returns the **smoothed** view-correction quaternion currently applied (identity `w=1,x=y=z=0` if you have never called `setCameraQuaternion`). |
+
+#### Threading: `setCamera` / `setCameraQuaternion` vs `getCameraState` / `getViewCorrection`
+
+| Call style | Supported / best practice |
+| --- | --- |
+| **`setCamera` / `setCameraQuaternion`** | **Synchronous** native updates. **Supported** from the **UI thread**, including **Reanimated worklets** and **`useAnimatedReaction`** when you call through a Nitro `hybridRef` (same pattern as driving camera demand from shared values). This is the intended path for high-frequency camera updates. |
+| **`getCameraState` / `getViewCorrection`** | **Async** (`Promise`). **Call from the JavaScript thread** (e.g. `useEffect`, handlers, throttled HUD state)—not from worklets—unless you have a clear, tested pattern for async in your runtime. |
+
+Avoid assuming **main-thread-only** vs **JS-thread-only** labels beyond the above: Nitro invokes the hybrid object on the thread that called the method; use sync setters on the UI/worklet path you already use for gestures, and reserve Promise-based getters for JS.
 
 #### `setCamera` vs `setCameraQuaternion`
 
@@ -358,7 +379,8 @@ type Quaternion = {
 The example app in [`example/App.tsx`](./example/App.tsx) is the best current integration reference. It shows:
 
 - creating and storing a Nitro `hybridRef`
-- driving camera updates with `setCamera(...)`
+- driving camera updates with `setCamera(...)` from a Reanimated **`useAnimatedReaction`** (UI-thread / worklet path; see **Threading** under `CesiumViewMethods` above)
+- the `setCameraQuaternion` / `getViewCorrection` APIs for camera-space HUD alignment (the example does not demonstrate them yet; see **`CesiumViewMethods`** above)
 - listening to `onMetrics`
 - switching imagery layers
 - presenting Cesium attribution from `creditsPlainText`
