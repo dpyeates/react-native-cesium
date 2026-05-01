@@ -2,6 +2,11 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+// Some native libs (e.g. reanimated/gesture-handler) resolve React Native by spawning `node`.
+// Android Studio can run Gradle with a PATH that doesn't include Homebrew node, so provide
+// the RN location directly to avoid invoking `node` during project evaluation.
+ext.REACT_NATIVE_NODE_MODULES_DIR = rootProject.file("../node_modules/react-native").absolutePath
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -24,8 +29,10 @@ react {
     // debuggableVariants = ["liteDebug", "liteDebugOptimized", "prodDebug", "prodDebugOptimized"]
 
     /* Bundling */
-    //   A list containing the node command and its flags. Default is just 'node'.
-    // nodeExecutableAndArgs = ["node"]
+    // Prefer Homebrew node when Android Studio PATH is minimal.
+    def preferredNode = [System.getenv("NODE_BINARY"), "/opt/homebrew/bin/node", "/usr/local/bin/node", "node"]
+            .find { it != null && (it == "node" || file(it).exists()) }
+    nodeExecutableAndArgs = [preferredNode]
     //
     //   The command to run when bundling. By default is 'bundle'
     // bundleCommand = "ram-bundle"

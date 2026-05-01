@@ -1,6 +1,29 @@
 pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
 plugins { id("com.facebook.react.settings") }
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+
+// Avoid default `npx ... config` (Studio PATH often lacks npx/node).
+// Prefer explicit node binary if provided, then common Homebrew locations.
+def autolinkGradleProps = new Properties()
+def autolinkGradlePropsFile = file("${settings.rootDir}/gradle.properties")
+if (autolinkGradlePropsFile.exists()) {
+    autolinkGradlePropsFile.withInputStream { autolinkGradleProps.load(it) }
+}
+def configuredNode =
+        System.getenv("NODE_BINARY")
+                ?: autolinkGradleProps.getProperty("react.nodeBinary")
+
+def nodeExecutable = configuredNode
+if (!nodeExecutable) {
+    def candidateNodes = ["/opt/homebrew/bin/node", "/usr/local/bin/node", "node"]
+    nodeExecutable = candidateNodes.find { candidate ->
+        candidate == "node" || file(candidate).exists()
+    }
+}
+def cliJs = file("${settings.rootDir}/../node_modules/@react-native-community/cli/build/bin.js")
+
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    ex.autolinkLibrariesFromCommand([nodeExecutable, cliJs.absolutePath, "config"])
+}
 rootProject.name = 'CesiumExample'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')

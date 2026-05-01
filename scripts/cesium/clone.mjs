@@ -12,7 +12,7 @@ const root = join(__dirname, '..', '..')
 const vendor = join(root, 'vendor')
 const dest = join(vendor, 'cesium-native')
 const repo = 'https://github.com/CesiumGS/cesium-native.git'
-const ref = 'v0.59.0'
+const ref = 'v0.60.0'
 
 function run(cmd, args, opts = {}) {
   execFileSync(cmd, args, { stdio: 'inherit', ...opts })

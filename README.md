@@ -302,15 +302,15 @@ type CameraState = {
 }
 ```
 
-| Field | Type | Valid range / format | Description                                                                                           |
-| --- | --- | --- |-------------------------------------------------------------------------------------------------------|
-| `latitude` | `number` | `-90..90` | Camera latitude in degrees.                                                                           |
-| `longitude` | `number` | `-180..180` | Camera longitude in degrees.                                                                          |
-| `altitude` | `number` | Meters above ellipsoid | Camera height in meters.                                                                              |
-| `heading` | `number` | Degrees | Compass direction the camera faces. Example: `0` faces north, `90` faces east.                        |
-| `pitch` | `number` | Degrees | Tilt angle. Negative values look downward toward terrain; positive values tilt up toward horizon/sky. |
-| `roll` | `number` | Degrees | Bank/rotation around forward axis. Positive right bank, negative left bank.                           |
-| `verticalFovDeg` | `number` | `20..100` (clamped) | Vertical field of view in degrees; see **Field of view** (next section).                              |
+| Field | Type | Valid range / format         | Description                                                                                           |
+| --- | --- |------------------------------|-------------------------------------------------------------------------------------------------------|
+| `latitude` | `number` | `-90..90`                    | Camera latitude in degrees.                                                                           |
+| `longitude` | `number` | `-180..180`                  | Camera longitude in degrees.                                                                          |
+| `altitude` | `number` | Meters above sea level (MSL) | Camera height in meters.                                                                              |
+| `heading` | `number` | Degrees                      | Compass direction the camera faces. Example: `0` faces north, `90` faces east.                        |
+| `pitch` | `number` | Degrees                      | Tilt angle. Negative values look downward toward terrain; positive values tilt up toward horizon/sky. |
+| `roll` | `number` | Degrees                      | Bank/rotation around forward axis. Positive right bank, negative left bank.                           |
+| `verticalFovDeg` | `number` | `20..100` (clamped)          | Vertical field of view in degrees; see **Field of view** (next section).                              |
 
 ### Field of view: vertical vs horizontal, full vs half, and Cesium alignment
 
@@ -393,6 +393,7 @@ The example project currently links this library locally via `link:..`.
 
 - Native rendering is built on [Cesium Native](https://github.com/CesiumGS/cesium-native)
 - Cesium Native is licensed under Apache 2.0; see [`NOTICE`](./NOTICE)
+- EGM96 altitude offset calculations using [EGM96](https://github.com/emericg/EGM96)
 - React Native integration is built with [Nitro Modules](https://github.com/mrousavy/nitro)
 
 

@@ -32,7 +32,7 @@ Pod::Spec.new do |s|
   s.source_files = [
     "ios/**/*.{swift}",
     "ios/**/*.{h,m,mm}",
-    "cpp/**/*.{hpp,cpp,h,mm}",
+    "cpp/**/*.{hpp,cpp,h,mm,c}",
   ]
 
   s.public_header_files = [

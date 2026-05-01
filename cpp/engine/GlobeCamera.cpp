@@ -1,4 +1,5 @@
 #include "GlobeCamera.hpp"
+#include "GeoidConverter.hpp"
 
 #include <CesiumGeospatial/GlobeTransforms.h>
 
@@ -43,9 +44,11 @@ void GlobeCamera::recompute() const {
   dirty_ = false;
 
   const auto& ellipsoid = CesiumGeospatial::Ellipsoid::WGS84;
+  const double ellipsoidAltitude =
+      mslToEllipsoidMeters(params_.latitude, params_.longitude, params_.altitude);
   CesiumGeospatial::Cartographic carto(glm::radians(params_.longitude),
                                        glm::radians(params_.latitude),
-                                       params_.altitude);
+                                       ellipsoidAltitude);
   ecefPosition_ = ellipsoid.cartographicToCartesian(carto);
 
   glm::dmat4 enuToECEF =
@@ -117,10 +120,12 @@ void GlobeCamera::computeHeadingPitchToward(double targetLatDeg,
   recompute();
 
   const auto& ellipsoid = CesiumGeospatial::Ellipsoid::WGS84;
+  const double targetEllipsoidAlt =
+      mslToEllipsoidMeters(targetLatDeg, targetLonDeg, targetAltMeters);
   CesiumGeospatial::Cartographic targetCarto(
       glm::radians(targetLonDeg),
       glm::radians(targetLatDeg),
-      targetAltMeters);
+      targetEllipsoidAlt);
   glm::dvec3 targetEcef = ellipsoid.cartographicToCartesian(targetCarto);
   glm::dvec3 dirEcef    = glm::normalize(targetEcef - ecefPosition_);
 
