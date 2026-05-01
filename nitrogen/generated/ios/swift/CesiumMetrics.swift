@@ -18,8 +18,8 @@ public extension CesiumMetrics {
   /**
    * Create a new instance of `CesiumMetrics`.
    */
-  init(fps: Double, tilesRendered: Double, tilesLoading: Double, tilesVisited: Double, ionTokenConfigured: Bool, tilesetReady: Bool, creditsPlainText: String) {
-    self.init(fps, tilesRendered, tilesLoading, tilesVisited, ionTokenConfigured, tilesetReady, std.string(creditsPlainText))
+  init(fps: Double, tilesRendered: Double, tilesLoading: Double, tilesVisited: Double, ionTokenConfigured: Bool, tlsConfigured: Bool, tilesetReady: Bool, creditsPlainText: String) {
+    self.init(fps, tilesRendered, tilesLoading, tilesVisited, ionTokenConfigured, tlsConfigured, tilesetReady, std.string(creditsPlainText))
   }
 
   @inline(__always)
@@ -45,6 +45,11 @@ public extension CesiumMetrics {
   @inline(__always)
   var ionTokenConfigured: Bool {
     return self.__ionTokenConfigured
+  }
+  
+  @inline(__always)
+  var tlsConfigured: Bool {
+    return self.__tlsConfigured
   }
   
   @inline(__always)

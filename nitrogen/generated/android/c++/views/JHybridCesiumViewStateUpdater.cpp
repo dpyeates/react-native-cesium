@@ -73,6 +73,54 @@ void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     hybridView->setIonImageryAssetId(props->ionImageryAssetId.value);
     props->ionImageryAssetId.isDirty = false;
   }
+  if (props->maximumCachedMiB.isDirty) {
+    hybridView->setMaximumCachedMiB(props->maximumCachedMiB.value);
+    props->maximumCachedMiB.isDirty = false;
+  }
+  if (props->preloadAncestors.isDirty) {
+    hybridView->setPreloadAncestors(props->preloadAncestors.value);
+    props->preloadAncestors.isDirty = false;
+  }
+  if (props->preloadSiblings.isDirty) {
+    hybridView->setPreloadSiblings(props->preloadSiblings.value);
+    props->preloadSiblings.isDirty = false;
+  }
+  if (props->forbidHoles.isDirty) {
+    hybridView->setForbidHoles(props->forbidHoles.value);
+    props->forbidHoles.isDirty = false;
+  }
+  if (props->enableWaterMask.isDirty) {
+    hybridView->setEnableWaterMask(props->enableWaterMask.value);
+    props->enableWaterMask.isDirty = false;
+  }
+  if (props->enableFogCulling.isDirty) {
+    hybridView->setEnableFogCulling(props->enableFogCulling.value);
+    props->enableFogCulling.isDirty = false;
+  }
+  if (props->enforceCulledScreenSpaceError.isDirty) {
+    hybridView->setEnforceCulledScreenSpaceError(props->enforceCulledScreenSpaceError.value);
+    props->enforceCulledScreenSpaceError.isDirty = false;
+  }
+  if (props->culledScreenSpaceError.isDirty) {
+    hybridView->setCulledScreenSpaceError(props->culledScreenSpaceError.value);
+    props->culledScreenSpaceError.isDirty = false;
+  }
+  if (props->enableLodTransitionPeriod.isDirty) {
+    hybridView->setEnableLodTransitionPeriod(props->enableLodTransitionPeriod.value);
+    props->enableLodTransitionPeriod.isDirty = false;
+  }
+  if (props->lodTransitionLength.isDirty) {
+    hybridView->setLodTransitionLength(props->lodTransitionLength.value);
+    props->lodTransitionLength.isDirty = false;
+  }
+  if (props->sqliteCacheMaxRows.isDirty) {
+    hybridView->setSqliteCacheMaxRows(props->sqliteCacheMaxRows.value);
+    props->sqliteCacheMaxRows.isDirty = false;
+  }
+  if (props->taskProcessorThreads.isDirty) {
+    hybridView->setTaskProcessorThreads(props->taskProcessorThreads.value);
+    props->taskProcessorThreads.isDirty = false;
+  }
   if (props->onMetrics.isDirty) {
     hybridView->setOnMetrics(props->onMetrics.value);
     props->onMetrics.isDirty = false;

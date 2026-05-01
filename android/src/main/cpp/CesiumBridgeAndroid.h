@@ -4,13 +4,21 @@
 #include <memory>
 #include <string>
 
+#include "engine/CameraTargetState.hpp"
+#include "engine/CesiumEngine.hpp"
+#include "engine/MetricsAggregator.hpp"
+
 namespace reactnativecesium {
 class VulkanBackend;
-class CesiumEngine;
 struct FrameResult;
-struct CameraParams;
-}
+} // namespace reactnativecesium
 
+// Thin Android shell. All cross-platform logic (camera demand state +
+// smoothing, FPS / metrics aggregation, credit HTML stripping) lives in
+// shared C++ next to CesiumEngine. This class only owns:
+//   - the JNI/window surface,
+//   - the Vulkan backend instance, and
+//   - the EngineConfig snapshot mirrored from JS props.
 struct CesiumBridgeAndroid {
   void init(JNIEnv* env, jobject surface, int width, int height,
             const std::string& cacheDir, const std::string& cacertPath);
@@ -27,9 +35,23 @@ struct CesiumBridgeAndroid {
                               double qw, double qx, double qy, double qz);
   void setVerticalFovDeg(double degrees);
   void setMaximumScreenSpaceError(double v);
-  void setMaximumSimultaneousTileLoads(int v);
-  void setLoadingDescendantLimit(int v);
+  void setMaximumSimultaneousTileLoads(int32_t v);
+  void setLoadingDescendantLimit(int32_t v);
   void setMsaaSampleCount(int samples);
+
+  // Optional knobs (default values mirror EngineConfig defaults).
+  void setMaximumCachedMiB(int32_t v);
+  void setPreloadAncestors(bool v);
+  void setPreloadSiblings(bool v);
+  void setForbidHoles(bool v);
+  void setEnableWaterMask(bool v);
+  void setEnableFogCulling(bool v);
+  void setEnforceCulledScreenSpaceError(bool v);
+  void setCulledScreenSpaceError(double v);
+  void setEnableLodTransitionPeriod(bool v);
+  void setLodTransitionLength(double v);
+  void setSqliteCacheMaxRows(int32_t v);
+  void setTaskProcessorThreads(int32_t v);
 
   void markNeedsRender();
   bool shouldRenderNextFrame();
@@ -48,57 +70,34 @@ struct CesiumBridgeAndroid {
   double readViewCorrectionY();
   double readViewCorrectionZ();
 
-  // Metrics
-  double metricsFps() const { return metricsFps_; }
-  int    metricsTilesRendered() const { return metricsTilesRendered_; }
-  int    metricsTilesLoading() const { return metricsTilesLoading_; }
-  int    metricsTilesVisited() const { return metricsTilesVisited_; }
-  bool   metricsIonTokenConfigured() const { return metricsIonTokenConfigured_; }
-  bool   metricsTilesetReady() const { return metricsTilesetReady_; }
-  const std::string& metricsCreditsPlainText() const { return metricsCreditsPlainText_; }
+  // Metrics readback (delegated to MetricsAggregator)
+  double metricsFps()                const { return metrics_.latest().fps; }
+  int    metricsTilesRendered()      const { return metrics_.latest().tilesRendered; }
+  int    metricsTilesLoading()       const { return metrics_.latest().tilesLoading; }
+  int    metricsTilesVisited()       const { return metrics_.latest().tilesVisited; }
+  bool   metricsIonTokenConfigured() const { return metrics_.latest().ionTokenConfigured; }
+  bool   metricsTilesetReady()       const { return metrics_.latest().tilesetReady; }
+  bool   metricsTlsConfigured()      const { return metrics_.latest().tlsConfigured; }
+  const std::string& metricsCreditsPlainText() const {
+    return metrics_.latest().creditsPlainText;
+  }
 
 private:
   void buildEngine();
+  // Push the current `config_` state to the live engine (runtime-mutable
+  // fields go through tileset_->getOptions(); token/asset id changes force
+  // a tileset rebuild).
+  void applyEngineConfig();
 
   std::unique_ptr<reactnativecesium::VulkanBackend> vulkanBackend_;
   std::unique_ptr<reactnativecesium::CesiumEngine>  engine_;
   std::unique_ptr<reactnativecesium::FrameResult>   frameResult_;
 
-  int viewportWidth_  = 0;
-  int viewportHeight_ = 0;
-  bool initialized_   = false;
+  int  viewportWidth_  = 0;
+  int  viewportHeight_ = 0;
+  bool initialized_    = false;
 
-  std::string cacheDir_;
-  std::string cacertPath_;
-  std::string ionAccessToken_;
-  int64_t     ionTilesetAssetId_ = 1;
-
-  double maxSSE_       = 32.0;
-  double maxSimLoads_  = 12.0;
-  double loadDescLim_  = 20.0;
-
-  // Camera demand target
-  double camTargetLat_     = 46.15;
-  double camTargetLon_     = 7.35;
-  double camTargetAlt_     = 12000.0;
-  double camTargetHeading_ = 129.0;
-  double camTargetPitch_   = -45.0;
-  double camTargetRoll_    = 0.0;
-  double camTargetViewQw_  = 1.0;
-  double camTargetViewQx_  = 0.0;
-  double camTargetViewQy_  = 0.0;
-  double camTargetViewQz_  = 0.0;
-  bool   forceRenderNextFrame_ = true;
-
-  // Metrics
-  double fpsEma_       = 0.0;
-  int    metricsTick_  = 0;
-  double metricsFps_   = 0.0;
-  int    metricsTilesRendered_ = 0;
-  int    metricsTilesLoading_  = 0;
-  int    metricsTilesVisited_  = 0;
-  bool   metricsIonTokenConfigured_ = false;
-  bool   metricsTilesetReady_ = false;
-  std::string metricsCreditsPlainText_;
-  std::string lastCreditHtmlJoined_;
+  reactnativecesium::EngineConfig config_;
+  reactnativecesium::CameraTargetState target_;
+  reactnativecesium::MetricsAggregator metrics_;
 };

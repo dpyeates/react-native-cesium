@@ -3,6 +3,9 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+// Thin Obj-C++ shell for the iOS side. All cross-platform logic (camera
+// demand state + smoothing, FPS / metrics aggregation, credit-HTML stripping)
+// lives in shared C++ next to CesiumEngine.
 @interface CesiumBridge : NSObject
 
 - (instancetype)initWithMetalLayer:(CAMetalLayer *)layer
@@ -18,7 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
                      heading:(double)heading
                        pitch:(double)pitch
                         roll:(double)roll;
-/// Same as `updateCameraLatitude:...` plus camera-space view correction (w,x,y,z). Does not replace HPR; applied after HPR in the engine.
+/// Same as `updateCameraLatitude:...` plus a camera-space view correction (w,x,y,z) applied after HPR.
 - (void)updateCameraQuaternionLatitude:(double)lat
                              longitude:(double)lon
                               altitude:(double)alt
@@ -38,12 +41,26 @@ NS_ASSUME_NONNULL_BEGIN
 // Camera / globe
 - (void)setVerticalFovDeg:(double)degrees;
 
-// Tileset tuning (triggers rebuild when changed)
+// Tileset tuning (runtime-mutable; no full rebuild)
 - (void)setMaximumScreenSpaceError:(double)v;
-- (void)setMaximumSimultaneousTileLoads:(int)v;
-- (void)setLoadingDescendantLimit:(int)v;
+- (void)setMaximumSimultaneousTileLoads:(int32_t)v;
+- (void)setLoadingDescendantLimit:(int32_t)v;
 
 - (void)setMsaaSampleCount:(int)samples;
+
+// Optional perf / quality knobs (defaults match EngineConfig).
+- (void)setMaximumCachedMiB:(int32_t)v;
+- (void)setPreloadAncestors:(BOOL)v;
+- (void)setPreloadSiblings:(BOOL)v;
+- (void)setForbidHoles:(BOOL)v;
+- (void)setEnableWaterMask:(BOOL)v;
+- (void)setEnableFogCulling:(BOOL)v;
+- (void)setEnforceCulledScreenSpaceError:(BOOL)v;
+- (void)setCulledScreenSpaceError:(double)v;
+- (void)setEnableLodTransitionPeriod:(BOOL)v;
+- (void)setLodTransitionLength:(double)v;
+- (void)setSqliteCacheMaxRows:(int32_t)v;
+- (void)setTaskProcessorThreads:(int32_t)v;
 
 /// Throttled metrics consumed by the Swift hybrid view.
 @property (nonatomic, readonly) double metricsFps;
@@ -52,7 +69,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) NSInteger metricsTilesVisited;
 @property (nonatomic, readonly) BOOL metricsIonTokenConfigured;
 @property (nonatomic, readonly) BOOL metricsTilesetReady;
-@property (nonatomic, readonly) NSString *metricsCreditsPlainText;
+@property (nonatomic, readonly) BOOL metricsTlsConfigured;
+@property (nonatomic, readonly, copy) NSString *metricsCreditsPlainText;
+
 - (double)readCameraLatitude;
 - (double)readCameraLongitude;
 - (double)readCameraAltitude;

@@ -1,0 +1,34 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 8167d16df2b2a5d6fa2708775bfefc2b6f950456..9b39b1b8fc1dc9529e8fd8bf26d28874dad4e9f1 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -12,6 +12,11 @@ def safeAppExtGet(prop, fallback) {
+     appProject?.ext?.has(prop) ? appProject.ext.get(prop) : fallback
+ }
+ 
++def resolveNodeExecutable() {
++    return [System.getenv("NODE_BINARY"), "/opt/homebrew/bin/node", "/usr/local/bin/node", "node"]
++        .find { it != null && (it == "node" || file(it).exists()) }
++}
++
+ def isNewArchitectureEnabled() {
+     // In React Native 0.82+, users can no longer opt-out of the New Architecture.
+     if(getReactNativeMinorVersion() >= 82){
+@@ -241,7 +246,7 @@ android {
+ 
+ def validateReactNativeVersionResult = providers.exec {
+     workingDir(projectDir.path)
+-    commandLine("node", "./../scripts/validate-react-native-version.js", REACT_NATIVE_VERSION.toString())
++    commandLine(resolveNodeExecutable(), "./../scripts/validate-react-native-version.js", REACT_NATIVE_VERSION.toString())
+     ignoreExitValue = true
+ }
+ 
+@@ -266,7 +271,7 @@ preBuild.dependsOn(assertNewArchitectureEnabledTask)
+ 
+ def validateWorkletsBuildResult = providers.exec {
+     workingDir(projectDir.path)
+-    commandLine("node", "./../scripts/validate-worklets-build.js")
++    commandLine(resolveNodeExecutable(), "./../scripts/validate-worklets-build.js")
+     ignoreExitValue = true
+ }
+ 

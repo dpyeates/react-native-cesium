@@ -4,13 +4,13 @@
 
 #include "ReactNativeCesiumOnLoad.hpp"
 
-#include <Cesium3DTilesContent/registerAllTileContentTypes.h>
+// Cesium tile content types are registered exactly once in CesiumEngine's
+// constructor; do not duplicate that registration here.
 
 static const uint32_t kCesiumVulkanApiVersion = VK_MAKE_VERSION(1, 1, 0);
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   (void)kCesiumVulkanApiVersion;
-  Cesium3DTilesContent::registerAllTileContentTypes();
   return facebook::jni::initialize(vm, []() {
     margelo::nitro::reactnativecesium::registerAllNatives();
   });

@@ -5,6 +5,13 @@
 
 #include "CesiumEngine.hpp"
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#define ENGINE_LOGI(...) __android_log_print(ANDROID_LOG_INFO, "CesiumEngine", __VA_ARGS__)
+#else
+#define ENGINE_LOGI(...)
+#endif
+
 #include <Cesium3DTilesContent/registerAllTileContentTypes.h>
 #include <Cesium3DTilesSelection/BoundingVolume.h>
 #include <Cesium3DTilesSelection/Tile.h>
@@ -17,8 +24,8 @@
 #include <CesiumAsync/SqliteCache.h>
 #include <CesiumCurl/CurlAssetAccessor.h>
 #include <CesiumRasterOverlays/IonRasterOverlay.h>
+#include <CesiumRasterOverlays/RasterOverlay.h>
 #include <CesiumUtility/CreditSystem.h>
-#include <CesiumUtility/IntrusivePointer.h>
 
 #ifdef CESIUM_ENGINE_UNDEF_NDEBUG
 # undef NDEBUG
@@ -31,23 +38,29 @@
 
 #include <algorithm>
 #include <cmath>
+#include <thread>
 
 namespace reactnativecesium {
 
+int32_t CesiumEngine::resolveTaskThreadCount(int32_t requested) {
+  if (requested > 0) return requested;
+  unsigned int hw = std::thread::hardware_concurrency();
+  if (hw == 0) return 4;
+  // Reserve one core for the UI / display thread; clamp into a sensible band.
+  int32_t target = static_cast<int32_t>(hw) - 1;
+  if (target < 2) target = 2;
+  if (target > 8) target = 8;
+  return target;
+}
+
 CesiumEngine::CesiumEngine()
-    : taskProcessor_(std::make_shared<TaskProcessor>(4)),
+    : taskProcessor_(std::make_shared<TaskProcessor>(
+          static_cast<uint32_t>(resolveTaskThreadCount(0)))),
       asyncSystem_(taskProcessor_) {
   Cesium3DTilesContent::registerAllTileContentTypes();
 }
 
 CesiumEngine::~CesiumEngine() { shutdown(); }
-
-bool CesiumEngine::tilesetOptionsMatch(const EngineConfig& a,
-                                       const EngineConfig& b) const {
-  return a.maximumScreenSpaceError == b.maximumScreenSpaceError &&
-         a.maximumSimultaneousTileLoads == b.maximumSimultaneousTileLoads &&
-         a.loadingDescendantLimit == b.loadingDescendantLimit;
-}
 
 void CesiumEngine::buildEllipsoidMesh() {
   // Tessellate a WGS84 ellipsoid slightly inset so terrain tiles (at true
@@ -92,11 +105,6 @@ void CesiumEngine::buildEllipsoidMesh() {
   }
 }
 
-// Append the fallback ellipsoid as a draw.
-// RTC convention for the fallback: the tile's "RTC centre" is the camera
-// position itself, so local positions == old camera-relative positions.  The
-// per-draw MVP is therefore the same rotation-only VP used before RTC was
-// introduced, keeping the fallback on the same code path.
 void CesiumEngine::appendEllipsoidDraws(FrameResult& result) const {
   if (ellipsoidPositions_.empty() || ellipsoidIndices_.empty()) return;
 
@@ -115,13 +123,10 @@ void CesiumEngine::appendEllipsoidDraws(FrameResult& result) const {
   float* uvOut  = result.uvs.data()            + baseVertex * 2;
 
   for (const auto& posEcef : ellipsoidPositions_) {
-    // Local position = ECEF - camera (same as old eye-relative, since camera is the RTC centre).
     const glm::dvec3 local = posEcef - cameraPos;
     *posOut++ = static_cast<float>(local.x);
     *posOut++ = static_cast<float>(local.y);
     *posOut++ = static_cast<float>(local.z);
-    // Fallback geoid should represent land by default when terrain tiles are not
-    // loaded yet, so keep altitude at sea level for hypsometric land colouring.
     *altOut++ = 0.0f;
     *uvOut++  = 0.5f;
     *uvOut++  = 0.5f;
@@ -140,8 +145,6 @@ void CesiumEngine::appendEllipsoidDraws(FrameResult& result) const {
   draw.hasUVs              = false;
   draw.isEllipsoidFallback = true;
   draw.overlayTexture      = nullptr;
-  // Ellipsoid RTC centre = camera → local pos = eye-relative → use the
-  // rotation-only VP (identical to the pre-RTC vertex transform).
   draw.mvpMatrix           = result.vpMatrix;
   draw.rtcCenterEcef       = result.cameraEcef;
   result.draws.push_back(draw);
@@ -149,18 +152,39 @@ void CesiumEngine::appendEllipsoidDraws(FrameResult& result) const {
 
 void CesiumEngine::initialize(const EngineConfig& config) {
   config_ = config;
+  // Ensure ionImageryAssetId default is honoured if the caller passed 0/<0.
+  if (config_.ionImageryAssetId <= 0) {
+    config_.ionImageryAssetId = 1;
+  }
+
+  // Re-create the worker pool if the requested thread count differs from
+  // the autodetected default we used in the constructor.
+  const int32_t desiredThreads = resolveTaskThreadCount(config_.taskProcessorThreads);
+  if (taskProcessor_) {
+    // We can only resize the pool by replacing it, which would break
+    // asyncSystem_. Skip when it's the same to preserve in-flight tasks.
+    // Note: TaskProcessor stores its size privately, so we conservatively
+    // recreate only when an explicit override is provided.
+    if (config_.taskProcessorThreads > 0) {
+      taskProcessor_->waitUntilIdle();
+      taskProcessor_ = std::make_shared<TaskProcessor>(
+          static_cast<uint32_t>(desiredThreads));
+      asyncSystem_ = CesiumAsync::AsyncSystem(taskProcessor_);
+    }
+  }
 
   auto logger = spdlog::default_logger();
 
   CesiumCurl::CurlAssetAccessorOptions curlOpts;
-  if (!config.tlsCaBundlePath.empty()) {
-    curlOpts.certificateFile = config.tlsCaBundlePath;
+  if (!config_.tlsCaBundlePath.empty()) {
+    curlOpts.certificateFile = config_.tlsCaBundlePath;
   }
   auto curlAccessor = std::make_shared<CesiumCurl::CurlAssetAccessor>(curlOpts);
 
-  if (!config.cacheDatabasePath.empty()) {
+  if (!config_.cacheDatabasePath.empty()) {
     auto cache = std::make_shared<CesiumAsync::SqliteCache>(
-        logger, config.cacheDatabasePath, 4096);
+        logger, config_.cacheDatabasePath,
+        static_cast<uint64_t>(std::max<int32_t>(64, config_.sqliteCacheMaxRows)));
     assetAccessor_ = std::make_shared<CesiumAsync::CachingAssetAccessor>(
         logger, curlAccessor, cache);
   } else {
@@ -174,7 +198,7 @@ void CesiumEngine::initialize(const EngineConfig& config) {
   }
 
   buildEllipsoidMesh();
-  createTileset(config.ionAccessToken, config.ionAssetId);
+  createTileset();
 }
 
 void CesiumEngine::shutdown() {
@@ -183,29 +207,50 @@ void CesiumEngine::shutdown() {
 }
 
 void CesiumEngine::updateConfig(const EngineConfig& config) {
+  // Only token / asset id changes force a full tileset rebuild. Everything
+  // else is mutated in place via tileset_->getOptions() to avoid the very
+  // expensive teardown + re-load from the root.
   const bool needRebuild =
       config.ionAccessToken != config_.ionAccessToken ||
-      config.ionAssetId != config_.ionAssetId ||
-      !tilesetOptionsMatch(config, config_);
+      config.ionAssetId     != config_.ionAssetId;
+
+  // Imagery overlay is its own change set.
+  const bool overlayChanged =
+      config.ionImageryAssetId != config_.ionImageryAssetId;
 
   config_ = config;
+  if (config_.ionImageryAssetId <= 0) {
+    config_.ionImageryAssetId = 1;
+  }
 
-  if (!needRebuild) return;
+  if (needRebuild) {
+    destroyTileset();
+    if (!config_.ionAccessToken.empty()) {
+      createTileset();
+    }
+    return;
+  }
 
-  destroyTileset();
-  if (!config_.ionAccessToken.empty()) {
-    createTileset(config_.ionAccessToken, config_.ionAssetId, currentImageryAssetId_);
+  if (tileset_) {
+    applyRuntimeConfig(config_);
+  }
+
+  if (overlayChanged) {
+    applyImageryOverlay(config_.ionImageryAssetId);
   }
 }
 
-void CesiumEngine::createTileset(const std::string& token,
-                                 int64_t            assetId,
-                                 int64_t            imageryAssetId) {
-  if (token.empty()) return;
+void CesiumEngine::createTileset() {
+  if (config_.ionAccessToken.empty()) {
+    spdlog::warn("createTileset: ion access token is empty, skipping tileset creation");
+    return;
+  }
 
   if (!creditSystem_) {
     creditSystem_ = std::make_shared<CesiumUtility::CreditSystem>();
   }
+
+  spdlog::info("createTileset: creating tileset with assetId={}", config_.ionAssetId);
 
   auto logger = spdlog::default_logger();
 
@@ -214,38 +259,141 @@ void CesiumEngine::createTileset(const std::string& token,
       logger, nullptr};
 
   Cesium3DTilesSelection::TilesetOptions opts;
-  opts.maximumCachedBytes = 256 * 1024 * 1024;
+  opts.maximumCachedBytes = static_cast<int64_t>(
+      std::max<int64_t>(16LL * 1024LL * 1024LL, config_.maximumCachedBytes));
   opts.maximumSimultaneousTileLoads =
       static_cast<uint32_t>(std::max(0, config_.maximumSimultaneousTileLoads));
   opts.loadingDescendantLimit =
       static_cast<uint32_t>(std::max(1, config_.loadingDescendantLimit));
   opts.maximumScreenSpaceError =
       std::max(1.0, config_.maximumScreenSpaceError);
-  opts.preloadAncestors = true;
-  opts.preloadSiblings  = true;
-  opts.forbidHoles      = true;
-  opts.contentOptions.enableWaterMask = true;
+  opts.preloadAncestors = config_.preloadAncestors;
+  opts.preloadSiblings  = config_.preloadSiblings;
+  opts.forbidHoles      = config_.forbidHoles;
+  opts.contentOptions.enableWaterMask = config_.enableWaterMask;
+  opts.enableFogCulling = config_.enableFogCulling;
+  opts.enforceCulledScreenSpaceError = config_.enforceCulledScreenSpaceError;
+  opts.culledScreenSpaceError = std::max(1.0, config_.culledScreenSpaceError);
+  opts.enableLodTransitionPeriod = config_.enableLodTransitionPeriod;
+  opts.lodTransitionLength = std::max(0.0, config_.lodTransitionLength);
 
   tileset_ = std::make_unique<Cesium3DTilesSelection::Tileset>(
-      externals, assetId, token, opts);
+      externals, config_.ionAssetId, config_.ionAccessToken, opts);
 
-  if (imageryAssetId != 1) {
+  spdlog::info("createTileset: tileset created successfully");
+
+  currentOverlay_ = nullptr;
+  currentImageryAssetId_ = 1;
+  if (config_.ionImageryAssetId > 0 && config_.ionImageryAssetId != 1) {
+    applyImageryOverlay(config_.ionImageryAssetId);
+  }
+}
+
+bool CesiumEngine::applyRuntimeConfig(const EngineConfig& cfg) {
+  if (!tileset_) return false;
+  auto& opts = tileset_->getOptions();
+  bool changed = false;
+
+  const double newSse =
+      std::max(1.0, cfg.maximumScreenSpaceError);
+  if (opts.maximumScreenSpaceError != newSse) {
+    opts.maximumScreenSpaceError = newSse;
+    changed = true;
+  }
+  const uint32_t newSim =
+      static_cast<uint32_t>(std::max(0, cfg.maximumSimultaneousTileLoads));
+  if (opts.maximumSimultaneousTileLoads != newSim) {
+    opts.maximumSimultaneousTileLoads = newSim;
+    changed = true;
+  }
+  const uint32_t newDesc =
+      static_cast<uint32_t>(std::max(1, cfg.loadingDescendantLimit));
+  if (opts.loadingDescendantLimit != newDesc) {
+    opts.loadingDescendantLimit = newDesc;
+    changed = true;
+  }
+  const int64_t newCacheBytes = std::max<int64_t>(
+      16LL * 1024LL * 1024LL, cfg.maximumCachedBytes);
+  if (opts.maximumCachedBytes != newCacheBytes) {
+    opts.maximumCachedBytes = newCacheBytes;
+    changed = true;
+  }
+  if (opts.preloadAncestors != cfg.preloadAncestors) {
+    opts.preloadAncestors = cfg.preloadAncestors;
+    changed = true;
+  }
+  if (opts.preloadSiblings != cfg.preloadSiblings) {
+    opts.preloadSiblings = cfg.preloadSiblings;
+    changed = true;
+  }
+  if (opts.forbidHoles != cfg.forbidHoles) {
+    opts.forbidHoles = cfg.forbidHoles;
+    changed = true;
+  }
+  // Note: contentOptions.enableWaterMask only takes effect on tiles loaded
+  // after the change. Existing in-memory tiles keep their water mask state.
+  if (opts.contentOptions.enableWaterMask != cfg.enableWaterMask) {
+    opts.contentOptions.enableWaterMask = cfg.enableWaterMask;
+    changed = true;
+  }
+  if (opts.enableFogCulling != cfg.enableFogCulling) {
+    opts.enableFogCulling = cfg.enableFogCulling;
+    changed = true;
+  }
+  if (opts.enforceCulledScreenSpaceError != cfg.enforceCulledScreenSpaceError) {
+    opts.enforceCulledScreenSpaceError = cfg.enforceCulledScreenSpaceError;
+    changed = true;
+  }
+  const double newCulled =
+      std::max(1.0, cfg.culledScreenSpaceError);
+  if (opts.culledScreenSpaceError != newCulled) {
+    opts.culledScreenSpaceError = newCulled;
+    changed = true;
+  }
+  if (opts.enableLodTransitionPeriod != cfg.enableLodTransitionPeriod) {
+    opts.enableLodTransitionPeriod = cfg.enableLodTransitionPeriod;
+    changed = true;
+  }
+  const double newLodLen = std::max(0.0, cfg.lodTransitionLength);
+  if (opts.lodTransitionLength != newLodLen) {
+    opts.lodTransitionLength = newLodLen;
+    changed = true;
+  }
+  return changed;
+}
+
+void CesiumEngine::applyImageryOverlay(int64_t targetAssetId) {
+  if (!tileset_) return;
+  if (targetAssetId == currentImageryAssetId_) return;
+
+  if (currentOverlay_) {
+    tileset_->getOverlays().remove(currentOverlay_);
+    currentOverlay_ = nullptr;
+  }
+  currentImageryAssetId_ = (targetAssetId <= 0) ? 1 : targetAssetId;
+
+  if (currentImageryAssetId_ != 1 && !config_.ionAccessToken.empty()) {
     CesiumUtility::IntrusivePointer<CesiumRasterOverlays::RasterOverlay> ov =
-        new CesiumRasterOverlays::IonRasterOverlay("imagery", imageryAssetId, token);
+        new CesiumRasterOverlays::IonRasterOverlay(
+            "imagery", currentImageryAssetId_, config_.ionAccessToken);
     tileset_->getOverlays().add(ov);
+    currentOverlay_ = ov;
   }
 }
 
 void CesiumEngine::destroyTileset() {
+  currentOverlay_ = nullptr;
+  currentImageryAssetId_ = 1;
   tileset_.reset();
-  taskProcessor_->waitUntilIdle();
+  if (taskProcessor_) {
+    taskProcessor_->waitUntilIdle();
+  }
 }
 
 void CesiumEngine::setImageryAssetId(int64_t assetId) {
   if (config_.ionAccessToken.empty()) return;
-  currentImageryAssetId_ = assetId;
-  destroyTileset();
-  createTileset(config_.ionAccessToken, config_.ionAssetId, assetId);
+  config_.ionImageryAssetId = (assetId <= 0) ? 1 : assetId;
+  applyImageryOverlay(config_.ionImageryAssetId);
 }
 
 void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
@@ -278,19 +426,23 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
     return;
   }
 
-  result.localPositions.reserve(512 * 1024);
-  result.altitudes.reserve(512 * 1024 / 3);
-  result.uvs.reserve(512 * 1024 * 2);
-  result.indices.reserve(3 * 1024 * 1024);
+  result.localPositions.reserve(tunables::kFrameResultPositionFloatReserve);
+  result.altitudes.reserve(tunables::kFrameResultPositionFloatReserve / 3);
+  result.uvs.reserve(tunables::kFrameResultPositionFloatReserve * 2);
+  result.indices.reserve(tunables::kFrameResultIndexUint32Reserve);
 
   asyncSystem_.dispatchMainThreadTasks();
 
-  // Ellipsoid fallback is appended first so real terrain tiles (drawn later)
-  // overdraw it via the reversed-Z depth test.
-  appendEllipsoidDraws(result);
-
   const auto viewState     = camera_.computeViewState(w, h);
   const auto& updateResult = tileset_->updateView({viewState});
+
+  // Only emit the fallback ellipsoid when no real terrain is being rendered
+  // this frame. Otherwise it would be over-drawn anyway (~8k vertices and
+  // ~24k indices of throwaway transform + memcpy per frame).
+  const bool noVisibleTerrain = updateResult.tilesToRenderThisFrame.empty();
+  if (noVisibleTerrain) {
+    appendEllipsoidDraws(result);
+  }
 
   if (creditSystem_) {
     const CesiumUtility::CreditsSnapshot& snap =
@@ -339,8 +491,6 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
           !prim.uvs.empty() && prim.uvs.size() == vertexCount;
 
       // ── RTC: copy tile-local positions & altitudes ────────────────────────
-      // Positions are already relative to prim.rtcCenter (small float values).
-      // Altitudes are computed in double in GltfToMesh — sub-millimetre precision.
       result.localPositions.resize(result.localPositions.size() + vertexCount * 3);
       result.altitudes.resize(result.altitudes.size() + vertexCount);
       result.uvs.resize(result.uvs.size() + vertexCount * 2);
@@ -369,10 +519,6 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
       }
 
       // ── RTC: per-tile MVP matrix (double → float) ─────────────────────────
-      // Compute the camera-relative offset of the tile's RTC centre in double
-      // and bake it into the MVP matrix before casting to float32.  This means
-      // the large camera↔tile translation is resolved with double precision;
-      // the vertex shader only ever adds small tile-local offsets on top of it.
       const glm::dvec3 rtcCamRel =
           prim.rtcCenter - glm::dvec3(cameraPos);
       const glm::dmat4 translateD =

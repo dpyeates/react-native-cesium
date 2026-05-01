@@ -9,6 +9,7 @@ package com.margelo.nitro.reactnativecesium
 
 import androidx.annotation.Keep
 import com.facebook.proguard.annotations.DoNotStrip
+import java.util.Objects
 
 
 /**
@@ -31,6 +32,24 @@ data class Quaternion(
   val z: Double
 ) {
   /* primary constructor */
+
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is Quaternion) return false
+    return Objects.deepEquals(this.w, other.w)
+      && Objects.deepEquals(this.x, other.x)
+      && Objects.deepEquals(this.y, other.y)
+      && Objects.deepEquals(this.z, other.z)
+  }
+
+  override fun hashCode(): Int {
+    return arrayOf(
+      w,
+      x,
+      y,
+      z
+    ).contentDeepHashCode()
+  }
 
   companion object {
     /**

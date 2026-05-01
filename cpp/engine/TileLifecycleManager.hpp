@@ -2,8 +2,6 @@
 
 #include "../renderer/RenderTypes.hpp"
 
-#include <Cesium3DTilesSelection/Tile.h>
-
 #include <cstdint>
 
 namespace reactnativecesium {
@@ -16,7 +14,6 @@ public:
   void stampTileUsed(TileGPUResources* resources);
 
   bool shouldDeferFree(const TileGPUResources* resources) const;
-  bool isRefinementLocked(const Cesium3DTilesSelection::Tile& tile) const;
 
 private:
   uint64_t frameNumber_ = 0;

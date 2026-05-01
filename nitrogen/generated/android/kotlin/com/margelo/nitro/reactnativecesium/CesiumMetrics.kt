@@ -9,6 +9,7 @@ package com.margelo.nitro.reactnativecesium
 
 import androidx.annotation.Keep
 import com.facebook.proguard.annotations.DoNotStrip
+import java.util.Objects
 
 
 /**
@@ -34,12 +35,41 @@ data class CesiumMetrics(
   val ionTokenConfigured: Boolean,
   @DoNotStrip
   @Keep
+  val tlsConfigured: Boolean,
+  @DoNotStrip
+  @Keep
   val tilesetReady: Boolean,
   @DoNotStrip
   @Keep
   val creditsPlainText: String
 ) {
   /* primary constructor */
+
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is CesiumMetrics) return false
+    return Objects.deepEquals(this.fps, other.fps)
+      && Objects.deepEquals(this.tilesRendered, other.tilesRendered)
+      && Objects.deepEquals(this.tilesLoading, other.tilesLoading)
+      && Objects.deepEquals(this.tilesVisited, other.tilesVisited)
+      && Objects.deepEquals(this.ionTokenConfigured, other.ionTokenConfigured)
+      && Objects.deepEquals(this.tlsConfigured, other.tlsConfigured)
+      && Objects.deepEquals(this.tilesetReady, other.tilesetReady)
+      && Objects.deepEquals(this.creditsPlainText, other.creditsPlainText)
+  }
+
+  override fun hashCode(): Int {
+    return arrayOf(
+      fps,
+      tilesRendered,
+      tilesLoading,
+      tilesVisited,
+      ionTokenConfigured,
+      tlsConfigured,
+      tilesetReady,
+      creditsPlainText
+    ).contentDeepHashCode()
+  }
 
   companion object {
     /**
@@ -49,8 +79,8 @@ data class CesiumMetrics(
     @Keep
     @Suppress("unused")
     @JvmStatic
-    private fun fromCpp(fps: Double, tilesRendered: Double, tilesLoading: Double, tilesVisited: Double, ionTokenConfigured: Boolean, tilesetReady: Boolean, creditsPlainText: String): CesiumMetrics {
-      return CesiumMetrics(fps, tilesRendered, tilesLoading, tilesVisited, ionTokenConfigured, tilesetReady, creditsPlainText)
+    private fun fromCpp(fps: Double, tilesRendered: Double, tilesLoading: Double, tilesVisited: Double, ionTokenConfigured: Boolean, tlsConfigured: Boolean, tilesetReady: Boolean, creditsPlainText: String): CesiumMetrics {
+      return CesiumMetrics(fps, tilesRendered, tilesLoading, tilesVisited, ionTokenConfigured, tlsConfigured, tilesetReady, creditsPlainText)
     }
   }
 }

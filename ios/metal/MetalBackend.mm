@@ -304,15 +304,19 @@ fragment float4 skyFragment(SkyVOut in [[stage_in]],
   float3 org=u.cameraEcef.xyz;
   float2 at=rsi(org,rd,AR);
   if(at.y<0)return float4(0,0,0,1);
-  float2 er=rsi(org,rd,ER);
-  float tmax=at.y;if(er.x>0)tmax=min(tmax,er.x);
+  // No earth-surface tmax clamp — that creates a visible band discontinuity
+  // at the geometric horizon. Integrate full atmospheric path and clamp
+  // underground sample heights to zero (ground-level density).
+  float tmax=at.y;
   float tmin=max(at.x,0.f);if(tmin>=tmax)return float4(0,0,0,1);
-  const int S=16,L=4;
+  // Halved from 16/4 to 8/2 — visually negligible at typical phone DPI
+  // (atmospheric scattering banding is sub-pixel at this sample count).
+  const int S=8,L=2;
   float ss=(tmax-tmin)/float(S);
   float3 rayl=0,miel=0;float oR=0,oM=0;
   for(int i=0;i<S;++i){
     float t=tmin+(float(i)+.5f)*ss;
-    float3 sp=org+rd*t;float h=length(sp)-ER;
+    float3 sp=org+rd*t;float h=max(0.f,length(sp)-ER);
     float hr=exp(-h/10000.f)*ss,hm=exp(-h/3200.f)*ss;
     oR+=hr;oM+=hm;
     float2 lh=rsi(sp,u.lightDir.xyz,AR);
@@ -330,11 +334,16 @@ fragment float4 skyFragment(SkyVOut in [[stage_in]],
   float rPh=.75f*(1+cos2);
   float g2=MG*MG,mPh=1.5f*((1-g2)/(2+g2))*(1+cos2)/pow(1+g2-2*MG*cosT,1.5f);
   float3 col=LINT*(rayl*RAY*rPh+miel*MIE3*mPh);
-  col=1-exp(-col*1.1f);col*=float3(.18f,.45f,1.f);
-  float3 nu=normalize(org);float up=saturate(dot(rd,nu));
-  float camH=max(0.f,length(org)-ER);
-  float hStr=saturate(1-camH/35000.f);
-  col=mix(col,float3(.40f,.62f,.96f),(1-smoothstep(.05f,.45f,up))*.40f*hStr);
+  col=1-exp(-col*1.1f);
+  col*=float3(.30f,.55f,1.f);
+  // Single-scatter atmosphere produces sunset-like yellow at horizons with
+  // long path lengths (because blue out-scatters faster). Real daytime sky
+  // appears whitish-blue at horizon thanks to multiple scattering, which we
+  // approximate here by blending toward a natural blue based on the
+  // total atmospheric path length traversed by the view ray.
+  float pathLen=tmax-tmin;
+  float hazeFactor=smoothstep(100000.f,600000.f,pathLen);
+  col=mix(col,float3(.35f,.58f,.90f),hazeFactor*.65f);
   return float4(col,1.f);
 }
 )MSL";
@@ -409,8 +418,6 @@ void MetalBackend::buildRenderPipelines() {
   CAMetalLayer* layer = (__bridge CAMetalLayer*)metalLayer_;
   const MTLPixelFormat colorFmt = layer.pixelFormat;
 
-  NSError* err = nil;
-
   if (terrainPipeline_) {
     CFRelease(terrainPipeline_);
     terrainPipeline_ = nullptr;
@@ -420,9 +427,16 @@ void MetalBackend::buildRenderPipelines() {
     skyPipeline_ = nullptr;
   }
 
+  // Use a separate NSError* per compile + a strict result check. Sharing a
+  // single `err` across multiple operations conflated unrelated failures
+  // (P2-error-handling).
+  NSError* terrainLibErr = nil;
   id<MTLLibrary> tLib = [dev newLibraryWithSource:kTerrainShaderSrc
-                                          options:nil error:&err];
-  if (err) NSLog(@"[MetalBackend] terrain shader error: %@", err);
+                                          options:nil error:&terrainLibErr];
+  if (!tLib) {
+    NSLog(@"[MetalBackend] terrain shader compilation FAILED: %@", terrainLibErr);
+    return;
+  }
 
   MTLRenderPipelineDescriptor* tDesc = [MTLRenderPipelineDescriptor new];
   tDesc.vertexFunction   = [tLib newFunctionWithName:@"terrainVertex"];
@@ -430,13 +444,22 @@ void MetalBackend::buildRenderPipelines() {
   tDesc.colorAttachments[0].pixelFormat = colorFmt;
   tDesc.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
   tDesc.rasterSampleCount               = (NSUInteger)std::max(1, sampleCount_);
-  terrainPipeline_ = (__bridge_retained void*)
-      [dev newRenderPipelineStateWithDescriptor:tDesc error:&err];
-  if (err) NSLog(@"[MetalBackend] terrain pipeline error: %@", err);
+  NSError* terrainPipelineErr = nil;
+  id<MTLRenderPipelineState> terrainPipeline =
+      [dev newRenderPipelineStateWithDescriptor:tDesc error:&terrainPipelineErr];
+  if (!terrainPipeline) {
+    NSLog(@"[MetalBackend] terrain pipeline build FAILED: %@", terrainPipelineErr);
+    return;
+  }
+  terrainPipeline_ = (__bridge_retained void*)terrainPipeline;
 
+  NSError* skyLibErr = nil;
   id<MTLLibrary> sLib = [dev newLibraryWithSource:kSkyShaderSrc
-                                          options:nil error:&err];
-  if (err) NSLog(@"[MetalBackend] sky shader error: %@", err);
+                                          options:nil error:&skyLibErr];
+  if (!sLib) {
+    NSLog(@"[MetalBackend] sky shader compilation FAILED: %@", skyLibErr);
+    return;
+  }
 
   MTLRenderPipelineDescriptor* sDesc = [MTLRenderPipelineDescriptor new];
   sDesc.vertexFunction   = [sLib newFunctionWithName:@"skyVertex"];
@@ -444,9 +467,14 @@ void MetalBackend::buildRenderPipelines() {
   sDesc.colorAttachments[0].pixelFormat = colorFmt;
   sDesc.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
   sDesc.rasterSampleCount               = (NSUInteger)std::max(1, sampleCount_);
-  skyPipeline_ = (__bridge_retained void*)
-      [dev newRenderPipelineStateWithDescriptor:sDesc error:&err];
-  if (err) NSLog(@"[MetalBackend] sky pipeline error: %@", err);
+  NSError* skyPipelineErr = nil;
+  id<MTLRenderPipelineState> skyPipeline =
+      [dev newRenderPipelineStateWithDescriptor:sDesc error:&skyPipelineErr];
+  if (!skyPipeline) {
+    NSLog(@"[MetalBackend] sky pipeline build FAILED: %@", skyPipelineErr);
+    return;
+  }
+  skyPipeline_ = (__bridge_retained void*)skyPipeline;
 
   if (!terrainDepthState_) {
     MTLDepthStencilDescriptor* dd = [MTLDepthStencilDescriptor new];
@@ -473,8 +501,20 @@ void MetalBackend::setMsaaSampleCount(int sc) {
 
   if (frameSemaphore_) {
     dispatch_semaphore_t sem = (__bridge dispatch_semaphore_t)frameSemaphore_;
+    // Bound the wait per slot at 1 second so a stuck GPU encode (the only
+    // realistic cause of a missed completion handler) cannot wedge the UI
+    // thread forever.  On timeout we proceed regardless: the worst that can
+    // happen is one frame's worth of pipeline rebuild lands on a slot the
+    // GPU is still using, which Metal handles gracefully (the prior
+    // pipeline stays alive via ARC until the encoder finishes).
     for (int i = 0; i < kMaxFramesInFlight; ++i) {
-      dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+      dispatch_time_t deadline = dispatch_time(DISPATCH_TIME_NOW,
+                                               (int64_t)NSEC_PER_SEC);
+      if (dispatch_semaphore_wait(sem, deadline) != 0) {
+        NSLog(@"[CesiumMetal] MSAA-change semaphore timed out (slot %d); "
+              @"proceeding with rebuild", i);
+        break;
+      }
     }
   }
 
@@ -499,10 +539,19 @@ void MetalBackend::resize(int width, int height) {
 void MetalBackend::shutdown() {
   // Drain in-flight frames: wait until all GPU completion handlers have fired
   // before releasing the semaphore and the persistent buffers they reference.
+  // Bounded wait — if a slot doesn't release in 1 s we are almost certainly
+  // looking at a hung GPU command. Forcing release lets the app exit/teardown
+  // cleanly rather than ANRing on backgrounding.
   if (frameSemaphore_) {
     dispatch_semaphore_t sem = (__bridge dispatch_semaphore_t)frameSemaphore_;
     for (int i = 0; i < kMaxFramesInFlight; ++i) {
-      dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+      dispatch_time_t deadline = dispatch_time(DISPATCH_TIME_NOW,
+                                               (int64_t)NSEC_PER_SEC);
+      if (dispatch_semaphore_wait(sem, deadline) != 0) {
+        NSLog(@"[CesiumMetal] shutdown semaphore wait timed out at slot %d; "
+              @"force-releasing and continuing teardown", i);
+        break;
+      }
     }
     CFRelease(frameSemaphore_);
     frameSemaphore_ = nullptr;

@@ -124,6 +124,66 @@ using namespace margelo::nitro::reactnativecesium::views;
     swiftPart.setIonImageryAssetId(newViewProps.ionImageryAssetId.value);
     newViewProps.ionImageryAssetId.isDirty = false;
   }
+  // maximumCachedMiB: optional
+  if (newViewProps.maximumCachedMiB.isDirty) {
+    swiftPart.setMaximumCachedMiB(newViewProps.maximumCachedMiB.value);
+    newViewProps.maximumCachedMiB.isDirty = false;
+  }
+  // preloadAncestors: optional
+  if (newViewProps.preloadAncestors.isDirty) {
+    swiftPart.setPreloadAncestors(newViewProps.preloadAncestors.value);
+    newViewProps.preloadAncestors.isDirty = false;
+  }
+  // preloadSiblings: optional
+  if (newViewProps.preloadSiblings.isDirty) {
+    swiftPart.setPreloadSiblings(newViewProps.preloadSiblings.value);
+    newViewProps.preloadSiblings.isDirty = false;
+  }
+  // forbidHoles: optional
+  if (newViewProps.forbidHoles.isDirty) {
+    swiftPart.setForbidHoles(newViewProps.forbidHoles.value);
+    newViewProps.forbidHoles.isDirty = false;
+  }
+  // enableWaterMask: optional
+  if (newViewProps.enableWaterMask.isDirty) {
+    swiftPart.setEnableWaterMask(newViewProps.enableWaterMask.value);
+    newViewProps.enableWaterMask.isDirty = false;
+  }
+  // enableFogCulling: optional
+  if (newViewProps.enableFogCulling.isDirty) {
+    swiftPart.setEnableFogCulling(newViewProps.enableFogCulling.value);
+    newViewProps.enableFogCulling.isDirty = false;
+  }
+  // enforceCulledScreenSpaceError: optional
+  if (newViewProps.enforceCulledScreenSpaceError.isDirty) {
+    swiftPart.setEnforceCulledScreenSpaceError(newViewProps.enforceCulledScreenSpaceError.value);
+    newViewProps.enforceCulledScreenSpaceError.isDirty = false;
+  }
+  // culledScreenSpaceError: optional
+  if (newViewProps.culledScreenSpaceError.isDirty) {
+    swiftPart.setCulledScreenSpaceError(newViewProps.culledScreenSpaceError.value);
+    newViewProps.culledScreenSpaceError.isDirty = false;
+  }
+  // enableLodTransitionPeriod: optional
+  if (newViewProps.enableLodTransitionPeriod.isDirty) {
+    swiftPart.setEnableLodTransitionPeriod(newViewProps.enableLodTransitionPeriod.value);
+    newViewProps.enableLodTransitionPeriod.isDirty = false;
+  }
+  // lodTransitionLength: optional
+  if (newViewProps.lodTransitionLength.isDirty) {
+    swiftPart.setLodTransitionLength(newViewProps.lodTransitionLength.value);
+    newViewProps.lodTransitionLength.isDirty = false;
+  }
+  // sqliteCacheMaxRows: optional
+  if (newViewProps.sqliteCacheMaxRows.isDirty) {
+    swiftPart.setSqliteCacheMaxRows(newViewProps.sqliteCacheMaxRows.value);
+    newViewProps.sqliteCacheMaxRows.isDirty = false;
+  }
+  // taskProcessorThreads: optional
+  if (newViewProps.taskProcessorThreads.isDirty) {
+    swiftPart.setTaskProcessorThreads(newViewProps.taskProcessorThreads.value);
+    newViewProps.taskProcessorThreads.isDirty = false;
+  }
   // onMetrics: optional
   if (newViewProps.onMetrics.isDirty) {
     swiftPart.setOnMetrics(newViewProps.onMetrics.value);

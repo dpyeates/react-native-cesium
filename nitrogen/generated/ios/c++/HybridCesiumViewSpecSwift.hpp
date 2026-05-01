@@ -21,9 +21,9 @@ namespace margelo::nitro::reactnativecesium { struct Quaternion; }
 
 #include <string>
 #include "CameraState.hpp"
+#include <optional>
 #include "CesiumMetrics.hpp"
 #include <functional>
-#include <optional>
 #include <NitroModules/Promise.hpp>
 #include "Quaternion.hpp"
 
@@ -127,6 +127,90 @@ namespace margelo::nitro::reactnativecesium {
     }
     inline void setIonImageryAssetId(double ionImageryAssetId) noexcept override {
       _swiftPart.setIonImageryAssetId(std::forward<decltype(ionImageryAssetId)>(ionImageryAssetId));
+    }
+    inline std::optional<double> getMaximumCachedMiB() noexcept override {
+      auto __result = _swiftPart.getMaximumCachedMiB();
+      return __result;
+    }
+    inline void setMaximumCachedMiB(std::optional<double> maximumCachedMiB) noexcept override {
+      _swiftPart.setMaximumCachedMiB(maximumCachedMiB);
+    }
+    inline std::optional<bool> getPreloadAncestors() noexcept override {
+      auto __result = _swiftPart.getPreloadAncestors();
+      return __result;
+    }
+    inline void setPreloadAncestors(std::optional<bool> preloadAncestors) noexcept override {
+      _swiftPart.setPreloadAncestors(preloadAncestors);
+    }
+    inline std::optional<bool> getPreloadSiblings() noexcept override {
+      auto __result = _swiftPart.getPreloadSiblings();
+      return __result;
+    }
+    inline void setPreloadSiblings(std::optional<bool> preloadSiblings) noexcept override {
+      _swiftPart.setPreloadSiblings(preloadSiblings);
+    }
+    inline std::optional<bool> getForbidHoles() noexcept override {
+      auto __result = _swiftPart.getForbidHoles();
+      return __result;
+    }
+    inline void setForbidHoles(std::optional<bool> forbidHoles) noexcept override {
+      _swiftPart.setForbidHoles(forbidHoles);
+    }
+    inline std::optional<bool> getEnableWaterMask() noexcept override {
+      auto __result = _swiftPart.getEnableWaterMask();
+      return __result;
+    }
+    inline void setEnableWaterMask(std::optional<bool> enableWaterMask) noexcept override {
+      _swiftPart.setEnableWaterMask(enableWaterMask);
+    }
+    inline std::optional<bool> getEnableFogCulling() noexcept override {
+      auto __result = _swiftPart.getEnableFogCulling();
+      return __result;
+    }
+    inline void setEnableFogCulling(std::optional<bool> enableFogCulling) noexcept override {
+      _swiftPart.setEnableFogCulling(enableFogCulling);
+    }
+    inline std::optional<bool> getEnforceCulledScreenSpaceError() noexcept override {
+      auto __result = _swiftPart.getEnforceCulledScreenSpaceError();
+      return __result;
+    }
+    inline void setEnforceCulledScreenSpaceError(std::optional<bool> enforceCulledScreenSpaceError) noexcept override {
+      _swiftPart.setEnforceCulledScreenSpaceError(enforceCulledScreenSpaceError);
+    }
+    inline std::optional<double> getCulledScreenSpaceError() noexcept override {
+      auto __result = _swiftPart.getCulledScreenSpaceError();
+      return __result;
+    }
+    inline void setCulledScreenSpaceError(std::optional<double> culledScreenSpaceError) noexcept override {
+      _swiftPart.setCulledScreenSpaceError(culledScreenSpaceError);
+    }
+    inline std::optional<bool> getEnableLodTransitionPeriod() noexcept override {
+      auto __result = _swiftPart.getEnableLodTransitionPeriod();
+      return __result;
+    }
+    inline void setEnableLodTransitionPeriod(std::optional<bool> enableLodTransitionPeriod) noexcept override {
+      _swiftPart.setEnableLodTransitionPeriod(enableLodTransitionPeriod);
+    }
+    inline std::optional<double> getLodTransitionLength() noexcept override {
+      auto __result = _swiftPart.getLodTransitionLength();
+      return __result;
+    }
+    inline void setLodTransitionLength(std::optional<double> lodTransitionLength) noexcept override {
+      _swiftPart.setLodTransitionLength(lodTransitionLength);
+    }
+    inline std::optional<double> getSqliteCacheMaxRows() noexcept override {
+      auto __result = _swiftPart.getSqliteCacheMaxRows();
+      return __result;
+    }
+    inline void setSqliteCacheMaxRows(std::optional<double> sqliteCacheMaxRows) noexcept override {
+      _swiftPart.setSqliteCacheMaxRows(sqliteCacheMaxRows);
+    }
+    inline std::optional<double> getTaskProcessorThreads() noexcept override {
+      auto __result = _swiftPart.getTaskProcessorThreads();
+      return __result;
+    }
+    inline void setTaskProcessorThreads(std::optional<double> taskProcessorThreads) noexcept override {
+      _swiftPart.setTaskProcessorThreads(taskProcessorThreads);
     }
     inline std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() noexcept override {
       auto __result = _swiftPart.getOnMetrics();

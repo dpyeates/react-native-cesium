@@ -116,6 +116,126 @@ namespace margelo::nitro::reactnativecesium::views {
         throw std::runtime_error(std::string("CesiumView.ionImageryAssetId: ") + exc.what());
       }
     }()),
+    maximumCachedMiB([&]() -> CachedProp<std::optional<double>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("maximumCachedMiB", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.maximumCachedMiB;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maximumCachedMiB);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.maximumCachedMiB: ") + exc.what());
+      }
+    }()),
+    preloadAncestors([&]() -> CachedProp<std::optional<bool>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("preloadAncestors", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.preloadAncestors;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.preloadAncestors);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.preloadAncestors: ") + exc.what());
+      }
+    }()),
+    preloadSiblings([&]() -> CachedProp<std::optional<bool>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("preloadSiblings", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.preloadSiblings;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.preloadSiblings);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.preloadSiblings: ") + exc.what());
+      }
+    }()),
+    forbidHoles([&]() -> CachedProp<std::optional<bool>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("forbidHoles", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.forbidHoles;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.forbidHoles);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.forbidHoles: ") + exc.what());
+      }
+    }()),
+    enableWaterMask([&]() -> CachedProp<std::optional<bool>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("enableWaterMask", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.enableWaterMask;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.enableWaterMask);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.enableWaterMask: ") + exc.what());
+      }
+    }()),
+    enableFogCulling([&]() -> CachedProp<std::optional<bool>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("enableFogCulling", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.enableFogCulling;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.enableFogCulling);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.enableFogCulling: ") + exc.what());
+      }
+    }()),
+    enforceCulledScreenSpaceError([&]() -> CachedProp<std::optional<bool>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("enforceCulledScreenSpaceError", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.enforceCulledScreenSpaceError;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.enforceCulledScreenSpaceError);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.enforceCulledScreenSpaceError: ") + exc.what());
+      }
+    }()),
+    culledScreenSpaceError([&]() -> CachedProp<std::optional<double>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("culledScreenSpaceError", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.culledScreenSpaceError;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.culledScreenSpaceError);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.culledScreenSpaceError: ") + exc.what());
+      }
+    }()),
+    enableLodTransitionPeriod([&]() -> CachedProp<std::optional<bool>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("enableLodTransitionPeriod", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.enableLodTransitionPeriod;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.enableLodTransitionPeriod);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.enableLodTransitionPeriod: ") + exc.what());
+      }
+    }()),
+    lodTransitionLength([&]() -> CachedProp<std::optional<double>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("lodTransitionLength", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.lodTransitionLength;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.lodTransitionLength);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.lodTransitionLength: ") + exc.what());
+      }
+    }()),
+    sqliteCacheMaxRows([&]() -> CachedProp<std::optional<double>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("sqliteCacheMaxRows", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.sqliteCacheMaxRows;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.sqliteCacheMaxRows);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.sqliteCacheMaxRows: ") + exc.what());
+      }
+    }()),
+    taskProcessorThreads([&]() -> CachedProp<std::optional<double>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("taskProcessorThreads", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.taskProcessorThreads;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.taskProcessorThreads);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.taskProcessorThreads: ") + exc.what());
+      }
+    }()),
     onMetrics([&]() -> CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> {
       try {
         const react::RawValue* rawValue = rawProps.at("onMetrics", nullptr, nullptr);
@@ -148,6 +268,18 @@ namespace margelo::nitro::reactnativecesium::views {
       case hashString("loadingDescendantLimit"): return true;
       case hashString("msaaSampleCount"): return true;
       case hashString("ionImageryAssetId"): return true;
+      case hashString("maximumCachedMiB"): return true;
+      case hashString("preloadAncestors"): return true;
+      case hashString("preloadSiblings"): return true;
+      case hashString("forbidHoles"): return true;
+      case hashString("enableWaterMask"): return true;
+      case hashString("enableFogCulling"): return true;
+      case hashString("enforceCulledScreenSpaceError"): return true;
+      case hashString("culledScreenSpaceError"): return true;
+      case hashString("enableLodTransitionPeriod"): return true;
+      case hashString("lodTransitionLength"): return true;
+      case hashString("sqliteCacheMaxRows"): return true;
+      case hashString("taskProcessorThreads"): return true;
       case hashString("onMetrics"): return true;
       case hashString("hybridRef"): return true;
       default: return false;

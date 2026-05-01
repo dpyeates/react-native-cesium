@@ -1,117 +1,36 @@
 #import "CesiumBridge.h"
 #import <CoreFoundation/CoreFoundation.h>
 
+#include "engine/CameraSmoother.hpp"
+#include "engine/CameraTargetState.hpp"
 #include "engine/CesiumEngine.hpp"
+#include "engine/EngineTunables.hpp"
+#include "engine/MetricsAggregator.hpp"
 #include "metal/MetalBackend.h"
 
 #include <glm/gtc/quaternion.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <memory>
 #include <string>
 
-namespace {
-
-// Strips HTML tags and collapses whitespace to produce plain-text attribution.
-static NSString* stripHtmlToPlain(NSString* html) {
-  if (html.length == 0) return @"";
-  NSError* err = nil;
-  NSRegularExpression* tagRx =
-      [NSRegularExpression regularExpressionWithPattern:@"<[^>]+>" options:0 error:&err];
-  NSString* plain = [tagRx stringByReplacingMatchesInString:html
-                                                    options:0
-                                                      range:NSMakeRange(0, html.length)
-                                               withTemplate:@" "];
-  NSRegularExpression* wsRx =
-      [NSRegularExpression regularExpressionWithPattern:@"\\s+" options:0 error:&err];
-  plain = [wsRx stringByReplacingMatchesInString:plain
-                                         options:0
-                                           range:NSMakeRange(0, plain.length)
-                                    withTemplate:@" "];
-  return [plain stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-}
-
-double lerpAngleDeg(double a, double b, double t) {
-  double diff = std::fmod(b - a + 540.0, 360.0) - 180.0;
-  return a + diff * t;
-}
-
-double angleDeltaAbsDeg(double a, double b) {
-  return std::abs(std::fmod(b - a + 540.0, 360.0) - 180.0);
-}
-
-} // namespace
-
-// ── Per-DOF smoothing. ────────────────────────────────────────────────────────
-static const double kSmoothAlt = 25.0;
-static const double kSmoothHdg = 30.0;
-static const double kSmoothRoll = 50.0;
-static const double kSmoothPitch = 50.0;
-static const double kSmoothViewCorr = 50.0;
-static const double kEpsLatLon = 1e-7;
-static const double kEpsAlt = 0.1;
-static const double kEpsAngleDeg = 0.05;
-static const double kEpsQuatDot = 1e-8;
-
-static double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
-  return std::abs(glm::dot(glm::normalize(a), glm::normalize(b)));
-}
-
 @implementation CesiumBridge {
-  std::unique_ptr<reactnativecesium::MetalBackend> _metalBackend;
-  std::unique_ptr<reactnativecesium::CesiumEngine> _engine;
-  reactnativecesium::FrameResult                   _frameResult;
+  std::unique_ptr<reactnativecesium::MetalBackend>      _metalBackend;
+  std::unique_ptr<reactnativecesium::CesiumEngine>      _engine;
+  reactnativecesium::FrameResult                        _frameResult;
+
+  reactnativecesium::EngineConfig         _config;
+  reactnativecesium::CameraTargetState    _target;
+  reactnativecesium::MetricsAggregator    _metrics;
+
   int   _viewportWidth;
   int   _viewportHeight;
   BOOL  _initialized;
+  BOOL  _suspended;
 
   NSString* _cacheDir;
-  NSString* _ionAccessToken;
-  int64_t   _ionTilesetAssetId;
-
-  double _maxSSE;
-  double _maxSimLoads;
-  double _loadDescLim;
-
-  // Demand target — incoming props/calls write here; render loop smooths toward it.
-  reactnativecesium::CameraParams _camTarget;
-  BOOL _forceRenderNextFrame;
-
-  BOOL _suspended;
-
-  double _fpsEma;
-  int    _metricsTick;
-
-  double    _metricsFps;
-  NSInteger _metricsTilesRendered;
-  NSInteger _metricsTilesLoading;
-  NSInteger _metricsTilesVisited;
-  BOOL      _metricsIonTokenConfigured;
-  BOOL      _metricsTilesetReady;
-  NSString* _metricsCreditsPlainText;
-
-  NSString* _lastCreditHtmlJoined;
-}
-
-- (reactnativecesium::EngineConfig)makeEngineConfig {
-  reactnativecesium::EngineConfig config;
-  if (_ionAccessToken) {
-    config.ionAccessToken = std::string([_ionAccessToken UTF8String]);
-  }
-  config.ionAssetId = _ionTilesetAssetId;
-  config.cacheDatabasePath =
-      _cacheDir ? std::string([_cacheDir UTF8String]) + "/cesium_cache.db" : "";
-  NSString* caPem = [[NSBundle mainBundle] pathForResource:@"cacert" ofType:@"pem"];
-  if (caPem.length > 0) {
-    config.tlsCaBundlePath = std::string([caPem fileSystemRepresentation]);
-  }
-  config.maximumScreenSpaceError = std::max(1.0, _maxSSE);
-  config.maximumSimultaneousTileLoads =
-      static_cast<int32_t>(std::max(0.0, std::round(_maxSimLoads)));
-  config.loadingDescendantLimit =
-      static_cast<int32_t>(std::max(1.0, std::round(_loadDescLim)));
-  return config;
 }
 
 - (instancetype)initWithMetalLayer:(CAMetalLayer *)layer
@@ -123,24 +42,22 @@ static double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
     _viewportWidth     = width;
     _viewportHeight    = height;
     _initialized       = NO;
-    _cacheDir          = [cacheDir copy];
-    _ionAccessToken    = nil;
-    _ionTilesetAssetId = 1;
-    _maxSSE            = 32.0;
-    _maxSimLoads       = 12.0;
-    _loadDescLim       = 20.0;
-    _forceRenderNextFrame = YES;
     _suspended         = NO;
-    _fpsEma            = 0.0;
-    _metricsTick       = 0;
-    _metricsFps        = 0.0;
-    _metricsTilesRendered = 0;
-    _metricsTilesLoading  = 0;
-    _metricsTilesVisited  = 0;
-    _metricsIonTokenConfigured = NO;
-    _metricsTilesetReady       = NO;
-    _metricsCreditsPlainText   = @"";
-    _lastCreditHtmlJoined       = @"";
+    _cacheDir          = [cacheDir copy];
+
+    _config.cacheDatabasePath =
+        cacheDir ? std::string([cacheDir UTF8String]) + "/cesium_cache.db" : "";
+
+    NSString* caPem = [[NSBundle mainBundle] pathForResource:@"cacert" ofType:@"pem"];
+    if (caPem.length > 0) {
+      _config.tlsCaBundlePath = std::string([caPem fileSystemRepresentation]);
+    }
+    static std::atomic<int> caWarned{0};
+    if (_config.tlsCaBundlePath.empty() && caWarned.fetch_add(1) == 0) {
+      NSLog(@"[ReactNativeCesium] cacert.pem not in main bundle — libcurl may "
+            @"fail TLS to api.cesium.com on device. Ensure the pod includes "
+            @"ios/cacert.pem (run pod install).");
+    }
 
     _metalBackend = std::make_unique<reactnativecesium::MetalBackend>();
     _metalBackend->initialize((__bridge void*)layer, width, height);
@@ -161,22 +78,17 @@ static double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
 - (void)appWillResignActive:(NSNotification *)note { _suspended = YES; }
 - (void)appDidBecomeActive:(NSNotification *)note  {
   _suspended = NO;
-  _forceRenderNextFrame = YES;
+  _target.requestForceRender();
 }
 
 - (void)buildEngine {
-  reactnativecesium::EngineConfig cfg = [self makeEngineConfig];
-  static std::atomic<int> caWarned{0};
-  if (cfg.tlsCaBundlePath.empty() && caWarned.fetch_add(1) == 0) {
-    NSLog(@"[ReactNativeCesium] cacert.pem not in main bundle — libcurl may fail TLS to "
-          @"api.cesium.com on device. Ensure the pod includes ios/cacert.pem (run pod install).");
-  }
   _engine.reset();
   _engine = std::make_unique<reactnativecesium::CesiumEngine>();
-  _engine->initialize(cfg);
+  _engine->initialize(_config);
 
-  // Sync demand target with engine's initial camera defaults.
-  _camTarget = _engine->camera().getParams();
+  // Seed the demand target from the engine's initial camera so the first
+  // frame is not a "snap from default" jump.
+  _target.setAll(_engine->camera().getParams());
 
   auto* backendPtr = _metalBackend.get();
   _engine->getResourcePreparer()->setGPUTextureCreator(
@@ -187,9 +99,8 @@ static double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
       [](void* tex) {
         if (tex) CFRelease(tex);
       });
-  // Water mask textures are identical MTLTexture objects — createRasterTexture
-  // is reused.  On Metal, the binding slot (texture index 1) is set at draw
-  // time so no separate factory is needed.
+  // Water mask textures reuse the same MTLTexture creator; the binding slot is
+  // set at draw time on Metal so no separate factory is needed.
   _engine->getResourcePreparer()->setWaterMaskTextureCreator(
       [backendPtr](const uint8_t* pixels, int32_t w, int32_t h) -> void* {
         return backendPtr->createRasterTexture(pixels, w, h);
@@ -200,18 +111,24 @@ static double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
       });
 }
 
+- (void)applyEngineConfig {
+  if (!_engine) return;
+  _engine->updateConfig(_config);
+  _target.requestForceRender();
+}
+
 - (void)updateIonAccessToken:(NSString *)token assetId:(int64_t)assetId {
   if (!_initialized) return;
-  _ionAccessToken    = [token copy];
-  _ionTilesetAssetId = assetId;
-  _engine->updateConfig([self makeEngineConfig]);
-  _forceRenderNextFrame = YES;
+  _config.ionAccessToken = token ? std::string([token UTF8String]) : std::string();
+  _config.ionAssetId     = assetId;
+  [self applyEngineConfig];
 }
 
 - (void)updateImageryAssetId:(int64_t)assetId {
   if (!_initialized) return;
-  _engine->setImageryAssetId(assetId);
-  _forceRenderNextFrame = YES;
+  _config.ionImageryAssetId = (assetId <= 0) ? 1 : assetId;
+  _engine->setImageryAssetId(_config.ionImageryAssetId);
+  _target.requestForceRender();
 }
 
 - (void)updateCameraLatitude:(double)lat
@@ -221,14 +138,7 @@ static double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
                        pitch:(double)pitch
                         roll:(double)roll {
   if (!_initialized) return;
-  _camTarget.latitude  = lat;
-  _camTarget.longitude = lon;
-  _camTarget.altitude  = alt;
-  _camTarget.heading   = heading;
-  _camTarget.pitch     = pitch;
-  _camTarget.roll      = roll;
-  // Intentionally does not modify `_camTarget.viewCorrection`.
-  _forceRenderNextFrame = YES;
+  _target.setHpr(lat, lon, alt, heading, pitch, roll);
 }
 
 - (void)updateCameraQuaternionLatitude:(double)lat
@@ -242,182 +152,152 @@ static double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
                                      y:(double)qy
                                      z:(double)qz {
   if (!_initialized) return;
-  _camTarget.latitude  = lat;
-  _camTarget.longitude = lon;
-  _camTarget.altitude  = alt;
-  _camTarget.heading   = heading;
-  _camTarget.pitch     = pitch;
-  _camTarget.roll      = roll;
+  _target.setHpr(lat, lon, alt, heading, pitch, roll);
   const double ql2 = qw * qw + qx * qx + qy * qy + qz * qz;
-  glm::dquat   q;
+  glm::dquat q;
   if (ql2 < 1e-20) {
     q = glm::dquat(1.0, 0.0, 0.0, 0.0);
   } else {
     const double inv = 1.0 / std::sqrt(ql2);
     q = glm::dquat(qw * inv, qx * inv, qy * inv, qz * inv);
   }
-  _camTarget.viewCorrection = q;
-  _forceRenderNextFrame = YES;
+  _target.setViewCorrection(q);
 }
 
 - (void)resize:(int)width height:(int)height {
   _viewportWidth  = width;
   _viewportHeight = height;
   if (_metalBackend) _metalBackend->resize(width, height);
-  _forceRenderNextFrame = YES;
+  _target.requestForceRender();
 }
 
 - (void)setVerticalFovDeg:(double)degrees {
   if (!_initialized) return;
   _engine->camera().setVerticalFovDegrees(degrees);
-  _forceRenderNextFrame = YES;
+  _target.requestForceRender();
 }
 
 - (void)setMaximumScreenSpaceError:(double)v {
-  _maxSSE = v;
-  if (!_initialized) return;
-  _engine->updateConfig([self makeEngineConfig]);
-  _forceRenderNextFrame = YES;
+  _config.maximumScreenSpaceError = v;
+  if (_initialized) [self applyEngineConfig];
 }
-- (void)setMaximumSimultaneousTileLoads:(int)v {
-  _maxSimLoads = static_cast<double>(v);
-  if (!_initialized) return;
-  _engine->updateConfig([self makeEngineConfig]);
-  _forceRenderNextFrame = YES;
+- (void)setMaximumSimultaneousTileLoads:(int32_t)v {
+  _config.maximumSimultaneousTileLoads = v;
+  if (_initialized) [self applyEngineConfig];
 }
-- (void)setLoadingDescendantLimit:(int)v {
-  _loadDescLim = static_cast<double>(v);
-  if (!_initialized) return;
-  _engine->updateConfig([self makeEngineConfig]);
-  _forceRenderNextFrame = YES;
+- (void)setLoadingDescendantLimit:(int32_t)v {
+  _config.loadingDescendantLimit = v;
+  if (_initialized) [self applyEngineConfig];
+}
+- (void)setMaximumCachedMiB:(int32_t)v {
+  _config.maximumCachedBytes =
+      static_cast<int64_t>(std::max<int32_t>(16, v)) * 1024LL * 1024LL;
+  if (_initialized) [self applyEngineConfig];
+}
+- (void)setPreloadAncestors:(BOOL)v {
+  _config.preloadAncestors = (v == YES);
+  if (_initialized) [self applyEngineConfig];
+}
+- (void)setPreloadSiblings:(BOOL)v {
+  _config.preloadSiblings = (v == YES);
+  if (_initialized) [self applyEngineConfig];
+}
+- (void)setForbidHoles:(BOOL)v {
+  _config.forbidHoles = (v == YES);
+  if (_initialized) [self applyEngineConfig];
+}
+- (void)setEnableWaterMask:(BOOL)v {
+  _config.enableWaterMask = (v == YES);
+  if (_initialized) [self applyEngineConfig];
+}
+- (void)setEnableFogCulling:(BOOL)v {
+  _config.enableFogCulling = (v == YES);
+  if (_initialized) [self applyEngineConfig];
+}
+- (void)setEnforceCulledScreenSpaceError:(BOOL)v {
+  _config.enforceCulledScreenSpaceError = (v == YES);
+  if (_initialized) [self applyEngineConfig];
+}
+- (void)setCulledScreenSpaceError:(double)v {
+  _config.culledScreenSpaceError = v;
+  if (_initialized) [self applyEngineConfig];
+}
+- (void)setEnableLodTransitionPeriod:(BOOL)v {
+  _config.enableLodTransitionPeriod = (v == YES);
+  if (_initialized) [self applyEngineConfig];
+}
+- (void)setLodTransitionLength:(double)v {
+  _config.lodTransitionLength = v;
+  if (_initialized) [self applyEngineConfig];
+}
+- (void)setSqliteCacheMaxRows:(int32_t)v {
+  // Cache rows are taken into account on the next initialize().
+  _config.sqliteCacheMaxRows = std::max<int32_t>(64, v);
+}
+- (void)setTaskProcessorThreads:(int32_t)v {
+  _config.taskProcessorThreads = std::max<int32_t>(0, v);
 }
 
 - (void)setMsaaSampleCount:(int)samples {
   if (_metalBackend) _metalBackend->setMsaaSampleCount(samples);
-  _forceRenderNextFrame = YES;
+  _target.requestForceRender();
 }
 
-- (void)markNeedsRender {
-  _forceRenderNextFrame = YES;
-}
+- (void)markNeedsRender { _target.requestForceRender(); }
 
 - (BOOL)shouldRenderNextFrame {
-  if (!_initialized || _suspended || !_engine) {
-    return NO;
+  if (!_initialized || _suspended || !_engine) return NO;
+  if (_target.consumeForceRender()) {
+    _target.requestForceRender(); // sticky for one frame so we make it through
+    return YES;
   }
-
-  const auto cur = _engine->camera().getParams();
-  const bool cameraDirty =
-      std::abs(_camTarget.latitude - cur.latitude) > kEpsLatLon ||
-      std::abs(_camTarget.longitude - cur.longitude) > kEpsLatLon ||
-      std::abs(_camTarget.altitude - cur.altitude) > kEpsAlt ||
-      angleDeltaAbsDeg(cur.heading, _camTarget.heading) > kEpsAngleDeg ||
-      angleDeltaAbsDeg(cur.pitch, _camTarget.pitch) > kEpsAngleDeg ||
-      angleDeltaAbsDeg(cur.roll, _camTarget.roll) > kEpsAngleDeg ||
-      (1.0 - quatDotAbs(cur.viewCorrection, _camTarget.viewCorrection)) > kEpsQuatDot;
-
-  return _forceRenderNextFrame ||
-         _frameResult.tilesLoading > 0 ||
-         !_frameResult.tilesetActive ||
-         cameraDirty;
+  if (_frameResult.tilesLoading > 0 || !_frameResult.tilesetActive) return YES;
+  if (_target.isDirty()) {
+    const auto cur = _engine->camera().getParams();
+    const auto tgt = _target.snapshot();
+    if (reactnativecesium::CameraTargetState::deltaExceedsEpsilon(cur, tgt)) {
+      return YES;
+    }
+    _target.clearDirty();
+  }
+  return NO;
 }
 
 - (void)renderFrameWithDt:(double)dt {
   if (!_initialized || _suspended) return;
 
   @autoreleasepool {
-    auto cur = _engine->camera().getParams();
+    (void)_target.consumeForceRender();
 
-    // ── Smooth follower: track _camTarget per DOF ────────────────────────────
-    // lat/lon: direct copy — pan gestures must feel instant.
-    cur.latitude  = _camTarget.latitude;
-    cur.longitude = _camTarget.longitude;
-    // alt/hdg/roll/pitch: exponential decay toward target.
-    const double aAlt = 1.0 - std::exp(-kSmoothAlt * dt);
-    const double aHdg = 1.0 - std::exp(-kSmoothHdg * dt);
-    const double aPitch = 1.0 - std::exp(-kSmoothPitch * dt);
-    const double aRoll = 1.0 - std::exp(-kSmoothRoll * dt);
-    const double aViewQ = 1.0 - std::exp(-kSmoothViewCorr * dt);
-    cur.altitude = cur.altitude + aAlt * (_camTarget.altitude - cur.altitude);
-    cur.heading  = lerpAngleDeg(cur.heading, _camTarget.heading, aHdg);
-    cur.pitch  = lerpAngleDeg(cur.pitch, _camTarget.pitch, aPitch);
-    cur.roll  = lerpAngleDeg(cur.roll, _camTarget.roll, aRoll);
+    const auto cur    = _engine->camera().getParams();
+    const auto tgt    = _target.snapshot();
+    const auto smooth = reactnativecesium::CameraSmoother::step(cur, tgt, dt);
+    _engine->camera().setParams(smooth);
 
-    glm::dquat cq = glm::normalize(cur.viewCorrection);
-    glm::dquat tq = glm::normalize(_camTarget.viewCorrection);
-    if (glm::dot(cq, tq) < 0.0)
-      tq = -tq;
-    cur.viewCorrection = glm::normalize(glm::slerp(cq, tq, aViewQ));
-
-    if (std::abs(_camTarget.altitude - cur.altitude) <= kEpsAlt) {
-      cur.altitude = _camTarget.altitude;
+    if (!reactnativecesium::CameraTargetState::deltaExceedsEpsilon(smooth, tgt)) {
+      _target.clearDirty();
     }
-    if (angleDeltaAbsDeg(cur.heading, _camTarget.heading) <= kEpsAngleDeg) {
-      cur.heading = _camTarget.heading;
-    }
-    if (angleDeltaAbsDeg(cur.pitch, _camTarget.pitch) <= kEpsAngleDeg) {
-      cur.pitch = _camTarget.pitch;
-    }
-    if (angleDeltaAbsDeg(cur.roll, _camTarget.roll) <= kEpsAngleDeg) {
-      cur.roll = _camTarget.roll;
-    }
-    if ((1.0 - quatDotAbs(cur.viewCorrection, _camTarget.viewCorrection)) <= kEpsQuatDot) {
-      cur.viewCorrection = _camTarget.viewCorrection;
-    }
-    _engine->camera().setParams(cur);
 
     _engine->updateFrame(_viewportWidth, _viewportHeight, _frameResult);
-
-    const double instFps = (dt > 1e-6) ? (1.0 / dt) : 0.0;
-    _fpsEma = (_fpsEma <= 1e-6) ? instFps : (_fpsEma * 0.85 + instFps * 0.15);
-
-    if (++_metricsTick >= 20) {
-      _metricsTick               = 0;
-      _metricsFps                = _fpsEma;
-      _metricsTilesRendered      = _frameResult.tilesRendered;
-      _metricsTilesLoading       = _frameResult.tilesLoading;
-      _metricsTilesVisited       = _frameResult.tilesVisited;
-      _metricsIonTokenConfigured = _frameResult.ionTokenConfigured;
-      _metricsTilesetReady       = _frameResult.tilesetActive;
-      if (!_frameResult.creditHtmlLines.empty()) {
-        NSMutableString* joined = [NSMutableString string];
-        for (const auto& html : _frameResult.creditHtmlLines) {
-          if (joined.length > 0) [joined appendString:@"|"];
-          [joined appendString:[NSString stringWithUTF8String:html.c_str()]];
-        }
-        if (![_lastCreditHtmlJoined isEqualToString:joined]) {
-          _lastCreditHtmlJoined = [joined copy];
-          NSMutableString* credits = [NSMutableString string];
-          for (const auto& html : _frameResult.creditHtmlLines) {
-            NSString* chunk = stripHtmlToPlain(
-                [NSString stringWithUTF8String:html.c_str()]);
-            if (chunk.length == 0) continue;
-            if (credits.length > 0) [credits appendString:@" · "];
-            [credits appendString:chunk];
-          }
-          _metricsCreditsPlainText = [credits copy];
-        }
-      } else {
-        _lastCreditHtmlJoined = @"";
-        _metricsCreditsPlainText = @"";
-      }
-    }
+    _metrics.tick(dt, _frameResult, !_config.tlsCaBundlePath.empty());
 
     reactnativecesium::FrameParams params;
     _metalBackend->beginFrame(params);
     _metalBackend->drawScene(_frameResult);
     _metalBackend->endFrame();
-    _forceRenderNextFrame = NO;
   }
 }
 
-- (double)metricsFps              { return _metricsFps; }
-- (NSInteger)metricsTilesRendered { return _metricsTilesRendered; }
-- (NSInteger)metricsTilesLoading  { return _metricsTilesLoading; }
-- (NSInteger)metricsTilesVisited  { return _metricsTilesVisited; }
-- (BOOL)metricsIonTokenConfigured { return _metricsIonTokenConfigured; }
-- (BOOL)metricsTilesetReady       { return _metricsTilesetReady; }
-- (NSString*)metricsCreditsPlainText { return _metricsCreditsPlainText ?: @""; }
+- (double)metricsFps              { return _metrics.latest().fps; }
+- (NSInteger)metricsTilesRendered { return _metrics.latest().tilesRendered; }
+- (NSInteger)metricsTilesLoading  { return _metrics.latest().tilesLoading; }
+- (NSInteger)metricsTilesVisited  { return _metrics.latest().tilesVisited; }
+- (BOOL)metricsIonTokenConfigured { return _metrics.latest().ionTokenConfigured; }
+- (BOOL)metricsTilesetReady       { return _metrics.latest().tilesetReady; }
+- (BOOL)metricsTlsConfigured      { return _metrics.latest().tlsConfigured; }
+- (NSString*)metricsCreditsPlainText {
+  return [NSString stringWithUTF8String:_metrics.latest().creditsPlainText.c_str()];
+}
 
 - (double)readCameraLatitude  { return _engine ? _engine->camera().getParams().latitude  : 0.0; }
 - (double)readCameraLongitude { return _engine ? _engine->camera().getParams().longitude : 0.0; }
@@ -432,16 +312,13 @@ static double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
   return _engine->camera().getParams().viewCorrection.w;
 }
 - (double)readViewCorrectionX {
-  if (!_engine) return 0.0;
-  return _engine->camera().getParams().viewCorrection.x;
+  return _engine ? _engine->camera().getParams().viewCorrection.x : 0.0;
 }
 - (double)readViewCorrectionY {
-  if (!_engine) return 0.0;
-  return _engine->camera().getParams().viewCorrection.y;
+  return _engine ? _engine->camera().getParams().viewCorrection.y : 0.0;
 }
 - (double)readViewCorrectionZ {
-  if (!_engine) return 0.0;
-  return _engine->camera().getParams().viewCorrection.z;
+  return _engine ? _engine->camera().getParams().viewCorrection.z : 0.0;
 }
 
 - (void)shutdown {

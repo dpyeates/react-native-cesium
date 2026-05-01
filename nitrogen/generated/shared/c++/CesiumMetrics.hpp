@@ -44,12 +44,13 @@ namespace margelo::nitro::reactnativecesium {
     double tilesLoading     SWIFT_PRIVATE;
     double tilesVisited     SWIFT_PRIVATE;
     bool ionTokenConfigured     SWIFT_PRIVATE;
+    bool tlsConfigured     SWIFT_PRIVATE;
     bool tilesetReady     SWIFT_PRIVATE;
     std::string creditsPlainText     SWIFT_PRIVATE;
 
   public:
     CesiumMetrics() = default;
-    explicit CesiumMetrics(double fps, double tilesRendered, double tilesLoading, double tilesVisited, bool ionTokenConfigured, bool tilesetReady, std::string creditsPlainText): fps(fps), tilesRendered(tilesRendered), tilesLoading(tilesLoading), tilesVisited(tilesVisited), ionTokenConfigured(ionTokenConfigured), tilesetReady(tilesetReady), creditsPlainText(creditsPlainText) {}
+    explicit CesiumMetrics(double fps, double tilesRendered, double tilesLoading, double tilesVisited, bool ionTokenConfigured, bool tlsConfigured, bool tilesetReady, std::string creditsPlainText): fps(fps), tilesRendered(tilesRendered), tilesLoading(tilesLoading), tilesVisited(tilesVisited), ionTokenConfigured(ionTokenConfigured), tlsConfigured(tlsConfigured), tilesetReady(tilesetReady), creditsPlainText(creditsPlainText) {}
 
   public:
     friend bool operator==(const CesiumMetrics& lhs, const CesiumMetrics& rhs) = default;
@@ -70,6 +71,7 @@ namespace margelo::nitro {
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "tilesLoading"))),
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "tilesVisited"))),
         JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "ionTokenConfigured"))),
+        JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "tlsConfigured"))),
         JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "tilesetReady"))),
         JSIConverter<std::string>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "creditsPlainText")))
       );
@@ -81,6 +83,7 @@ namespace margelo::nitro {
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "tilesLoading"), JSIConverter<double>::toJSI(runtime, arg.tilesLoading));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "tilesVisited"), JSIConverter<double>::toJSI(runtime, arg.tilesVisited));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "ionTokenConfigured"), JSIConverter<bool>::toJSI(runtime, arg.ionTokenConfigured));
+      obj.setProperty(runtime, PropNameIDCache::get(runtime, "tlsConfigured"), JSIConverter<bool>::toJSI(runtime, arg.tlsConfigured));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "tilesetReady"), JSIConverter<bool>::toJSI(runtime, arg.tilesetReady));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "creditsPlainText"), JSIConverter<std::string>::toJSI(runtime, arg.creditsPlainText));
       return obj;
@@ -98,6 +101,7 @@ namespace margelo::nitro {
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "tilesLoading")))) return false;
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "tilesVisited")))) return false;
       if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "ionTokenConfigured")))) return false;
+      if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "tlsConfigured")))) return false;
       if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "tilesetReady")))) return false;
       if (!JSIConverter<std::string>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "creditsPlainText")))) return false;
       return true;

@@ -1,6 +1,7 @@
 #include "CesiumBridgeAndroid.h"
 
-#include "engine/CesiumEngine.hpp"
+#include "engine/CameraSmoother.hpp"
+#include "engine/EngineTunables.hpp"
 #include "vulkan/VulkanBackend.h"
 
 #include <android/native_window_jni.h>
@@ -8,55 +9,18 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include <algorithm>
 #include <cmath>
-#include <regex>
-#include <sstream>
 
 #define LOG_TAG "CesiumBridge"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// Per-DOF smoothing constants (match iOS CesiumBridge.mm)
-static const double kSmoothAlt   = 25.0;
-static const double kSmoothHdg   = 30.0;
-static const double kSmoothRoll  = 50.0;
-static const double kSmoothPitch = 50.0;
-static const double kSmoothViewCorr = 50.0;
-static const double kEpsLatLon   = 1e-7;
-static const double kEpsAlt      = 0.1;
-static const double kEpsAngleDeg = 0.05;
-static const double kEpsQuatDot  = 1e-8;
-
-static double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
-  return std::abs(glm::dot(glm::normalize(a), glm::normalize(b)));
-}
-
-static double lerpAngleDeg(double a, double b, double t) {
-  double diff = std::fmod(b - a + 540.0, 360.0) - 180.0;
-  return a + diff * t;
-}
-
-static double angleDeltaAbsDeg(double a, double b) {
-  return std::abs(std::fmod(b - a + 540.0, 360.0) - 180.0);
-}
-
-static std::string stripHtmlToPlain(const std::string& html) {
-  if (html.empty()) return "";
-  static const std::regex tagRx("<[^>]+>");
-  std::string plain = std::regex_replace(html, tagRx, " ");
-  static const std::regex wsRx("\\s+");
-  plain = std::regex_replace(plain, wsRx, " ");
-  // Trim
-  size_t start = plain.find_first_not_of(" \t\n\r");
-  size_t end   = plain.find_last_not_of(" \t\n\r");
-  if (start == std::string::npos) return "";
-  return plain.substr(start, end - start + 1);
-}
-
 void CesiumBridgeAndroid::init(JNIEnv* env, jobject surface, int width, int height,
-                                const std::string& cacheDir, const std::string& cacertPath) {
-  cacheDir_   = cacheDir;
-  cacertPath_ = cacertPath;
+                               const std::string& cacheDir,
+                               const std::string& cacertPath) {
+  config_.cacheDatabasePath = cacheDir.empty() ? "" : cacheDir + "/cesium_cache.db";
+  config_.tlsCaBundlePath   = cacertPath;
   viewportWidth_  = width;
   viewportHeight_ = height;
 
@@ -67,40 +31,22 @@ void CesiumBridgeAndroid::init(JNIEnv* env, jobject surface, int width, int heig
   }
 
   vulkanBackend_ = std::make_unique<reactnativecesium::VulkanBackend>();
+  vulkanBackend_->setCacheDir(cacheDir);
   vulkanBackend_->initialize(window, width, height);
 
   frameResult_ = std::make_unique<reactnativecesium::FrameResult>();
   buildEngine();
   initialized_ = true;
-  forceRenderNextFrame_ = true;
-
-  LOGI("CesiumBridgeAndroid initialized %dx%d", width, height);
+  target_.requestForceRender();
 }
 
 void CesiumBridgeAndroid::buildEngine() {
-  reactnativecesium::EngineConfig cfg;
-  cfg.ionAccessToken = ionAccessToken_;
-  cfg.ionAssetId     = ionTilesetAssetId_;
-  cfg.cacheDatabasePath = cacheDir_.empty() ? "" : cacheDir_ + "/cesium_cache.db";
-  cfg.tlsCaBundlePath   = cacertPath_;
-  cfg.maximumScreenSpaceError      = std::max(1.0, maxSSE_);
-  cfg.maximumSimultaneousTileLoads = static_cast<int32_t>(std::max(0.0, std::round(maxSimLoads_)));
-  cfg.loadingDescendantLimit       = static_cast<int32_t>(std::max(1.0, std::round(loadDescLim_)));
-
   engine_ = std::make_unique<reactnativecesium::CesiumEngine>();
-  engine_->initialize(cfg);
+  engine_->initialize(config_);
 
-  auto params = engine_->camera().getParams();
-  camTargetLat_     = params.latitude;
-  camTargetLon_     = params.longitude;
-  camTargetAlt_     = params.altitude;
-  camTargetHeading_ = params.heading;
-  camTargetPitch_   = params.pitch;
-  camTargetRoll_    = params.roll;
-  camTargetViewQw_  = params.viewCorrection.w;
-  camTargetViewQx_  = params.viewCorrection.x;
-  camTargetViewQy_  = params.viewCorrection.y;
-  camTargetViewQz_  = params.viewCorrection.z;
+  // Seed the demand target from the engine's initial camera so the first
+  // frame is not a "snap from default" jump.
+  target_.setAll(engine_->camera().getParams());
 
   auto* backendPtr = vulkanBackend_.get();
   engine_->getResourcePreparer()->setGPUTextureCreator(
@@ -121,6 +67,12 @@ void CesiumBridgeAndroid::buildEngine() {
       });
 }
 
+void CesiumBridgeAndroid::applyEngineConfig() {
+  if (!engine_) return;
+  engine_->updateConfig(config_);
+  target_.requestForceRender();
+}
+
 void CesiumBridgeAndroid::shutdown() {
   if (engine_) engine_->shutdown();
   if (vulkanBackend_) vulkanBackend_->shutdown();
@@ -131,213 +83,177 @@ void CesiumBridgeAndroid::resize(int width, int height) {
   viewportWidth_  = width;
   viewportHeight_ = height;
   if (vulkanBackend_) vulkanBackend_->resize(width, height);
-  forceRenderNextFrame_ = true;
+  target_.requestForceRender();
 }
 
-void CesiumBridgeAndroid::updateIonAccessToken(const std::string& token, int64_t assetId) {
-  if (!initialized_) return;
-  ionAccessToken_    = token;
-  ionTilesetAssetId_ = assetId;
-
-  reactnativecesium::EngineConfig cfg;
-  cfg.ionAccessToken = ionAccessToken_;
-  cfg.ionAssetId     = ionTilesetAssetId_;
-  cfg.cacheDatabasePath = cacheDir_.empty() ? "" : cacheDir_ + "/cesium_cache.db";
-  cfg.tlsCaBundlePath   = cacertPath_;
-  cfg.maximumScreenSpaceError      = std::max(1.0, maxSSE_);
-  cfg.maximumSimultaneousTileLoads = static_cast<int32_t>(std::max(0.0, std::round(maxSimLoads_)));
-  cfg.loadingDescendantLimit       = static_cast<int32_t>(std::max(1.0, std::round(loadDescLim_)));
-
-  engine_->updateConfig(cfg);
-  forceRenderNextFrame_ = true;
+void CesiumBridgeAndroid::updateIonAccessToken(const std::string& token,
+                                               int64_t assetId) {
+  config_.ionAccessToken = token;
+  config_.ionAssetId     = assetId;
+  if (initialized_) applyEngineConfig();
 }
 
 void CesiumBridgeAndroid::updateImageryAssetId(int64_t assetId) {
-  if (!initialized_) return;
-  engine_->setImageryAssetId(assetId);
-  forceRenderNextFrame_ = true;
+  config_.ionImageryAssetId = (assetId <= 0) ? 1 : assetId;
+  if (initialized_ && engine_) {
+    engine_->setImageryAssetId(config_.ionImageryAssetId);
+    target_.requestForceRender();
+  }
 }
 
 void CesiumBridgeAndroid::updateCamera(double lat, double lon, double alt,
-                                        double heading, double pitch, double roll) {
+                                       double heading, double pitch, double roll) {
   if (!initialized_) return;
-  camTargetLat_     = lat;
-  camTargetLon_     = lon;
-  camTargetAlt_     = alt;
-  camTargetHeading_ = heading;
-  camTargetPitch_   = pitch;
-  camTargetRoll_    = roll;
-  // Does not change camTargetViewQ* (view correction target).
-  forceRenderNextFrame_ = true;
+  target_.setHpr(lat, lon, alt, heading, pitch, roll);
 }
 
-void CesiumBridgeAndroid::updateCameraQuaternion(double lat, double lon, double alt,
-                                                 double heading, double pitch, double roll,
-                                                 double qw, double qx, double qy, double qz) {
+void CesiumBridgeAndroid::updateCameraQuaternion(
+    double lat, double lon, double alt, double heading, double pitch,
+    double roll, double qw, double qx, double qy, double qz) {
   if (!initialized_) return;
-  camTargetLat_     = lat;
-  camTargetLon_     = lon;
-  camTargetAlt_     = alt;
-  camTargetHeading_ = heading;
-  camTargetPitch_   = pitch;
-  camTargetRoll_    = roll;
+  target_.setHpr(lat, lon, alt, heading, pitch, roll);
   const double ql2 = qw * qw + qx * qx + qy * qy + qz * qz;
-  glm::dquat   q;
+  glm::dquat q;
   if (ql2 < 1e-20) {
     q = glm::dquat(1.0, 0.0, 0.0, 0.0);
   } else {
     const double inv = 1.0 / std::sqrt(ql2);
     q = glm::dquat(qw * inv, qx * inv, qy * inv, qz * inv);
   }
-  camTargetViewQw_ = q.w;
-  camTargetViewQx_ = q.x;
-  camTargetViewQy_ = q.y;
-  camTargetViewQz_ = q.z;
-  forceRenderNextFrame_ = true;
+  target_.setViewCorrection(q);
 }
 
 void CesiumBridgeAndroid::setVerticalFovDeg(double degrees) {
   if (!initialized_) return;
   engine_->camera().setVerticalFovDegrees(degrees);
-  forceRenderNextFrame_ = true;
+  target_.requestForceRender();
 }
 
 void CesiumBridgeAndroid::setMaximumScreenSpaceError(double v) {
-  maxSSE_ = v;
-  if (!initialized_) return;
-  reactnativecesium::EngineConfig cfg;
-  cfg.ionAccessToken = ionAccessToken_;
-  cfg.ionAssetId     = ionTilesetAssetId_;
-  cfg.cacheDatabasePath = cacheDir_.empty() ? "" : cacheDir_ + "/cesium_cache.db";
-  cfg.tlsCaBundlePath   = cacertPath_;
-  cfg.maximumScreenSpaceError      = std::max(1.0, maxSSE_);
-  cfg.maximumSimultaneousTileLoads = static_cast<int32_t>(std::max(0.0, std::round(maxSimLoads_)));
-  cfg.loadingDescendantLimit       = static_cast<int32_t>(std::max(1.0, std::round(loadDescLim_)));
-  engine_->updateConfig(cfg);
-  forceRenderNextFrame_ = true;
+  config_.maximumScreenSpaceError = v;
+  if (initialized_) applyEngineConfig();
 }
-
-void CesiumBridgeAndroid::setMaximumSimultaneousTileLoads(int v) {
-  maxSimLoads_ = static_cast<double>(v);
-  if (!initialized_) return;
-  setMaximumScreenSpaceError(maxSSE_); // reuses config rebuild path
+void CesiumBridgeAndroid::setMaximumSimultaneousTileLoads(int32_t v) {
+  config_.maximumSimultaneousTileLoads = v;
+  if (initialized_) applyEngineConfig();
 }
-
-void CesiumBridgeAndroid::setLoadingDescendantLimit(int v) {
-  loadDescLim_ = static_cast<double>(v);
-  if (!initialized_) return;
-  setMaximumScreenSpaceError(maxSSE_);
+void CesiumBridgeAndroid::setLoadingDescendantLimit(int32_t v) {
+  config_.loadingDescendantLimit = v;
+  if (initialized_) applyEngineConfig();
 }
 
 void CesiumBridgeAndroid::setMsaaSampleCount(int samples) {
   if (vulkanBackend_) vulkanBackend_->setMsaaSampleCount(samples);
-  forceRenderNextFrame_ = true;
+  target_.requestForceRender();
 }
 
-void CesiumBridgeAndroid::markNeedsRender() {
-  forceRenderNextFrame_ = true;
+void CesiumBridgeAndroid::setMaximumCachedMiB(int32_t v) {
+  config_.maximumCachedBytes =
+      static_cast<int64_t>(std::max(16, v)) * 1024LL * 1024LL;
+  if (initialized_) applyEngineConfig();
 }
+void CesiumBridgeAndroid::setPreloadAncestors(bool v) {
+  config_.preloadAncestors = v;
+  if (initialized_) applyEngineConfig();
+}
+void CesiumBridgeAndroid::setPreloadSiblings(bool v) {
+  config_.preloadSiblings = v;
+  if (initialized_) applyEngineConfig();
+}
+void CesiumBridgeAndroid::setForbidHoles(bool v) {
+  config_.forbidHoles = v;
+  if (initialized_) applyEngineConfig();
+}
+void CesiumBridgeAndroid::setEnableWaterMask(bool v) {
+  config_.enableWaterMask = v;
+  if (initialized_) applyEngineConfig();
+}
+void CesiumBridgeAndroid::setEnableFogCulling(bool v) {
+  config_.enableFogCulling = v;
+  if (initialized_) applyEngineConfig();
+}
+void CesiumBridgeAndroid::setEnforceCulledScreenSpaceError(bool v) {
+  config_.enforceCulledScreenSpaceError = v;
+  if (initialized_) applyEngineConfig();
+}
+void CesiumBridgeAndroid::setCulledScreenSpaceError(double v) {
+  config_.culledScreenSpaceError = v;
+  if (initialized_) applyEngineConfig();
+}
+void CesiumBridgeAndroid::setEnableLodTransitionPeriod(bool v) {
+  config_.enableLodTransitionPeriod = v;
+  if (initialized_) applyEngineConfig();
+}
+void CesiumBridgeAndroid::setLodTransitionLength(double v) {
+  config_.lodTransitionLength = v;
+  if (initialized_) applyEngineConfig();
+}
+void CesiumBridgeAndroid::setSqliteCacheMaxRows(int32_t v) {
+  // Re-creating SqliteCache requires a tileset rebuild, so we only honour the
+  // value on next init.
+  config_.sqliteCacheMaxRows = std::max(64, v);
+}
+void CesiumBridgeAndroid::setTaskProcessorThreads(int32_t v) {
+  // Worker pool is sized once per CesiumEngine. We mirror it for the next
+  // initialize().
+  config_.taskProcessorThreads = std::max(0, v);
+}
+
+void CesiumBridgeAndroid::markNeedsRender() { target_.requestForceRender(); }
 
 bool CesiumBridgeAndroid::shouldRenderNextFrame() {
   if (!initialized_ || !engine_) return false;
 
-  const auto cur = engine_->camera().getParams();
-  glm::dquat tgt(camTargetViewQw_, camTargetViewQx_, camTargetViewQy_, camTargetViewQz_);
-  const bool cameraDirty =
-      std::abs(camTargetLat_ - cur.latitude) > kEpsLatLon ||
-      std::abs(camTargetLon_ - cur.longitude) > kEpsLatLon ||
-      std::abs(camTargetAlt_ - cur.altitude) > kEpsAlt ||
-      angleDeltaAbsDeg(cur.heading, camTargetHeading_) > kEpsAngleDeg ||
-      angleDeltaAbsDeg(cur.pitch, camTargetPitch_) > kEpsAngleDeg ||
-      angleDeltaAbsDeg(cur.roll, camTargetRoll_) > kEpsAngleDeg ||
-      (1.0 - quatDotAbs(cur.viewCorrection, tgt)) > kEpsQuatDot;
-
-  return forceRenderNextFrame_ ||
-         frameResult_->tilesLoading > 0 ||
-         !frameResult_->tilesetActive ||
-         cameraDirty;
+  if (target_.consumeForceRender()) {
+    // Force-render request observed: keep it sticky for one frame so we make
+    // it through to the actual GPU encode below.
+    target_.requestForceRender();
+    return true;
+  }
+  if (frameResult_->tilesLoading > 0 || !frameResult_->tilesetActive) {
+    return true;
+  }
+  // Keep rendering at full speed until we have actual terrain tiles loaded.
+  // This ensures tiles start loading immediately instead of falling into idle
+  // mode (250ms intervals) before any content appears.
+  if (frameResult_->tilesRendered < 5) {
+    return true;
+  }
+  if (target_.isDirty()) {
+    const auto cur = engine_->camera().getParams();
+    const auto tgt = target_.snapshot();
+    if (reactnativecesium::CameraTargetState::deltaExceedsEpsilon(cur, tgt)) {
+      return true;
+    }
+    target_.clearDirty();
+  }
+  return false;
 }
 
 void CesiumBridgeAndroid::renderFrame(double dt) {
   if (!initialized_) return;
 
-  auto cur = engine_->camera().getParams();
+  // Consume the force-render flag here (it may have been re-armed by
+  // shouldRenderNextFrame; either way we're rendering this frame).
+  (void)target_.consumeForceRender();
 
-  // Smooth follower: track camera target per DOF (same as iOS)
-  cur.latitude  = camTargetLat_;
-  cur.longitude = camTargetLon_;
+  const auto cur    = engine_->camera().getParams();
+  const auto tgt    = target_.snapshot();
+  const auto smooth = reactnativecesium::CameraSmoother::step(cur, tgt, dt);
+  engine_->camera().setParams(smooth);
 
-  const double aAlt   = 1.0 - std::exp(-kSmoothAlt * dt);
-  const double aHdg   = 1.0 - std::exp(-kSmoothHdg * dt);
-  const double aPitch = 1.0 - std::exp(-kSmoothPitch * dt);
-  const double aRoll  = 1.0 - std::exp(-kSmoothRoll * dt);
-  const double aViewQ = 1.0 - std::exp(-kSmoothViewCorr * dt);
-
-  cur.altitude = cur.altitude + aAlt * (camTargetAlt_ - cur.altitude);
-  cur.heading  = lerpAngleDeg(cur.heading, camTargetHeading_, aHdg);
-  cur.pitch    = lerpAngleDeg(cur.pitch, camTargetPitch_, aPitch);
-  cur.roll     = lerpAngleDeg(cur.roll, camTargetRoll_, aRoll);
-
-  glm::dquat cq = glm::normalize(cur.viewCorrection);
-  glm::dquat tq = glm::normalize(glm::dquat(camTargetViewQw_, camTargetViewQx_, camTargetViewQy_, camTargetViewQz_));
-  if (glm::dot(cq, tq) < 0.0)
-    tq = -tq;
-  cur.viewCorrection = glm::normalize(glm::slerp(cq, tq, aViewQ));
-
-  if (std::abs(camTargetAlt_ - cur.altitude) <= kEpsAlt)
-    cur.altitude = camTargetAlt_;
-  if (angleDeltaAbsDeg(cur.heading, camTargetHeading_) <= kEpsAngleDeg)
-    cur.heading = camTargetHeading_;
-  if (angleDeltaAbsDeg(cur.pitch, camTargetPitch_) <= kEpsAngleDeg)
-    cur.pitch = camTargetPitch_;
-  if (angleDeltaAbsDeg(cur.roll, camTargetRoll_) <= kEpsAngleDeg)
-    cur.roll = camTargetRoll_;
-  if ((1.0 - quatDotAbs(cur.viewCorrection, tq)) <= kEpsQuatDot)
-    cur.viewCorrection = tq;
-
-  engine_->camera().setParams(cur);
-  engine_->updateFrame(viewportWidth_, viewportHeight_, *frameResult_);
-
-  const double instFps = (dt > 1e-6) ? (1.0 / dt) : 0.0;
-  fpsEma_ = (fpsEma_ <= 1e-6) ? instFps : (fpsEma_ * 0.85 + instFps * 0.15);
-
-  if (++metricsTick_ >= 20) {
-    metricsTick_ = 0;
-    metricsFps_  = fpsEma_;
-    metricsTilesRendered_      = frameResult_->tilesRendered;
-    metricsTilesLoading_       = frameResult_->tilesLoading;
-    metricsTilesVisited_       = frameResult_->tilesVisited;
-    metricsIonTokenConfigured_ = frameResult_->ionTokenConfigured;
-    metricsTilesetReady_       = frameResult_->tilesetActive;
-
-    if (!frameResult_->creditHtmlLines.empty()) {
-      std::string joined;
-      for (const auto& html : frameResult_->creditHtmlLines) {
-        if (!joined.empty()) joined += "|";
-        joined += html;
-      }
-      if (joined != lastCreditHtmlJoined_) {
-        lastCreditHtmlJoined_ = joined;
-        std::string credits;
-        for (const auto& html : frameResult_->creditHtmlLines) {
-          std::string chunk = stripHtmlToPlain(html);
-          if (chunk.empty()) continue;
-          if (!credits.empty()) credits += " · ";
-          credits += chunk;
-        }
-        metricsCreditsPlainText_ = credits;
-      }
-    } else {
-      lastCreditHtmlJoined_.clear();
-      metricsCreditsPlainText_.clear();
-    }
+  // If we converged, clear the dirty flag so the next idle vsync can early-out.
+  if (!reactnativecesium::CameraTargetState::deltaExceedsEpsilon(smooth, tgt)) {
+    target_.clearDirty();
   }
+
+  engine_->updateFrame(viewportWidth_, viewportHeight_, *frameResult_);
+  metrics_.tick(dt, *frameResult_, !config_.tlsCaBundlePath.empty());
 
   reactnativecesium::FrameParams params;
   vulkanBackend_->beginFrame(params);
   vulkanBackend_->drawScene(*frameResult_);
   vulkanBackend_->endFrame();
-  forceRenderNextFrame_ = false;
 }
 
 double CesiumBridgeAndroid::readCameraLatitude() {
@@ -361,7 +277,6 @@ double CesiumBridgeAndroid::readCameraRoll() {
 double CesiumBridgeAndroid::readVerticalFovDeg() {
   return engine_ ? engine_->camera().getVerticalFovDegrees() : 60.0;
 }
-
 double CesiumBridgeAndroid::readViewCorrectionW() {
   return engine_ ? engine_->camera().getParams().viewCorrection.w : 1.0;
 }
@@ -566,9 +481,63 @@ Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeGetMetricsTileset
   return getBridge(ptr)->metricsTilesetReady() ? JNI_TRUE : JNI_FALSE;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeGetMetricsTlsConfigured(JNIEnv*, jobject, jlong ptr) {
+  return getBridge(ptr)->metricsTlsConfigured() ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeGetMetricsCreditsPlainText(JNIEnv* env, jobject, jlong ptr) {
   return env->NewStringUTF(getBridge(ptr)->metricsCreditsPlainText().c_str());
+}
+
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetMaximumCachedMiB(JNIEnv*, jobject, jlong ptr, jint v) {
+  getBridge(ptr)->setMaximumCachedMiB(v);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetPreloadAncestors(JNIEnv*, jobject, jlong ptr, jboolean v) {
+  getBridge(ptr)->setPreloadAncestors(v == JNI_TRUE);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetPreloadSiblings(JNIEnv*, jobject, jlong ptr, jboolean v) {
+  getBridge(ptr)->setPreloadSiblings(v == JNI_TRUE);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetForbidHoles(JNIEnv*, jobject, jlong ptr, jboolean v) {
+  getBridge(ptr)->setForbidHoles(v == JNI_TRUE);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetEnableWaterMask(JNIEnv*, jobject, jlong ptr, jboolean v) {
+  getBridge(ptr)->setEnableWaterMask(v == JNI_TRUE);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetEnableFogCulling(JNIEnv*, jobject, jlong ptr, jboolean v) {
+  getBridge(ptr)->setEnableFogCulling(v == JNI_TRUE);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetEnforceCulledScreenSpaceError(JNIEnv*, jobject, jlong ptr, jboolean v) {
+  getBridge(ptr)->setEnforceCulledScreenSpaceError(v == JNI_TRUE);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetCulledScreenSpaceError(JNIEnv*, jobject, jlong ptr, jdouble v) {
+  getBridge(ptr)->setCulledScreenSpaceError(v);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetEnableLodTransitionPeriod(JNIEnv*, jobject, jlong ptr, jboolean v) {
+  getBridge(ptr)->setEnableLodTransitionPeriod(v == JNI_TRUE);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetLodTransitionLength(JNIEnv*, jobject, jlong ptr, jdouble v) {
+  getBridge(ptr)->setLodTransitionLength(v);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetSqliteCacheMaxRows(JNIEnv*, jobject, jlong ptr, jint v) {
+  getBridge(ptr)->setSqliteCacheMaxRows(v);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetTaskProcessorThreads(JNIEnv*, jobject, jlong ptr, jint v) {
+  getBridge(ptr)->setTaskProcessorThreads(v);
 }
 
 } // extern "C"

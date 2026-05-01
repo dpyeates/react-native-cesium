@@ -45,6 +45,7 @@
 #include "EGM96_data.h"
 
 #include <math.h>
+#include <stdlib.h>
 #if __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
 #include <threads.h>
 #else
@@ -234,7 +235,21 @@ void radgra(const double lat, const double lon, double *rlat, double *gr, double
  */
 double undulation(const double lat, const double lon)
 {
-    double p[_coeffs+1], sinml[_361+1], cosml[_361+1], rleg[_361+1];
+    // Allocate large arrays on heap instead of stack to avoid stack overflow
+    // on threads with limited stack size (e.g., iOS DispatchQueue threads)
+    double* p = (double*)malloc((_coeffs+1) * sizeof(double));
+    double* sinml = (double*)malloc((_361+1) * sizeof(double));
+    double* cosml = (double*)malloc((_361+1) * sizeof(double));
+    double* rleg = (double*)malloc((_361+1) * sizeof(double));
+    
+    if (!p || !sinml || !cosml || !rleg) {
+        free(p);
+        free(sinml);
+        free(cosml);
+        free(rleg);
+        return 0.0;
+    }
+    
     double rlat, gr, re;
 
     // compute the geocentric latitude, geocentric radius, normal gravity
@@ -253,7 +268,14 @@ double undulation(const double lat, const double lon)
     }
     dscml(lon, sinml, cosml);
 
-    return hundu(p, sinml, cosml, gr, re);
+    double result = hundu(p, sinml, cosml, gr, re);
+    
+    free(p);
+    free(sinml);
+    free(cosml);
+    free(rleg);
+    
+    return result;
 }
 
 /* ************************************************************************** */

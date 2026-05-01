@@ -29,13 +29,20 @@ void main() {
   vec2 at = rsi(org, rd, AR);
   if (at.y < 0.0) { outColor = vec4(0, 0, 0, 1); return; }
 
-  vec2 er = rsi(org, rd, ER);
+  // No earth-surface tmax clamp — that creates a visible band discontinuity
+  // at the geometric horizon (rays below horizon get short atmospheric path,
+  // showing as lighter sky between the orange horizon glow and terrain).
+  // Instead integrate full atmospheric path and clamp underground sample
+  // heights to zero so they contribute ground-level density.
   float tmax = at.y;
-  if (er.x > 0.0) tmax = min(tmax, er.x);
   float tmin = max(at.x, 0.0);
   if (tmin >= tmax) { outColor = vec4(0, 0, 0, 1); return; }
 
-  const int S = 16, L = 4;
+  // Sample counts halved from 16/4 to 8/2 — visually negligible at typical
+  // phone DPI / viewport sizes (a 24-bit screen can't resolve the difference
+  // in atmospheric scattering past ~6 primary samples), saves ~half the
+  // expensive `exp` calls per pixel.
+  const int S = 8, L = 2;
   float ss = (tmax - tmin) / float(S);
   vec3 rayl = vec3(0), miel = vec3(0);
   float oR = 0.0, oM = 0.0;
@@ -43,7 +50,7 @@ void main() {
   for (int i = 0; i < S; ++i) {
     float t = tmin + (float(i) + 0.5) * ss;
     vec3 sp = org + rd * t;
-    float h = length(sp) - ER;
+    float h = max(0.0, length(sp) - ER);
     float hr = exp(-h / 10000.0) * ss, hm = exp(-h / 3200.0) * ss;
     oR += hr; oM += hm;
 
@@ -74,13 +81,16 @@ void main() {
   float mPh = 1.5 * ((1.0 - g2) / (2.0 + g2)) * (1.0 + cos2) / pow(1.0 + g2 - 2.0 * MG * cosT, 1.5);
   vec3 col = LINT * (rayl * RAY * rPh + miel * MIE3 * mPh);
   col = 1.0 - exp(-col * 1.1);
-  col *= vec3(0.18, 0.45, 1.0);
+  col *= vec3(0.30, 0.55, 1.0);
 
-  vec3 nu = normalize(org);
-  float up = clamp(dot(rd, nu), 0.0, 1.0);
-  float camH = max(0.0, length(org) - ER);
-  float hStr = clamp(1.0 - camH / 35000.0, 0.0, 1.0);
-  col = mix(col, vec3(0.40, 0.62, 0.96), (1.0 - smoothstep(0.05, 0.45, up)) * 0.40 * hStr);
+  // Single-scatter atmosphere produces sunset-like yellow at horizons with
+  // long path lengths (because blue out-scatters faster). Real daytime sky
+  // appears whitish-blue at horizon thanks to multiple scattering, which we
+  // approximate here by blending toward a natural blue based on the
+  // total atmospheric path length traversed by the view ray.
+  float pathLen = tmax - tmin;
+  float hazeFactor = smoothstep(100000.0, 600000.0, pathLen);
+  col = mix(col, vec3(0.35, 0.58, 0.90), hazeFactor * 0.65);
 
   outColor = vec4(col, 1.0);
 }

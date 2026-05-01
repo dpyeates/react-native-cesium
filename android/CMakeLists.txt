@@ -70,8 +70,10 @@ add_library(${PACKAGE_NAME} SHARED
         ../cpp/engine/GltfToMesh.cpp
         ../cpp/engine/GlobeCamera.cpp
         ../cpp/engine/GeoidConverter.cpp
-        ../cpp/engine/DeletionQueue.cpp
         ../cpp/engine/TileLifecycleManager.cpp
+        ../cpp/engine/CameraSmoother.cpp
+        ../cpp/engine/CameraTargetState.cpp
+        ../cpp/engine/MetricsAggregator.cpp
         ../cpp/third_party/egm96/EGM96.c
         src/main/cpp/vulkan/VulkanBackend.cpp
         src/main/cpp/CesiumBridgeAndroid.cpp

@@ -13,6 +13,18 @@
     "loadingDescendantLimit": true,
     "msaaSampleCount": true,
     "ionImageryAssetId": true,
+    "maximumCachedMiB": true,
+    "preloadAncestors": true,
+    "preloadSiblings": true,
+    "forbidHoles": true,
+    "enableWaterMask": true,
+    "enableFogCulling": true,
+    "enforceCulledScreenSpaceError": true,
+    "culledScreenSpaceError": true,
+    "enableLodTransitionPeriod": true,
+    "lodTransitionLength": true,
+    "sqliteCacheMaxRows": true,
+    "taskProcessorThreads": true,
     "onMetrics": true,
     "hybridRef": true
   }

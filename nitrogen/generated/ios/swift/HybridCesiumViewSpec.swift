@@ -19,6 +19,18 @@ public protocol HybridCesiumViewSpec_protocol: HybridObject, HybridView {
   var loadingDescendantLimit: Double { get set }
   var msaaSampleCount: Double { get set }
   var ionImageryAssetId: Double { get set }
+  var maximumCachedMiB: Double? { get set }
+  var preloadAncestors: Bool? { get set }
+  var preloadSiblings: Bool? { get set }
+  var forbidHoles: Bool? { get set }
+  var enableWaterMask: Bool? { get set }
+  var enableFogCulling: Bool? { get set }
+  var enforceCulledScreenSpaceError: Bool? { get set }
+  var culledScreenSpaceError: Double? { get set }
+  var enableLodTransitionPeriod: Bool? { get set }
+  var lodTransitionLength: Double? { get set }
+  var sqliteCacheMaxRows: Double? { get set }
+  var taskProcessorThreads: Double? { get set }
   var onMetrics: ((_ metrics: CesiumMetrics) -> Void)? { get set }
 
   // Methods

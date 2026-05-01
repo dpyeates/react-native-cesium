@@ -242,8 +242,14 @@ export function GlobeScreen() {
         maximumScreenSpaceError={16}
         maximumSimultaneousTileLoads={8}
         loadingDescendantLimit={20}
-        msaaSampleCount={1}
+        msaaSampleCount={4}
         ionImageryAssetId={2}
+        // Optional perf / quality knobs (see "Optional performance / quality knobs" below).
+        // Omit to use the built-in defaults; values shown here are typical for a high-end phone.
+        maximumCachedMiB={384}
+        preloadAncestors
+        forbidHoles
+        enableLodTransitionPeriod
         onMetrics={callback((metrics: CesiumMetrics) => {
           console.log('Cesium FPS:', metrics.fps)
         })}
@@ -279,7 +285,7 @@ When you pass a callback ref to `CesiumView`, wrap it with `callback(...)` from 
 | `maximumScreenSpaceError` | `number` | `32` | Quality/performance trade-off for tile refinement. Lower values are sharper (more work); higher values are faster/blurrier.                                                                                  |
 | `maximumSimultaneousTileLoads` | `number` | `12` | Max concurrent tile fetch/decode operations. Raising `8 -> 16` can improve fast camera moves on good networks but may increase memory/bandwidth spikes.                                                      |
 | `loadingDescendantLimit` | `number` | `20` | Caps descendant tile fan-out during traversal. Lower values like `10` smooth bursts on low-end devices; higher values like `40` can fill detail faster.                                                      |
-| `msaaSampleCount` | `number` | `1` | Anti-aliasing sample count. iOS uses `1`, `2`, or `4` (`>=4 -> 4`, `>=2 -> 2`, otherwise `1`); Android currently renders at `1` (MSAA setting is currently ignored in Vulkan backend). |
+| `msaaSampleCount` | `number` | `1` | Anti-aliasing sample count. Both backends support `1`, `2`, `4`, or `8`; the value is clamped to the largest sample count the physical device can frame-buffer (Metal: `device.supportsTextureSampleCount`, Vulkan: `framebufferColorSampleCounts & framebufferDepthSampleCounts`). On tiled mobile GPUs the multisample colour buffer is allocated `LAZILY_ALLOCATED` where supported, so MSAA's memory cost is largely on-chip. |
 | `ionImageryAssetId` | `number` | `1` | Imagery layer to drape over terrain/tiles. Use a satellite imagery asset for a photoreal look, or switch to a streets/map layer for legibility. See your Cesium Ion Asset IDs. |
 
 **Consumer-optional props (TypeScript)**
@@ -287,6 +293,35 @@ When you pass a callback ref to `CesiumView`, wrap it with `callback(...)` from 
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
 | `onMetrics` | `(metrics: CesiumMetrics) => void` | `undefined` | Receives throttled runtime stats and credits text. |
+
+**Optional performance / quality knobs**
+
+These props are all optional. Leave them unset to use the built-in defaults; set them to override per-screen for fine-grained control. They are runtime-mutable: changing them at any time after the view has mounted re-applies to the live tileset (no engine rebuild) except where noted.
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `maximumCachedMiB` | `number` | `256` | RAM budget (mebibytes) for decoded geometry / textures held by the live tileset. Lower values (e.g. `128`) reduce peak memory on entry-level devices; higher values (`512+`) keep more tiles resident across long pans. |
+| `preloadAncestors` | `boolean` | `true` | Pre-load ancestor tiles around the visible set. Smoother panning at higher load pressure. |
+| `preloadSiblings` | `boolean` | `true` | Pre-load sibling tiles around the visible set. Same trade-off as `preloadAncestors`. |
+| `forbidHoles` | `boolean` | `true` | When `true`, Cesium keeps coarser ancestor tiles visible until all children load. Setting to `false` during fast pans reduces upload pressure at the cost of brief visible "holes". |
+| `enableWaterMask` | `boolean` | `true` | Decode the per-tile water-mask texture used for coastline shading and the ocean-vs-land hypsometric branch. Disable to save bandwidth on memory-constrained devices. |
+| `enableFogCulling` | `boolean` | `false` | When `true`, tiles fully inside the atmospheric fog volume are culled before refinement. |
+| `enforceCulledScreenSpaceError` | `boolean` | `true` | When `enableFogCulling` is `true`, allow fogged tiles to refine to a coarser SSE — saves work on tiles that will never be visually scrutinised. |
+| `culledScreenSpaceError` | `number` | `64` | The relaxed SSE applied to fogged tiles when `enforceCulledScreenSpaceError` is `true`. |
+| `enableLodTransitionPeriod` | `boolean` | `false` | Cross-fade between LODs as tiles refine instead of hard-popping. Smoother visually; very small per-frame cost. |
+| `lodTransitionLength` | `number` | `1.0` | Length in seconds of the LOD cross-fade when `enableLodTransitionPeriod` is `true`. |
+| `sqliteCacheMaxRows` | `number` | `4096` | Maximum number of cached HTTP responses Cesium keeps in `cesium_cache.db` between sessions. Tablets can comfortably go to `16384`. **Re-applied only on the next view init** — runtime changes take effect after the next mount. |
+| `taskProcessorThreads` | `number` | `0` (auto) | Worker pool size for tile parsing / texture decode. `0` (default) auto-sizes to `clamp(2, std::thread::hardware_concurrency() - 1, 8)`. Override for benchmarking or to throttle background CPU on shared-render apps. **Re-applied only on the next view init.** |
+
+#### Suggested presets
+
+The defaults are tuned for current-generation phones (e.g. iPhone 13/Pixel 6 and newer). Useful starting points for other classes of device:
+
+| Profile | `maximumScreenSpaceError` | `maximumSimultaneousTileLoads` | `maximumCachedMiB` | `forbidHoles` | `enableLodTransitionPeriod` |
+| --- | --- | --- | --- | --- | --- |
+| **High-end / tablet** | `16` | `16` | `512` | `true` | `true` |
+| **Default / phone** | `32` | `12` | `256` | `true` | `false` |
+| **Battery-saver / low-end** | `48` | `6` | `128` | `false` | `false` |
 
 ### `CameraState`
 
@@ -371,6 +406,7 @@ Avoid assuming **main-thread-only** vs **JS-thread-only** labels beyond the abov
 | `tilesLoading` | `number` | Number of tiles still loading. If this stays high for long periods, reduce load pressure (`maximumSimultaneousTileLoads`) or check network. |
 | `tilesVisited` | `number` | Number of tiles visited during traversal/culling.                                                                                           |
 | `ionTokenConfigured` | `boolean` | Whether a non-empty Ion token is configured natively. `false` is a quick signal to check `ionAccessToken`.                                  |
+| `tlsConfigured` | `boolean` | Whether libcurl resolved a CA bundle for HTTPS. `false` means TLS to `api.cesium.com` may fail; on iOS verify `cacert.pem` is in the main bundle, on Android that the asset is bundled (the package ships one for you). |
 | `tilesetReady` | `boolean` | Whether the primary tileset is initialized and ready.                                                                                       |
 | `creditsPlainText` | `string` | Plain-text attribution/credits from Cesium data sources. Display this in your app footer to satisfy attribution requirements.               |
 

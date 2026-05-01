@@ -18,9 +18,9 @@
 
 #include <string>
 #include "CameraState.hpp"
+#include <optional>
 #include "CesiumMetrics.hpp"
 #include <functional>
-#include <optional>
 #include <memory>
 #include "HybridCesiumViewSpec.hpp"
 
@@ -53,6 +53,18 @@ namespace margelo::nitro::reactnativecesium::views {
     CachedProp<double> loadingDescendantLimit;
     CachedProp<double> msaaSampleCount;
     CachedProp<double> ionImageryAssetId;
+    CachedProp<std::optional<double>> maximumCachedMiB;
+    CachedProp<std::optional<bool>> preloadAncestors;
+    CachedProp<std::optional<bool>> preloadSiblings;
+    CachedProp<std::optional<bool>> forbidHoles;
+    CachedProp<std::optional<bool>> enableWaterMask;
+    CachedProp<std::optional<bool>> enableFogCulling;
+    CachedProp<std::optional<bool>> enforceCulledScreenSpaceError;
+    CachedProp<std::optional<double>> culledScreenSpaceError;
+    CachedProp<std::optional<bool>> enableLodTransitionPeriod;
+    CachedProp<std::optional<double>> lodTransitionLength;
+    CachedProp<std::optional<double>> sqliteCacheMaxRows;
+    CachedProp<std::optional<double>> taskProcessorThreads;
     CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> onMetrics;
     CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>> hybridRef;
 

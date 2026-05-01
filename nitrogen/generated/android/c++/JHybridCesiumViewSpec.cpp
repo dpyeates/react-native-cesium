@@ -17,9 +17,9 @@ namespace margelo::nitro::reactnativecesium { struct Quaternion; }
 #include <string>
 #include "CameraState.hpp"
 #include "JCameraState.hpp"
+#include <optional>
 #include "CesiumMetrics.hpp"
 #include <functional>
-#include <optional>
 #include "JFunc_void_CesiumMetrics.hpp"
 #include <NitroModules/JNICallable.hpp>
 #include "JCesiumMetrics.hpp"
@@ -138,6 +138,114 @@ namespace margelo::nitro::reactnativecesium {
   void JHybridCesiumViewSpec::setIonImageryAssetId(double ionImageryAssetId) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* ionImageryAssetId */)>("setIonImageryAssetId");
     method(_javaPart, ionImageryAssetId);
+  }
+  std::optional<double> JHybridCesiumViewSpec::getMaximumCachedMiB() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getMaximumCachedMiB");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setMaximumCachedMiB(std::optional<double> maximumCachedMiB) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* maximumCachedMiB */)>("setMaximumCachedMiB");
+    method(_javaPart, maximumCachedMiB.has_value() ? jni::JDouble::valueOf(maximumCachedMiB.value()) : nullptr);
+  }
+  std::optional<bool> JHybridCesiumViewSpec::getPreloadAncestors() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JBoolean>()>("getPreloadAncestors");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(static_cast<bool>(__result->value())) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setPreloadAncestors(std::optional<bool> preloadAncestors) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JBoolean> /* preloadAncestors */)>("setPreloadAncestors");
+    method(_javaPart, preloadAncestors.has_value() ? jni::JBoolean::valueOf(preloadAncestors.value()) : nullptr);
+  }
+  std::optional<bool> JHybridCesiumViewSpec::getPreloadSiblings() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JBoolean>()>("getPreloadSiblings");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(static_cast<bool>(__result->value())) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setPreloadSiblings(std::optional<bool> preloadSiblings) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JBoolean> /* preloadSiblings */)>("setPreloadSiblings");
+    method(_javaPart, preloadSiblings.has_value() ? jni::JBoolean::valueOf(preloadSiblings.value()) : nullptr);
+  }
+  std::optional<bool> JHybridCesiumViewSpec::getForbidHoles() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JBoolean>()>("getForbidHoles");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(static_cast<bool>(__result->value())) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setForbidHoles(std::optional<bool> forbidHoles) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JBoolean> /* forbidHoles */)>("setForbidHoles");
+    method(_javaPart, forbidHoles.has_value() ? jni::JBoolean::valueOf(forbidHoles.value()) : nullptr);
+  }
+  std::optional<bool> JHybridCesiumViewSpec::getEnableWaterMask() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JBoolean>()>("getEnableWaterMask");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(static_cast<bool>(__result->value())) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setEnableWaterMask(std::optional<bool> enableWaterMask) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JBoolean> /* enableWaterMask */)>("setEnableWaterMask");
+    method(_javaPart, enableWaterMask.has_value() ? jni::JBoolean::valueOf(enableWaterMask.value()) : nullptr);
+  }
+  std::optional<bool> JHybridCesiumViewSpec::getEnableFogCulling() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JBoolean>()>("getEnableFogCulling");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(static_cast<bool>(__result->value())) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setEnableFogCulling(std::optional<bool> enableFogCulling) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JBoolean> /* enableFogCulling */)>("setEnableFogCulling");
+    method(_javaPart, enableFogCulling.has_value() ? jni::JBoolean::valueOf(enableFogCulling.value()) : nullptr);
+  }
+  std::optional<bool> JHybridCesiumViewSpec::getEnforceCulledScreenSpaceError() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JBoolean>()>("getEnforceCulledScreenSpaceError");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(static_cast<bool>(__result->value())) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setEnforceCulledScreenSpaceError(std::optional<bool> enforceCulledScreenSpaceError) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JBoolean> /* enforceCulledScreenSpaceError */)>("setEnforceCulledScreenSpaceError");
+    method(_javaPart, enforceCulledScreenSpaceError.has_value() ? jni::JBoolean::valueOf(enforceCulledScreenSpaceError.value()) : nullptr);
+  }
+  std::optional<double> JHybridCesiumViewSpec::getCulledScreenSpaceError() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getCulledScreenSpaceError");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setCulledScreenSpaceError(std::optional<double> culledScreenSpaceError) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* culledScreenSpaceError */)>("setCulledScreenSpaceError");
+    method(_javaPart, culledScreenSpaceError.has_value() ? jni::JDouble::valueOf(culledScreenSpaceError.value()) : nullptr);
+  }
+  std::optional<bool> JHybridCesiumViewSpec::getEnableLodTransitionPeriod() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JBoolean>()>("getEnableLodTransitionPeriod");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(static_cast<bool>(__result->value())) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setEnableLodTransitionPeriod(std::optional<bool> enableLodTransitionPeriod) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JBoolean> /* enableLodTransitionPeriod */)>("setEnableLodTransitionPeriod");
+    method(_javaPart, enableLodTransitionPeriod.has_value() ? jni::JBoolean::valueOf(enableLodTransitionPeriod.value()) : nullptr);
+  }
+  std::optional<double> JHybridCesiumViewSpec::getLodTransitionLength() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getLodTransitionLength");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setLodTransitionLength(std::optional<double> lodTransitionLength) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* lodTransitionLength */)>("setLodTransitionLength");
+    method(_javaPart, lodTransitionLength.has_value() ? jni::JDouble::valueOf(lodTransitionLength.value()) : nullptr);
+  }
+  std::optional<double> JHybridCesiumViewSpec::getSqliteCacheMaxRows() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getSqliteCacheMaxRows");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setSqliteCacheMaxRows(std::optional<double> sqliteCacheMaxRows) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* sqliteCacheMaxRows */)>("setSqliteCacheMaxRows");
+    method(_javaPart, sqliteCacheMaxRows.has_value() ? jni::JDouble::valueOf(sqliteCacheMaxRows.value()) : nullptr);
+  }
+  std::optional<double> JHybridCesiumViewSpec::getTaskProcessorThreads() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getTaskProcessorThreads");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setTaskProcessorThreads(std::optional<double> taskProcessorThreads) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* taskProcessorThreads */)>("setTaskProcessorThreads");
+    method(_javaPart, taskProcessorThreads.has_value() ? jni::JDouble::valueOf(taskProcessorThreads.value()) : nullptr);
   }
   std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> JHybridCesiumViewSpec::getOnMetrics() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_CesiumMetrics::javaobject>()>("getOnMetrics_cxx");

@@ -9,6 +9,7 @@ package com.margelo.nitro.reactnativecesium
 
 import androidx.annotation.Keep
 import com.facebook.proguard.annotations.DoNotStrip
+import java.util.Objects
 
 
 /**
@@ -40,6 +41,30 @@ data class CameraState(
   val verticalFovDeg: Double
 ) {
   /* primary constructor */
+
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is CameraState) return false
+    return Objects.deepEquals(this.latitude, other.latitude)
+      && Objects.deepEquals(this.longitude, other.longitude)
+      && Objects.deepEquals(this.altitude, other.altitude)
+      && Objects.deepEquals(this.heading, other.heading)
+      && Objects.deepEquals(this.pitch, other.pitch)
+      && Objects.deepEquals(this.roll, other.roll)
+      && Objects.deepEquals(this.verticalFovDeg, other.verticalFovDeg)
+  }
+
+  override fun hashCode(): Int {
+    return arrayOf(
+      latitude,
+      longitude,
+      altitude,
+      heading,
+      pitch,
+      roll,
+      verticalFovDeg
+    ).contentDeepHashCode()
+  }
 
   companion object {
     /**

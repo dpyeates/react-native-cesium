@@ -22,9 +22,9 @@ namespace margelo::nitro::reactnativecesium { struct Quaternion; }
 
 #include <string>
 #include "CameraState.hpp"
+#include <optional>
 #include "CesiumMetrics.hpp"
 #include <functional>
-#include <optional>
 #include <NitroModules/Promise.hpp>
 #include "Quaternion.hpp"
 
@@ -73,6 +73,30 @@ namespace margelo::nitro::reactnativecesium {
       virtual void setMsaaSampleCount(double msaaSampleCount) = 0;
       virtual double getIonImageryAssetId() = 0;
       virtual void setIonImageryAssetId(double ionImageryAssetId) = 0;
+      virtual std::optional<double> getMaximumCachedMiB() = 0;
+      virtual void setMaximumCachedMiB(std::optional<double> maximumCachedMiB) = 0;
+      virtual std::optional<bool> getPreloadAncestors() = 0;
+      virtual void setPreloadAncestors(std::optional<bool> preloadAncestors) = 0;
+      virtual std::optional<bool> getPreloadSiblings() = 0;
+      virtual void setPreloadSiblings(std::optional<bool> preloadSiblings) = 0;
+      virtual std::optional<bool> getForbidHoles() = 0;
+      virtual void setForbidHoles(std::optional<bool> forbidHoles) = 0;
+      virtual std::optional<bool> getEnableWaterMask() = 0;
+      virtual void setEnableWaterMask(std::optional<bool> enableWaterMask) = 0;
+      virtual std::optional<bool> getEnableFogCulling() = 0;
+      virtual void setEnableFogCulling(std::optional<bool> enableFogCulling) = 0;
+      virtual std::optional<bool> getEnforceCulledScreenSpaceError() = 0;
+      virtual void setEnforceCulledScreenSpaceError(std::optional<bool> enforceCulledScreenSpaceError) = 0;
+      virtual std::optional<double> getCulledScreenSpaceError() = 0;
+      virtual void setCulledScreenSpaceError(std::optional<double> culledScreenSpaceError) = 0;
+      virtual std::optional<bool> getEnableLodTransitionPeriod() = 0;
+      virtual void setEnableLodTransitionPeriod(std::optional<bool> enableLodTransitionPeriod) = 0;
+      virtual std::optional<double> getLodTransitionLength() = 0;
+      virtual void setLodTransitionLength(std::optional<double> lodTransitionLength) = 0;
+      virtual std::optional<double> getSqliteCacheMaxRows() = 0;
+      virtual void setSqliteCacheMaxRows(std::optional<double> sqliteCacheMaxRows) = 0;
+      virtual std::optional<double> getTaskProcessorThreads() = 0;
+      virtual void setTaskProcessorThreads(std::optional<double> taskProcessorThreads) = 0;
       virtual std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() = 0;
       virtual void setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) = 0;
 

@@ -41,6 +41,8 @@ namespace margelo::nitro::reactnativecesium {
       double tilesVisited = this->getFieldValue(fieldTilesVisited);
       static const auto fieldIonTokenConfigured = clazz->getField<jboolean>("ionTokenConfigured");
       jboolean ionTokenConfigured = this->getFieldValue(fieldIonTokenConfigured);
+      static const auto fieldTlsConfigured = clazz->getField<jboolean>("tlsConfigured");
+      jboolean tlsConfigured = this->getFieldValue(fieldTlsConfigured);
       static const auto fieldTilesetReady = clazz->getField<jboolean>("tilesetReady");
       jboolean tilesetReady = this->getFieldValue(fieldTilesetReady);
       static const auto fieldCreditsPlainText = clazz->getField<jni::JString>("creditsPlainText");
@@ -51,6 +53,7 @@ namespace margelo::nitro::reactnativecesium {
         tilesLoading,
         tilesVisited,
         static_cast<bool>(ionTokenConfigured),
+        static_cast<bool>(tlsConfigured),
         static_cast<bool>(tilesetReady),
         creditsPlainText->toStdString()
       );
@@ -62,7 +65,7 @@ namespace margelo::nitro::reactnativecesium {
      */
     [[maybe_unused]]
     static jni::local_ref<JCesiumMetrics::javaobject> fromCpp(const CesiumMetrics& value) {
-      using JSignature = JCesiumMetrics(double, double, double, double, jboolean, jboolean, jni::alias_ref<jni::JString>);
+      using JSignature = JCesiumMetrics(double, double, double, double, jboolean, jboolean, jboolean, jni::alias_ref<jni::JString>);
       static const auto clazz = javaClassStatic();
       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
       return create(
@@ -72,6 +75,7 @@ namespace margelo::nitro::reactnativecesium {
         value.tilesLoading,
         value.tilesVisited,
         value.ionTokenConfigured,
+        value.tlsConfigured,
         value.tilesetReady,
         jni::make_jstring(value.creditsPlainText)
       );

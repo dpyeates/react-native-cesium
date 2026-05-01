@@ -67,7 +67,21 @@ class CesiumBridgeJNI {
   fun getMetricsTilesVisited(): Int = nativeGetMetricsTilesVisited(nativePtr)
   fun getMetricsIonTokenConfigured(): Boolean = nativeGetMetricsIonTokenConfigured(nativePtr)
   fun getMetricsTilesetReady(): Boolean = nativeGetMetricsTilesetReady(nativePtr)
+  fun getMetricsTlsConfigured(): Boolean = nativeGetMetricsTlsConfigured(nativePtr)
   fun getMetricsCreditsPlainText(): String = nativeGetMetricsCreditsPlainText(nativePtr)
+
+  fun setMaximumCachedMiB(v: Int) = nativeSetMaximumCachedMiB(nativePtr, v)
+  fun setPreloadAncestors(v: Boolean) = nativeSetPreloadAncestors(nativePtr, v)
+  fun setPreloadSiblings(v: Boolean) = nativeSetPreloadSiblings(nativePtr, v)
+  fun setForbidHoles(v: Boolean) = nativeSetForbidHoles(nativePtr, v)
+  fun setEnableWaterMask(v: Boolean) = nativeSetEnableWaterMask(nativePtr, v)
+  fun setEnableFogCulling(v: Boolean) = nativeSetEnableFogCulling(nativePtr, v)
+  fun setEnforceCulledScreenSpaceError(v: Boolean) = nativeSetEnforceCulledScreenSpaceError(nativePtr, v)
+  fun setCulledScreenSpaceError(v: Double) = nativeSetCulledScreenSpaceError(nativePtr, v)
+  fun setEnableLodTransitionPeriod(v: Boolean) = nativeSetEnableLodTransitionPeriod(nativePtr, v)
+  fun setLodTransitionLength(v: Double) = nativeSetLodTransitionLength(nativePtr, v)
+  fun setSqliteCacheMaxRows(v: Int) = nativeSetSqliteCacheMaxRows(nativePtr, v)
+  fun setTaskProcessorThreads(v: Int) = nativeSetTaskProcessorThreads(nativePtr, v)
 
   private external fun nativeCreate(): Long
   private external fun nativeInit(ptr: Long, surface: Surface, w: Int, h: Int, cacheDir: String, cacertPath: String)
@@ -115,5 +129,19 @@ class CesiumBridgeJNI {
   private external fun nativeGetMetricsTilesVisited(ptr: Long): Int
   private external fun nativeGetMetricsIonTokenConfigured(ptr: Long): Boolean
   private external fun nativeGetMetricsTilesetReady(ptr: Long): Boolean
+  private external fun nativeGetMetricsTlsConfigured(ptr: Long): Boolean
   private external fun nativeGetMetricsCreditsPlainText(ptr: Long): String
+
+  private external fun nativeSetMaximumCachedMiB(ptr: Long, v: Int)
+  private external fun nativeSetPreloadAncestors(ptr: Long, v: Boolean)
+  private external fun nativeSetPreloadSiblings(ptr: Long, v: Boolean)
+  private external fun nativeSetForbidHoles(ptr: Long, v: Boolean)
+  private external fun nativeSetEnableWaterMask(ptr: Long, v: Boolean)
+  private external fun nativeSetEnableFogCulling(ptr: Long, v: Boolean)
+  private external fun nativeSetEnforceCulledScreenSpaceError(ptr: Long, v: Boolean)
+  private external fun nativeSetCulledScreenSpaceError(ptr: Long, v: Double)
+  private external fun nativeSetEnableLodTransitionPeriod(ptr: Long, v: Boolean)
+  private external fun nativeSetLodTransitionLength(ptr: Long, v: Double)
+  private external fun nativeSetSqliteCacheMaxRows(ptr: Long, v: Int)
+  private external fun nativeSetTaskProcessorThreads(ptr: Long, v: Int)
 }
