@@ -2,6 +2,7 @@
 
 #include "EngineTunables.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace reactnativecesium {
@@ -23,15 +24,40 @@ inline double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
   return std::abs(glm::dot(glm::normalize(a), glm::normalize(b)));
 }
 
+inline double wrapLonDeltaDeg(double a, double b) {
+  return std::fmod(b - a + 540.0, 360.0) - 180.0;
+}
+
 } // namespace
 
 CameraParams CameraSmoother::step(
-    const CameraParams& current, const CameraParams& target, double dt) {
+    const CameraParams& current, const CameraParams& target, double dt,
+    double recentIntervalSec) {
   CameraParams next = current;
 
-  // lat/lon: copied directly — pan gestures must feel instant.
-  next.latitude  = target.latitude;
-  next.longitude = target.longitude;
+  // ── lat/lon: adaptive exponential smoothing ─────────────────────────────
+  // τ scales with the cadence of incoming setCamera calls so gestures feel
+  // instant (τ at the floor) while sparse GPS-rate updates ease across each
+  // interval (τ near the ceiling).
+  const double tau  = std::clamp(
+      tunables::kSmoothPositionAlpha * recentIntervalSec,
+      tunables::kSmoothPositionTauMin,
+      tunables::kSmoothPositionTauMax);
+  const double aPos = 1.0 - std::exp(-dt / tau);
+
+  const double dLat = target.latitude - current.latitude;
+  const double dLon = wrapLonDeltaDeg(current.longitude, target.longitude);
+  const bool snapThrough =
+      std::abs(dLat) > tunables::kPosSnapThroughDeg ||
+      std::abs(dLon) > tunables::kPosSnapThroughDeg;
+
+  if (snapThrough) {
+    next.latitude  = target.latitude;
+    next.longitude = target.longitude;
+  } else {
+    next.latitude  = current.latitude + aPos * dLat;
+    next.longitude = lerpAngleDeg(current.longitude, target.longitude, aPos);
+  }
 
   const double aAlt   = 1.0 - std::exp(-tunables::kSmoothAltitude * dt);
   const double aHdg   = 1.0 - std::exp(-tunables::kSmoothHeading  * dt);
@@ -50,6 +76,11 @@ CameraParams CameraSmoother::step(
   next.viewCorrection = glm::normalize(glm::slerp(cq, tq, aViewQ));
 
   // Eventually-exact convergence: snap once the residual is sub-epsilon.
+  if (std::abs(target.latitude - next.latitude) <= tunables::kEpsLatLon)
+    next.latitude = target.latitude;
+  if (std::abs(wrapLonDeltaDeg(next.longitude, target.longitude))
+        <= tunables::kEpsLatLon)
+    next.longitude = target.longitude;
   if (std::abs(target.altitude - next.altitude) <= tunables::kEpsAltitudeMeters)
     next.altitude = target.altitude;
   if (angleDeltaAbsDeg(next.heading, target.heading) <= tunables::kEpsAngleDeg)

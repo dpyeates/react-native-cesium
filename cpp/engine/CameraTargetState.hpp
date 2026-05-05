@@ -4,6 +4,7 @@
 #include "GlobeCamera.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <mutex>
 
 namespace reactnativecesium {
@@ -31,6 +32,7 @@ public:
       std::lock_guard<std::mutex> g(mutex_);
       target_ = target;
     }
+    noteUpdateCadence();
     dirty_.store(true, std::memory_order_release);
     forceRender_.store(true, std::memory_order_release);
   }
@@ -47,6 +49,7 @@ public:
       target_.pitch     = pitch;
       target_.roll      = roll;
     }
+    noteUpdateCadence();
     dirty_.store(true, std::memory_order_release);
     forceRender_.store(true, std::memory_order_release);
   }
@@ -56,6 +59,7 @@ public:
       std::lock_guard<std::mutex> g(mutex_);
       target_.viewCorrection = q;
     }
+    noteUpdateCadence();
     dirty_.store(true, std::memory_order_release);
     forceRender_.store(true, std::memory_order_release);
   }
@@ -87,11 +91,31 @@ public:
   // whether to render this frame.
   static bool deltaExceedsEpsilon(const CameraParams& a, const CameraParams& b);
 
+  // EWMA of the inter-arrival interval (seconds) of demand updates. Used by
+  // CameraSmoother to scale the lat/lon time constant: high update rate ⇒
+  // tiny τ (snappy gestures); low update rate ⇒ larger τ (smooth GPS catch-up).
+  // Lock-free read on the render-thread hot path.
+  double recentIntervalSec() const noexcept {
+    return ewmaIntervalSec_.load(std::memory_order_acquire);
+  }
+
 private:
+  // Folds the time since the previous demand update into ewmaIntervalSec_.
+  // Called under (or after) the target_ mutex; the EWMA itself is atomic so
+  // the read side never blocks. Writes are uncontended (only JS-thread).
+  void noteUpdateCadence() noexcept;
+
   mutable std::mutex mutex_;
   CameraParams target_;
   std::atomic<bool> dirty_{false};
   std::atomic<bool> forceRender_{true};
+
+  // Cadence tracker. lastUpdateTime_ is only touched on the writer (JS)
+  // thread, so it does not need synchronisation; ewmaIntervalSec_ is read
+  // by the render thread without taking the mutex.
+  std::chrono::steady_clock::time_point lastUpdateTime_{};
+  bool                                  hasLastUpdate_{false};
+  std::atomic<double>                   ewmaIntervalSec_{0.0};
 };
 
 } // namespace reactnativecesium

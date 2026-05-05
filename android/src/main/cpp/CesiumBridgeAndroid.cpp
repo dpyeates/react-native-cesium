@@ -239,7 +239,8 @@ void CesiumBridgeAndroid::renderFrame(double dt) {
 
   const auto cur    = engine_->camera().getParams();
   const auto tgt    = target_.snapshot();
-  const auto smooth = reactnativecesium::CameraSmoother::step(cur, tgt, dt);
+  const auto smooth = reactnativecesium::CameraSmoother::step(
+      cur, tgt, dt, target_.recentIntervalSec());
   engine_->camera().setParams(smooth);
 
   // If we converged, clear the dirty flag so the next idle vsync can early-out.

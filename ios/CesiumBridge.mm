@@ -271,7 +271,8 @@
 
     const auto cur    = _engine->camera().getParams();
     const auto tgt    = _target.snapshot();
-    const auto smooth = reactnativecesium::CameraSmoother::step(cur, tgt, dt);
+    const auto smooth = reactnativecesium::CameraSmoother::step(
+        cur, tgt, dt, _target.recentIntervalSec());
     _engine->camera().setParams(smooth);
 
     if (!reactnativecesium::CameraTargetState::deltaExceedsEpsilon(smooth, tgt)) {

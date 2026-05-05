@@ -397,6 +397,22 @@ Avoid assuming **main-thread-only** vs **JS-thread-only** labels beyond the abov
 - You may **mix** the two: calling `setCamera` updates position and HPR but leaves the last view-correction target unchanged, so a calibration quaternion set earlier continues to apply until you change it with `setCameraQuaternion`.
 - Prefer **`setCameraQuaternion`** on frames where you need to drive both the globe camera and the correction together so the native target stays consistent.
 
+#### Smoothing of incoming camera updates
+
+Every value you pass to `setCamera` / `setCameraQuaternion` is treated as a **demand** target — what you would *like* the camera to be — rather than a per-frame command. The native render thread runs an exponential filter every frame that converges the displayed camera onto your demand target, which means a coarse 1 Hz position feed (e.g. external GPS) does **not** teleport the view once a second. Instead it eases between samples.
+
+| DoF | Smoothing |
+| --- | --- |
+| `latitude` / `longitude` | **Adaptive** exponential filter. Time constant `τ = clamp(α · ewmaInterval, τmin, τmax)` where `ewmaInterval` tracks the cadence of your `setCamera` calls. ~60 Hz gestures collapse `τ` to the floor (≤1 frame of trail, indistinguishable from the previous "snap" behaviour); ~1 Hz GPS feeds expand `τ` so each sample is ~95 % converged before the next arrives. Cross-planet jumps (Δ > ~0.5°) bypass the smoother and snap, so a deliberate teleport stays instant. Antimeridian crossings always rotate the short way. |
+| `altitude` | Exponential, fixed `τ ≈ 40 ms`. |
+| `heading` / `pitch` / `roll` | Exponential on the shortest-arc angular delta, fixed `τ ≈ 20–33 ms`. |
+| `viewCorrection` (quaternion) | SLERP-based exponential, fixed `τ ≈ 20 ms`, hemisphere-corrected so it always takes the short rotation. |
+| `verticalFovDeg` | Applied directly (not smoothed). |
+
+You don't have to do anything special to take advantage of this — the smoother already runs, it's the same code path whether your driver is a Reanimated worklet at 60 Hz, a `setInterval` push at 10 Hz, or a 1 Hz GPS subscription. Just call `setCamera` whenever you have a new value.
+
+If the smoothing ever feels off for your data source, the relevant constants live in [`cpp/engine/EngineTunables.hpp`](cpp/engine/EngineTunables.hpp) (`kSmoothPositionAlpha`, `kSmoothPositionTauMin`, `kSmoothPositionTauMax`, `kPosSnapThroughDeg`, `kEwmaIntervalAlpha`, plus the per-DoF `kSmooth*` rates).
+
 ### `CesiumMetrics`
 
 | Field | Type | Description                                                                                                                                 |

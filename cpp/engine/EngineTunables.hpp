@@ -53,6 +53,21 @@ inline constexpr double kEpsAltitudeMeters  = 0.1;
 inline constexpr double kEpsAngleDeg        = 0.05;
 inline constexpr double kEpsQuatDot         = 1e-8;
 
+// Lat/lon are smoothed adaptively: τ = clamp(α · ewmaInterval, τmin, τmax),
+// then per frame we apply 1 - exp(-dt/τ). α<1 means the camera converges
+// before the next sample lands. With ~60 Hz gestures the EWMA interval is
+// ~16 ms ⇒ τ at the floor (5 ms) ⇒ ≤1-frame trail (indistinguishable from
+// the previous snap). With a 1 Hz GPS feed τ ≈ 450 ms ⇒ ~95 % converged
+// before the next sample arrives, removing the per-second teleport.
+inline constexpr double kSmoothPositionAlpha   = 0.45;
+inline constexpr double kSmoothPositionTauMin  = 0.005;
+inline constexpr double kSmoothPositionTauMax  = 0.6;
+// Genuine teleports (e.g. setCamera(NewYork) → setCamera(Tokyo)) skip the
+// smoother — easing across the planet over 600 ms looks worse than a snap.
+inline constexpr double kPosSnapThroughDeg     = 0.5;
+// EWMA mixing factor for the inter-arrival interval of setCamera calls.
+inline constexpr double kEwmaIntervalAlpha     = 0.3;
+
 // Metrics throttle: emit telemetry every N rendered frames.
 inline constexpr int kMetricsEmitEveryFrames = 20;
 

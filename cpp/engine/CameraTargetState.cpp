@@ -25,4 +25,25 @@ bool CameraTargetState::deltaExceedsEpsilon(
              > tunables::kEpsQuatDot;
 }
 
+void CameraTargetState::noteUpdateCadence() noexcept {
+  const auto now = std::chrono::steady_clock::now();
+  if (!hasLastUpdate_) {
+    // Seed the EWMA with τmax so the first sample after a quiet period uses
+    // the full smoothing budget rather than the floor (5 ms ≈ snap).
+    ewmaIntervalSec_.store(tunables::kSmoothPositionTauMax / tunables::kSmoothPositionAlpha,
+                           std::memory_order_release);
+    lastUpdateTime_ = now;
+    hasLastUpdate_  = true;
+    return;
+  }
+
+  const double dt = std::chrono::duration<double>(now - lastUpdateTime_).count();
+  lastUpdateTime_ = now;
+  if (dt <= 0.0) return; // back-to-back writes from the same frame: ignore.
+
+  const double prev = ewmaIntervalSec_.load(std::memory_order_relaxed);
+  const double next = prev + tunables::kEwmaIntervalAlpha * (dt - prev);
+  ewmaIntervalSec_.store(next, std::memory_order_release);
+}
+
 } // namespace reactnativecesium
