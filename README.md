@@ -399,11 +399,11 @@ Avoid assuming **main-thread-only** vs **JS-thread-only** labels beyond the abov
 
 #### Smoothing of incoming camera updates
 
-Every value you pass to `setCamera` / `setCameraQuaternion` is treated as a **demand** target — what you would *like* the camera to be — rather than a per-frame command. The native render thread runs an exponential filter every frame that converges the displayed camera onto your demand target, which means a coarse 1 Hz position feed (e.g. external GPS) does **not** teleport the view once a second. Instead it eases between samples.
+Every value you pass to `setCamera` / `setCameraQuaternion` is treated as a **demand** target — what you would *like* the camera to be — rather than a per-frame command. The native render thread interpolates the displayed camera toward your demand target every frame, which means a coarse 1 Hz position feed (e.g. external GPS) does **not** teleport the view once a second. Instead it moves at constant speed — exactly like looking out the window of the vehicle being tracked.
 
 | DoF | Smoothing |
 | --- | --- |
-| `latitude` / `longitude` | **Adaptive** exponential filter. Time constant `τ = clamp(α · ewmaInterval, τmin, τmax)` where `ewmaInterval` tracks the cadence of your `setCamera` calls. ~60 Hz gestures collapse `τ` to the floor (≤1 frame of trail, indistinguishable from the previous "snap" behaviour); ~1 Hz GPS feeds expand `τ` so each sample is ~95 % converged before the next arrives. Cross-planet jumps (Δ > ~0.5°) bypass the smoother and snap, so a deliberate teleport stays instant. Antimeridian crossings always rotate the short way. |
+| `latitude` / `longitude` | **Linear interpolation** at constant speed between position fixes. When a new lat/lon arrives, the native engine records the previous target as the "from" position and linearly lerps toward the new target over the EWMA inter-arrival interval (e.g. a 1 Hz GPS feed gives a 1 s travel time, so the camera moves at exactly the vehicle's speed between fixes). At 60 Hz gestures the interval collapses to ~16 ms making the interpolation indistinguishable from an instant snap. Cross-planet jumps (Δ > ~0.5°) bypass interpolation so deliberate teleports remain instant. Antimeridian crossings always rotate the short way. |
 | `altitude` | Exponential, fixed `τ ≈ 40 ms`. |
 | `heading` / `pitch` / `roll` | Exponential on the shortest-arc angular delta, fixed `τ ≈ 20–33 ms`. |
 | `viewCorrection` (quaternion) | SLERP-based exponential, fixed `τ ≈ 20 ms`, hemisphere-corrected so it always takes the short rotation. |

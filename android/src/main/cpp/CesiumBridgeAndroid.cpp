@@ -244,8 +244,7 @@ void CesiumBridgeAndroid::renderFrame(double dt) {
 
   const auto cur    = engine_->camera().getParams();
   const auto tgt    = target_.snapshot();
-  auto smooth = reactnativecesium::CameraSmoother::step(
-      cur, tgt, dt, target_.recentIntervalSec());
+  auto smooth = reactnativecesium::CameraSmoother::step(cur, tgt, dt);
 
   // ── Terrain floor clamp ───────────────────────────────────────────────
   const float minAbove = engine_->getConfig().minAltitudeAboveTerrain;

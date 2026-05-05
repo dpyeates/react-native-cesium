@@ -277,8 +277,7 @@
 
     const auto cur    = _engine->camera().getParams();
     const auto tgt    = _target.snapshot();
-    auto smooth = reactnativecesium::CameraSmoother::step(
-        cur, tgt, dt, _target.recentIntervalSec());
+    auto smooth = reactnativecesium::CameraSmoother::step(cur, tgt, dt);
 
     // ── Terrain floor clamp ───────────────────────────────────────────────
     // Uses terrain floor from the previous frame (one-frame lag is
