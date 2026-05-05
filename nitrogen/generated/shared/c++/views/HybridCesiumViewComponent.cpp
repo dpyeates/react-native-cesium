@@ -236,6 +236,16 @@ namespace margelo::nitro::reactnativecesium::views {
         throw std::runtime_error(std::string("CesiumView.taskProcessorThreads: ") + exc.what());
       }
     }()),
+    minAltitudeAboveTerrain([&]() -> CachedProp<std::optional<double>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("minAltitudeAboveTerrain", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.minAltitudeAboveTerrain;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.minAltitudeAboveTerrain);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.minAltitudeAboveTerrain: ") + exc.what());
+      }
+    }()),
     onMetrics([&]() -> CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> {
       try {
         const react::RawValue* rawValue = rawProps.at("onMetrics", nullptr, nullptr);
@@ -280,6 +290,7 @@ namespace margelo::nitro::reactnativecesium::views {
       case hashString("lodTransitionLength"): return true;
       case hashString("sqliteCacheMaxRows"): return true;
       case hashString("taskProcessorThreads"): return true;
+      case hashString("minAltitudeAboveTerrain"): return true;
       case hashString("onMetrics"): return true;
       case hashString("hybridRef"): return true;
       default: return false;

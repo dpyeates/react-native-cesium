@@ -2,6 +2,7 @@
 
 #include "engine/CameraSmoother.hpp"
 #include "engine/EngineTunables.hpp"
+#include "engine/GeoidConverter.hpp"
 #include "vulkan/VulkanBackend.h"
 
 #include <android/native_window_jni.h>
@@ -198,6 +199,10 @@ void CesiumBridgeAndroid::setTaskProcessorThreads(int32_t v) {
   // initialize().
   config_.taskProcessorThreads = std::max(0, v);
 }
+void CesiumBridgeAndroid::setMinAltitudeAboveTerrain(float v) {
+  config_.minAltitudeAboveTerrain = std::max(0.0f, v);
+  if (initialized_) applyEngineConfig();
+}
 
 void CesiumBridgeAndroid::markNeedsRender() { target_.requestForceRender(); }
 
@@ -239,8 +244,23 @@ void CesiumBridgeAndroid::renderFrame(double dt) {
 
   const auto cur    = engine_->camera().getParams();
   const auto tgt    = target_.snapshot();
-  const auto smooth = reactnativecesium::CameraSmoother::step(
+  auto smooth = reactnativecesium::CameraSmoother::step(
       cur, tgt, dt, target_.recentIntervalSec());
+
+  // ── Terrain floor clamp ───────────────────────────────────────────────
+  const float minAbove = engine_->getConfig().minAltitudeAboveTerrain;
+  if (minAbove > 0.0f) {
+    const double geoidOffset =
+        reactnativecesium::mslToEllipsoidMeters(smooth.latitude, smooth.longitude, 0.0);
+    const double camEllipsoid =
+        reactnativecesium::mslToEllipsoidMeters(smooth.latitude, smooth.longitude, smooth.altitude);
+    const double minEllipsoid =
+        static_cast<double>(engine_->terrainFloorEllipsoidMeters()) + minAbove;
+    if (camEllipsoid < minEllipsoid) {
+      smooth.altitude = minEllipsoid - geoidOffset;
+    }
+  }
+
   engine_->camera().setParams(smooth);
 
   // If we converged, clear the dirty flag so the next idle vsync can early-out.
@@ -539,6 +559,10 @@ Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetSqliteCacheMax
 JNIEXPORT void JNICALL
 Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetTaskProcessorThreads(JNIEnv*, jobject, jlong ptr, jint v) {
   getBridge(ptr)->setTaskProcessorThreads(v);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetMinAltitudeAboveTerrain(JNIEnv*, jobject, jlong ptr, jfloat v) {
+  getBridge(ptr)->setMinAltitudeAboveTerrain(v);
 }
 
 } // extern "C"

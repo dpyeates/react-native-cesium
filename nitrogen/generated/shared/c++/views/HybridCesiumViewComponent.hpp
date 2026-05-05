@@ -65,6 +65,7 @@ namespace margelo::nitro::reactnativecesium::views {
     CachedProp<std::optional<double>> lodTransitionLength;
     CachedProp<std::optional<double>> sqliteCacheMaxRows;
     CachedProp<std::optional<double>> taskProcessorThreads;
+    CachedProp<std::optional<double>> minAltitudeAboveTerrain;
     CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> onMetrics;
     CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>> hybridRef;
 

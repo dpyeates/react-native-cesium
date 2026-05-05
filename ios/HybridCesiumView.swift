@@ -101,6 +101,9 @@ class HybridCesiumView: HybridCesiumViewSpec {
   var taskProcessorThreads: Double? {
     didSet { if let v = taskProcessorThreads { postToRender { [weak self] in self?.bridge?.setTaskProcessorThreads(Int32(v)) } } }
   }
+  var minAltitudeAboveTerrain: Double? {
+    didSet { if let v = minAltitudeAboveTerrain { postToRender { [weak self] in self?.bridge?.setMinAltitudeAboveTerrain(Float(v)) } } }
+  }
 
   // MARK: - Render-thread dispatch helper
 
@@ -319,6 +322,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
     if let v = lodTransitionLength { bridge?.setLodTransitionLength(v) }
     if let v = sqliteCacheMaxRows { bridge?.setSqliteCacheMaxRows(Int32(v)) }
     if let v = taskProcessorThreads { bridge?.setTaskProcessorThreads(Int32(v)) }
+    if let v = minAltitudeAboveTerrain { bridge?.setMinAltitudeAboveTerrain(Float(v)) }
   }
 
   /// Pushes camera state into native bridge only when values changed.

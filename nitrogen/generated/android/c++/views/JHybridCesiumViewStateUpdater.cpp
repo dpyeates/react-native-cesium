@@ -121,6 +121,10 @@ void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     hybridView->setTaskProcessorThreads(props->taskProcessorThreads.value);
     props->taskProcessorThreads.isDirty = false;
   }
+  if (props->minAltitudeAboveTerrain.isDirty) {
+    hybridView->setMinAltitudeAboveTerrain(props->minAltitudeAboveTerrain.value);
+    props->minAltitudeAboveTerrain.isDirty = false;
+  }
   if (props->onMetrics.isDirty) {
     hybridView->setOnMetrics(props->onMetrics.value);
     props->onMetrics.isDirty = false;

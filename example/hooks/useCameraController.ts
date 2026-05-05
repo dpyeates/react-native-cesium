@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FrameInfo } from 'react-native-reanimated';
 import {
   useAnimatedReaction,
@@ -38,6 +38,7 @@ export function useCameraController(
 
   const [cesiumView, setCesiumView] = useState<CesiumViewMethods | null>(null);
   const [hudCamera, setHudCamera] = useState<CameraState>(initialCamera);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const updateHudCamera = useCallback((nextCamera: CameraState) => {
     setHudCamera(nextCamera);
@@ -82,6 +83,40 @@ export function useCameraController(
     },
     [cesiumView, lastHudDispatchMs, updateHudCamera],
   );
+
+  // Keep camera.value in sync with the native-clamped altitude so that
+  // gesture anchors (snap.alt in MapGestureHandler) always start from the
+  // actual rendered altitude. Without this, the native terrain floor clamp
+  // silently diverges from the JS value and causes a dead zone on zoom-out.
+  useEffect(() => {
+    if (!cesiumView) return;
+    let active = true;
+
+    const sync = async () => {
+      if (!active || !cesiumView) return;
+      try {
+        const state = await cesiumView.getCameraState();
+        if (!active) return;
+        // Only intervene when native raised the altitude (i.e., clamped us).
+        // Use a 0.5 m threshold to ignore floating-point noise.
+        if (state.altitude > camera.value.altitude + 0.5) {
+          camera.value = { ...camera.value, altitude: state.altitude };
+        }
+      } catch (_) {
+        // ignore — bridge not yet ready or tearing down
+      }
+      if (active) {
+        syncTimerRef.current = setTimeout(sync, 200);
+      }
+    };
+
+    // Start after a short delay so the bridge is fully initialised.
+    syncTimerRef.current = setTimeout(sync, 500);
+    return () => {
+      active = false;
+      if (syncTimerRef.current !== null) clearTimeout(syncTimerRef.current);
+    };
+  }, [cesiumView, camera]);
 
   const handleJoystickRates = useCallback(
     (pitchRate: number, rollRate: number) => {

@@ -212,6 +212,13 @@ namespace margelo::nitro::reactnativecesium {
     inline void setTaskProcessorThreads(std::optional<double> taskProcessorThreads) noexcept override {
       _swiftPart.setTaskProcessorThreads(taskProcessorThreads);
     }
+    inline std::optional<double> getMinAltitudeAboveTerrain() noexcept override {
+      auto __result = _swiftPart.getMinAltitudeAboveTerrain();
+      return __result;
+    }
+    inline void setMinAltitudeAboveTerrain(std::optional<double> minAltitudeAboveTerrain) noexcept override {
+      _swiftPart.setMinAltitudeAboveTerrain(minAltitudeAboveTerrain);
+    }
     inline std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() noexcept override {
       auto __result = _swiftPart.getOnMetrics();
       return __result;

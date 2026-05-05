@@ -184,6 +184,11 @@ using namespace margelo::nitro::reactnativecesium::views;
     swiftPart.setTaskProcessorThreads(newViewProps.taskProcessorThreads.value);
     newViewProps.taskProcessorThreads.isDirty = false;
   }
+  // minAltitudeAboveTerrain: optional
+  if (newViewProps.minAltitudeAboveTerrain.isDirty) {
+    swiftPart.setMinAltitudeAboveTerrain(newViewProps.minAltitudeAboveTerrain.value);
+    newViewProps.minAltitudeAboveTerrain.isDirty = false;
+  }
   // onMetrics: optional
   if (newViewProps.onMetrics.isDirty) {
     swiftPart.setOnMetrics(newViewProps.onMetrics.value);

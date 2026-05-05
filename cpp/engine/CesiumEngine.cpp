@@ -455,6 +455,16 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
     }
   }
 
+  // ── Terrain floor tracking (for minAltitudeAboveTerrain clamp) ───────────
+  // Computed once before the tile loop and updated per-tile inside it.
+  // Only active when the feature is enabled to avoid any overhead otherwise.
+  const bool trackTerrainFloor = (config_.minAltitudeAboveTerrain > 0.0f);
+  const CameraParams camParams  = trackTerrainFloor ? camera_.getParams() : CameraParams{};
+  const double camLatRad = glm::radians(camParams.latitude);
+  const double camLonRad = glm::radians(camParams.longitude);
+  float  bestTerrainFloor = terrainFloorEllipsoidM_; // carry previous value if no tile matches
+  double bestTerrainDist  = std::numeric_limits<double>::max();
+
   for (const auto& tile : updateResult.tilesToRenderThisFrame) {
     if (!tile) continue;
 
@@ -478,6 +488,24 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
           static_cast<float>(rect.getSouth()),
           static_cast<float>(rect.getEast()),
           static_cast<float>(rect.getNorth()));
+
+      // ── Terrain floor: find nearest vertex to camera nadir ────────────
+      if (trackTerrainFloor &&
+          rect.contains(CesiumGeospatial::Cartographic(camLonRad, camLatRad, 0.0))) {
+        for (const auto& prim : res->primitives) {
+          if (prim.altitudes.empty() || prim.localPositions.empty()) continue;
+          const size_t vertexCount = prim.localPositions.size();
+          for (size_t vi = 0; vi < vertexCount; ++vi) {
+            const glm::dvec3 vECEF =
+                glm::dvec3(prim.localPositions[vi]) + prim.rtcCenter;
+            const double dist = glm::length(vECEF - cameraPos);
+            if (dist < bestTerrainDist) {
+              bestTerrainDist  = dist;
+              bestTerrainFloor = prim.altitudes[vi];
+            }
+          }
+        }
+      }
     }
 
     for (const auto& prim : res->primitives) {
@@ -552,6 +580,10 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   result.cameraLat     = params.latitude;
   result.cameraLon     = params.longitude;
   result.cameraAlt     = params.altitude;
+
+  if (trackTerrainFloor) {
+    terrainFloorEllipsoidM_ = bestTerrainFloor;
+  }
 
   lifecycle_.advanceFrame();
 }

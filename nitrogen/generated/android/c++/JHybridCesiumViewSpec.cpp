@@ -247,6 +247,15 @@ namespace margelo::nitro::reactnativecesium {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* taskProcessorThreads */)>("setTaskProcessorThreads");
     method(_javaPart, taskProcessorThreads.has_value() ? jni::JDouble::valueOf(taskProcessorThreads.value()) : nullptr);
   }
+  std::optional<double> JHybridCesiumViewSpec::getMinAltitudeAboveTerrain() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getMinAltitudeAboveTerrain");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setMinAltitudeAboveTerrain(std::optional<double> minAltitudeAboveTerrain) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* minAltitudeAboveTerrain */)>("setMinAltitudeAboveTerrain");
+    method(_javaPart, minAltitudeAboveTerrain.has_value() ? jni::JDouble::valueOf(minAltitudeAboveTerrain.value()) : nullptr);
+  }
   std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> JHybridCesiumViewSpec::getOnMetrics() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_CesiumMetrics::javaobject>()>("getOnMetrics_cxx");
     auto __result = method(_javaPart);

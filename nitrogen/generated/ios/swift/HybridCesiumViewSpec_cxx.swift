@@ -508,6 +508,30 @@ open class HybridCesiumViewSpec_cxx {
     }
   }
   
+  public final var minAltitudeAboveTerrain: bridge.std__optional_double_ {
+    @inline(__always)
+    get {
+      return { () -> bridge.std__optional_double_ in
+        if let __unwrappedValue = self.__implementation.minAltitudeAboveTerrain {
+          return bridge.create_std__optional_double_(__unwrappedValue)
+        } else {
+          return .init()
+        }
+      }()
+    }
+    @inline(__always)
+    set {
+      self.__implementation.minAltitudeAboveTerrain = { () -> Double? in
+        if bridge.has_value_std__optional_double_(newValue) {
+          let __unwrapped = bridge.get_std__optional_double_(newValue)
+          return __unwrapped
+        } else {
+          return nil
+        }
+      }()
+    }
+  }
+  
   public final var onMetrics: bridge.std__optional_std__function_void_const_CesiumMetrics_____metrics______ {
     @inline(__always)
     get {

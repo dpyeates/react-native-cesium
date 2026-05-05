@@ -92,6 +92,8 @@ namespace margelo::nitro::reactnativecesium {
     void setSqliteCacheMaxRows(std::optional<double> sqliteCacheMaxRows) override;
     std::optional<double> getTaskProcessorThreads() override;
     void setTaskProcessorThreads(std::optional<double> taskProcessorThreads) override;
+    std::optional<double> getMinAltitudeAboveTerrain() override;
+    void setMinAltitudeAboveTerrain(std::optional<double> minAltitudeAboveTerrain) override;
     std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() override;
     void setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) override;
 

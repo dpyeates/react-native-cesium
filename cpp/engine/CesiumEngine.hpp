@@ -78,6 +78,11 @@ struct EngineConfig {
   // 0 means "auto-detect" via std::thread::hardware_concurrency() clamped to
   // [2, 8]. Override only for benchmarking / regression testing.
   int32_t taskProcessorThreads = 0;
+
+  // ── Camera constraints ───────────────────────────────────────────────
+  // Minimum altitude above the loaded terrain surface (metres MSL).
+  // 0 = no constraint (default). Typical use: 2.0 to prevent going underground.
+  float minAltitudeAboveTerrain = 0.0f;
 };
 
 class CesiumEngine {
@@ -111,6 +116,13 @@ public:
   // EngineConfig everywhere).
   bool tilesetReady() const { return tileset_ != nullptr; }
   int64_t currentImageryAssetId() const { return currentImageryAssetId_; }
+
+  const EngineConfig& getConfig() const { return config_; }
+
+  // Ellipsoid height (metres) of the terrain vertex nearest to the camera nadir,
+  // updated each frame from the loaded tile mesh. 0.0 until the first terrain
+  // tile covering the camera position has been rendered.
+  float terrainFloorEllipsoidMeters() const { return terrainFloorEllipsoidM_; }
 
 private:
   void createTileset();
@@ -148,6 +160,10 @@ private:
 
   GlobeCamera          camera_;
   TileLifecycleManager lifecycle_;
+
+  // Ellipsoid height of the terrain surface at the camera nadir, updated each
+  // frame. Initialised to 0 (sea level) until a terrain tile is first loaded.
+  float terrainFloorEllipsoidM_ = 0.0f;
 
   // Pre-computed fallback ellipsoid geometry (ECEF, absolute).
   std::vector<glm::dvec3> ellipsoidPositions_;

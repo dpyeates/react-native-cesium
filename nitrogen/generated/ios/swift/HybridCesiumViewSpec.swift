@@ -31,6 +31,7 @@ public protocol HybridCesiumViewSpec_protocol: HybridObject, HybridView {
   var lodTransitionLength: Double? { get set }
   var sqliteCacheMaxRows: Double? { get set }
   var taskProcessorThreads: Double? { get set }
+  var minAltitudeAboveTerrain: Double? { get set }
   var onMetrics: ((_ metrics: CesiumMetrics) -> Void)? { get set }
 
   // Methods

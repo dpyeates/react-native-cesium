@@ -52,6 +52,7 @@ struct CesiumBridgeAndroid {
   void setLodTransitionLength(double v);
   void setSqliteCacheMaxRows(int32_t v);
   void setTaskProcessorThreads(int32_t v);
+  void setMinAltitudeAboveTerrain(float v);
 
   void markNeedsRender();
   bool shouldRenderNextFrame();

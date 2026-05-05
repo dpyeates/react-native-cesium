@@ -77,6 +77,13 @@ export interface CesiumViewProps extends HybridViewProps {
   sqliteCacheMaxRows?: number
   /** Worker thread count. 0 = auto (hardware_concurrency-1, clamped 2..8). */
   taskProcessorThreads?: number
+  /**
+   * Minimum altitude above the loaded terrain surface, in metres MSL.
+   * Default 0 (no constraint). Set to e.g. 2 to prevent the camera from going underground.
+   * The clamp is applied every frame in native, based on the altitude of the nearest
+   * terrain mesh vertex to the camera nadir.
+   */
+  minAltitudeAboveTerrain?: number
 
   onMetrics?: (metrics: CesiumMetrics) => void
 }

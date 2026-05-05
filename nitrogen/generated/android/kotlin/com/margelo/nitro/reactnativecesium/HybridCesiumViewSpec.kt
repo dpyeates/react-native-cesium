@@ -153,6 +153,12 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @set:Keep
   abstract var taskProcessorThreads: Double?
   
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var minAltitudeAboveTerrain: Double?
+  
   abstract var onMetrics: ((metrics: CesiumMetrics) -> Unit)?
   
   private var onMetrics_cxx: Func_void_CesiumMetrics?

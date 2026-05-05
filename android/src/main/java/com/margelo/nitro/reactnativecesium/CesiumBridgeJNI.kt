@@ -82,6 +82,7 @@ class CesiumBridgeJNI {
   fun setLodTransitionLength(v: Double) = nativeSetLodTransitionLength(nativePtr, v)
   fun setSqliteCacheMaxRows(v: Int) = nativeSetSqliteCacheMaxRows(nativePtr, v)
   fun setTaskProcessorThreads(v: Int) = nativeSetTaskProcessorThreads(nativePtr, v)
+  fun setMinAltitudeAboveTerrain(v: Float) = nativeSetMinAltitudeAboveTerrain(nativePtr, v)
 
   private external fun nativeCreate(): Long
   private external fun nativeInit(ptr: Long, surface: Surface, w: Int, h: Int, cacheDir: String, cacertPath: String)
@@ -144,4 +145,5 @@ class CesiumBridgeJNI {
   private external fun nativeSetLodTransitionLength(ptr: Long, v: Double)
   private external fun nativeSetSqliteCacheMaxRows(ptr: Long, v: Int)
   private external fun nativeSetTaskProcessorThreads(ptr: Long, v: Int)
+  private external fun nativeSetMinAltitudeAboveTerrain(ptr: Long, v: Float)
 }

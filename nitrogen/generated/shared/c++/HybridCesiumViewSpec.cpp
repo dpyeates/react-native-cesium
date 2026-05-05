@@ -56,6 +56,8 @@ namespace margelo::nitro::reactnativecesium {
       prototype.registerHybridSetter("sqliteCacheMaxRows", &HybridCesiumViewSpec::setSqliteCacheMaxRows);
       prototype.registerHybridGetter("taskProcessorThreads", &HybridCesiumViewSpec::getTaskProcessorThreads);
       prototype.registerHybridSetter("taskProcessorThreads", &HybridCesiumViewSpec::setTaskProcessorThreads);
+      prototype.registerHybridGetter("minAltitudeAboveTerrain", &HybridCesiumViewSpec::getMinAltitudeAboveTerrain);
+      prototype.registerHybridSetter("minAltitudeAboveTerrain", &HybridCesiumViewSpec::setMinAltitudeAboveTerrain);
       prototype.registerHybridGetter("onMetrics", &HybridCesiumViewSpec::getOnMetrics);
       prototype.registerHybridSetter("onMetrics", &HybridCesiumViewSpec::setOnMetrics);
       prototype.registerHybridMethod("getCameraState", &HybridCesiumViewSpec::getCameraState);

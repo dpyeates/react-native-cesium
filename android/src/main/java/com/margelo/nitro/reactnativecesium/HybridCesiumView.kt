@@ -120,6 +120,8 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
     set(value) { field = value; if (value != null) postToRender { bridge?.setSqliteCacheMaxRows(value.toInt()) } }
   override var taskProcessorThreads: Double? = null
     set(value) { field = value; if (value != null) postToRender { bridge?.setTaskProcessorThreads(value.toInt()) } }
+  override var minAltitudeAboveTerrain: Double? = null
+    set(value) { field = value; if (value != null) postToRender { bridge?.setMinAltitudeAboveTerrain(value.toFloat()) } }
 
   override var onMetrics: ((metrics: CesiumMetrics) -> Unit)? = null
 
@@ -476,6 +478,7 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
     lodTransitionLength?.let { b.setLodTransitionLength(it) }
     sqliteCacheMaxRows?.let { b.setSqliteCacheMaxRows(it.toInt()) }
     taskProcessorThreads?.let { b.setTaskProcessorThreads(it.toInt()) }
+    minAltitudeAboveTerrain?.let { b.setMinAltitudeAboveTerrain(it.toFloat()) }
   }
 
   /**

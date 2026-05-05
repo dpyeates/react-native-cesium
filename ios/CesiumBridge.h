@@ -61,6 +61,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setLodTransitionLength:(double)v;
 - (void)setSqliteCacheMaxRows:(int32_t)v;
 - (void)setTaskProcessorThreads:(int32_t)v;
+- (void)setMinAltitudeAboveTerrain:(float)v;
 
 /// Throttled metrics consumed by the Swift hybrid view.
 @property (nonatomic, readonly) double metricsFps;

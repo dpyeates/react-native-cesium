@@ -25,6 +25,7 @@
     "lodTransitionLength": true,
     "sqliteCacheMaxRows": true,
     "taskProcessorThreads": true,
+    "minAltitudeAboveTerrain": true,
     "onMetrics": true,
     "hybridRef": true
   }

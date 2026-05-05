@@ -5,6 +5,7 @@
 #include "engine/CameraTargetState.hpp"
 #include "engine/CesiumEngine.hpp"
 #include "engine/EngineTunables.hpp"
+#include "engine/GeoidConverter.hpp"
 #include "engine/MetricsAggregator.hpp"
 #include "metal/MetalBackend.h"
 
@@ -237,6 +238,11 @@
 - (void)setTaskProcessorThreads:(int32_t)v {
   _config.taskProcessorThreads = std::max<int32_t>(0, v);
 }
+- (void)setMinAltitudeAboveTerrain:(float)v {
+  _config.minAltitudeAboveTerrain = std::max(0.0f, v);
+  if (_engine) _engine->updateConfig(_config);
+  _target.requestForceRender();
+}
 
 - (void)setMsaaSampleCount:(int)samples {
   if (_metalBackend) _metalBackend->setMsaaSampleCount(samples);
@@ -271,8 +277,25 @@
 
     const auto cur    = _engine->camera().getParams();
     const auto tgt    = _target.snapshot();
-    const auto smooth = reactnativecesium::CameraSmoother::step(
+    auto smooth = reactnativecesium::CameraSmoother::step(
         cur, tgt, dt, _target.recentIntervalSec());
+
+    // ── Terrain floor clamp ───────────────────────────────────────────────
+    // Uses terrain floor from the previous frame (one-frame lag is
+    // imperceptible at 60 fps). Skipped when minAltitudeAboveTerrain == 0.
+    const float minAbove = _engine->getConfig().minAltitudeAboveTerrain;
+    if (minAbove > 0.0f) {
+      const double geoidOffset =
+          reactnativecesium::mslToEllipsoidMeters(smooth.latitude, smooth.longitude, 0.0);
+      const double camEllipsoid =
+          reactnativecesium::mslToEllipsoidMeters(smooth.latitude, smooth.longitude, smooth.altitude);
+      const double minEllipsoid =
+          static_cast<double>(_engine->terrainFloorEllipsoidMeters()) + minAbove;
+      if (camEllipsoid < minEllipsoid) {
+        smooth.altitude = minEllipsoid - geoidOffset;
+      }
+    }
+
     _engine->camera().setParams(smooth);
 
     if (!reactnativecesium::CameraTargetState::deltaExceedsEpsilon(smooth, tgt)) {
