@@ -6,13 +6,13 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { CESIUM_NATIVE_REF as ref } from './config.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..', '..')
 const vendor = join(root, 'vendor')
 const dest = join(vendor, 'cesium-native')
 const repo = 'https://github.com/CesiumGS/cesium-native.git'
-const ref = 'v0.60.0'
 
 function run(cmd, args, opts = {}) {
   execFileSync(cmd, args, { stdio: 'inherit', ...opts })
