@@ -1,5 +1,5 @@
 diff --git a/android/build.gradle b/android/build.gradle
-index 8167d16df2b2a5d6fa2708775bfefc2b6f950456..9b39b1b8fc1dc9529e8fd8bf26d28874dad4e9f1 100644
+index 8167d16df2b2a5d6fa2708775bfefc2b6f950456..2b44ef1297d37b9222b0f2c2f6d3fbc5f811a58e 100644
 --- a/android/build.gradle
 +++ b/android/build.gradle
 @@ -12,6 +12,11 @@ def safeAppExtGet(prop, fallback) {
@@ -14,6 +14,15 @@ index 8167d16df2b2a5d6fa2708775bfefc2b6f950456..9b39b1b8fc1dc9529e8fd8bf26d28874
  def isNewArchitectureEnabled() {
      // In React Native 0.82+, users can no longer opt-out of the New Architecture.
      if(getReactNativeMinorVersion() >= 82){
+@@ -34,7 +39,7 @@ def resolveReactNativeDirectory() {
+     // Fallback to node resolver for custom directory structures like monorepos.
+     def reactNativePackage = file(providers.exec {
+         workingDir(rootDir)
+-        commandLine("node", "--print", "require.resolve('react-native/package.json')")
++        commandLine(resolveNodeExecutable(), "--print", "require.resolve('react-native/package.json')")
+     }.standardOutput.asText.get().trim())
+     if (reactNativePackage.exists()) {
+         return reactNativePackage.parentFile
 @@ -241,7 +246,7 @@ android {
  
  def validateReactNativeVersionResult = providers.exec {
