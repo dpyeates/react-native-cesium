@@ -434,7 +434,9 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   asyncSystem_.dispatchMainThreadTasks();
 
   const auto viewState     = camera_.computeViewState(w, h);
-  const auto& updateResult = tileset_->updateView({viewState});
+  const auto& updateResult =
+      tileset_->updateViewGroup(tileset_->getDefaultViewGroup(), {viewState});
+  tileset_->loadTiles();
 
   // Only emit the fallback ellipsoid when no real terrain is being rendered
   // this frame. Otherwise it would be over-drawn anyway (~8k vertices and

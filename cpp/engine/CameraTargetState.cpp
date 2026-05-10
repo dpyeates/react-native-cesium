@@ -15,9 +15,27 @@ inline double quatDotAbs(const glm::dquat& a, const glm::dquat& b) {
   return std::abs(glm::dot(glm::normalize(a), glm::normalize(b)));
 }
 
-// Shortest signed angular delta for longitude, wrapped to [-180, 180].
-inline double lonDeltaDeg(double from, double to) {
+// Shortest signed angular delta wrapped to [-180, 180].
+inline double shortAngleDeltaDeg(double from, double to) {
   return std::fmod(to - from + 540.0, 360.0) - 180.0;
+}
+
+// Advance an EWMA with a new sample, or seed it on first use.
+inline void updateEwma(double& ewma, bool& active,
+                       std::chrono::steady_clock::time_point& lastTime,
+                       const std::chrono::steady_clock::time_point& now,
+                       double seedSec) {
+  if (!active) {
+    ewma     = seedSec;
+    lastTime = now;
+    active   = true;
+  } else {
+    const double dt = std::chrono::duration<double>(now - lastTime).count();
+    if (dt > 0.0) {
+      ewma = ewma + tunables::kEwmaIntervalAlpha * (dt - ewma);
+    }
+    lastTime = now;
+  }
 }
 
 } // namespace
@@ -28,8 +46,8 @@ void CameraTargetState::setAll(const CameraParams& target) {
   {
     std::lock_guard<std::mutex> g(mutex_);
     target_ = target;
-    // Deliberately do NOT touch interpolation state: setAll is engine-init only
-    // and the first frame must snap to the requested position immediately.
+    // Deliberately do NOT touch any interpolation state: setAll is init-only
+    // and the first rendered frame must snap to the requested position.
   }
   dirty_.store(true, std::memory_order_release);
   forceRender_.store(true, std::memory_order_release);
@@ -40,33 +58,58 @@ void CameraTargetState::setHpr(double lat, double lon, double alt,
   {
     std::lock_guard<std::mutex> g(mutex_);
 
+    const auto now = std::chrono::steady_clock::now();
+
+    // ── lat / lon ─────────────────────────────────────────────────────────
     const bool posChanged =
         std::abs(lat - target_.latitude)  > tunables::kEpsLatLon ||
         std::abs(lon - target_.longitude) > tunables::kEpsLatLon;
 
     if (posChanged) {
-      const auto now = std::chrono::steady_clock::now();
-
-      if (!hasInterpolation_) {
-        // First runtime lat/lon update: seed posFrom = destination so that
-        // lerp(dest, dest, t) = dest for all t — clean snap, no startup glide.
-        posFromLat_       = lat;
-        posFromLon_       = lon;
-        ewmaIntervalSec_  = tunables::kSmoothPositionTauMax / tunables::kSmoothPositionAlpha;
-        posUpdateTime_    = now;
-        hasInterpolation_ = true;
+      if (!hasPosInterp_) {
+        // First runtime change: seed "from" = destination for a clean snap,
+        // then enable interpolation for subsequent updates.
+        posFromLat_ = lat;
+        posFromLon_ = lon;
+        updateEwma(posEwmaIntervalSec_, hasPosInterp_, posUpdateTime_, now,
+                   tunables::kSmoothPositionTauMax / tunables::kSmoothPositionAlpha);
       } else {
-        // Subsequent update: record where we're moving FROM (the previous
-        // target), update the EWMA interval, and reset the clock.
         posFromLat_ = target_.latitude;
         posFromLon_ = target_.longitude;
+        updateEwma(posEwmaIntervalSec_, hasPosInterp_, posUpdateTime_, now,
+                   tunables::kSmoothPositionTauMax / tunables::kSmoothPositionAlpha);
+      }
+    }
 
-        const double dt = std::chrono::duration<double>(now - posUpdateTime_).count();
-        if (dt > 0.0) {
-          ewmaIntervalSec_ = ewmaIntervalSec_ +
-              tunables::kEwmaIntervalAlpha * (dt - ewmaIntervalSec_);
-        }
-        posUpdateTime_ = now;
+    // ── altitude ──────────────────────────────────────────────────────────
+    const bool altChanged =
+        std::abs(alt - target_.altitude) > tunables::kEpsAltitudeMeters;
+
+    if (altChanged) {
+      if (!hasAltInterp_) {
+        altFrom_ = alt;
+        updateEwma(altEwmaIntervalSec_, hasAltInterp_, altUpdateTime_, now,
+                   tunables::kSmoothPositionTauMax / tunables::kSmoothPositionAlpha);
+      } else {
+        altFrom_ = target_.altitude;
+        updateEwma(altEwmaIntervalSec_, hasAltInterp_, altUpdateTime_, now,
+                   tunables::kSmoothPositionTauMax / tunables::kSmoothPositionAlpha);
+      }
+    }
+
+    // ── heading ───────────────────────────────────────────────────────────
+    const bool hdgChanged =
+        angleDeltaAbsDeg(heading, target_.heading) > tunables::kEpsAngleDeg;
+
+    if (hdgChanged) {
+      if (!hasHdgInterp_) {
+        hdgFrom_ = heading;
+        updateEwma(hdgEwmaIntervalSec_, hasHdgInterp_, hdgUpdateTime_, now,
+                   tunables::kSmoothPositionTauMax / tunables::kSmoothPositionAlpha);
+      } else {
+        hdgFrom_ = target_.heading;
+        updateEwma(hdgEwmaIntervalSec_, hasHdgInterp_, hdgUpdateTime_, now,
+                   tunables::kSmoothPositionTauMax / tunables::kSmoothPositionAlpha);
       }
     }
 
@@ -85,8 +128,8 @@ void CameraTargetState::setViewCorrection(const glm::dquat& q) {
   {
     std::lock_guard<std::mutex> g(mutex_);
     target_.viewCorrection = q;
-    // Position cadence intentionally NOT updated — viewCorrection changes
-    // carry no lat/lon information and must not affect the interpolation window.
+    // Interpolation state is not touched — viewCorrection carries no
+    // positional information and must not affect any of the three EWMAs.
   }
   dirty_.store(true, std::memory_order_release);
   forceRender_.store(true, std::memory_order_release);
@@ -100,12 +143,11 @@ CameraParams CameraTargetState::snapshot() const {
 
   CameraParams result = target_;
 
-  if (hasInterpolation_ && ewmaIntervalSec_ > 0.0) {
+  // ── lat / lon ─────────────────────────────────────────────────────────────
+  if (hasPosInterp_ && posEwmaIntervalSec_ > 0.0) {
     const double dLat = target_.latitude - posFromLat_;
-    const double dLon = lonDeltaDeg(posFromLon_, target_.longitude);
+    const double dLon = shortAngleDeltaDeg(posFromLon_, target_.longitude);
 
-    // Snap-through guard: genuine teleports (setCamera(NewYork → Tokyo)) bypass
-    // the interpolation so they remain instant rather than gliding across the planet.
     const bool snapThrough =
         std::abs(dLat) > tunables::kPosSnapThroughDeg ||
         std::abs(dLon) > tunables::kPosSnapThroughDeg;
@@ -113,10 +155,33 @@ CameraParams CameraTargetState::snapshot() const {
     if (!snapThrough) {
       const double elapsed =
           std::chrono::duration<double>(now - posUpdateTime_).count();
-      const double t = std::min(elapsed / ewmaIntervalSec_, 1.0);
-
+      const double t = std::min(elapsed / posEwmaIntervalSec_, 1.0);
       result.latitude  = posFromLat_ + t * dLat;
       result.longitude = posFromLon_ + t * dLon;
+    }
+  }
+
+  // ── altitude ──────────────────────────────────────────────────────────────
+  if (hasAltInterp_ && altEwmaIntervalSec_ > 0.0) {
+    const double dAlt = target_.altitude - altFrom_;
+
+    if (std::abs(dAlt) <= tunables::kAltSnapThroughMeters) {
+      const double elapsed =
+          std::chrono::duration<double>(now - altUpdateTime_).count();
+      const double t = std::min(elapsed / altEwmaIntervalSec_, 1.0);
+      result.altitude = altFrom_ + t * dAlt;
+    }
+  }
+
+  // ── heading ───────────────────────────────────────────────────────────────
+  if (hasHdgInterp_ && hdgEwmaIntervalSec_ > 0.0) {
+    const double dHdg = shortAngleDeltaDeg(hdgFrom_, target_.heading);
+
+    if (std::abs(dHdg) <= tunables::kHdgSnapThroughDeg) {
+      const double elapsed =
+          std::chrono::duration<double>(now - hdgUpdateTime_).count();
+      const double t = std::min(elapsed / hdgEwmaIntervalSec_, 1.0);
+      result.heading = hdgFrom_ + t * dHdg;
     }
   }
 

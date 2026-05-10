@@ -403,10 +403,11 @@ Every value you pass to `setCamera` / `setCameraQuaternion` is treated as a **de
 
 | DoF | Smoothing |
 | --- | --- |
-| `latitude` / `longitude` | **Linear interpolation** at constant speed between position fixes. When a new lat/lon arrives, the native engine records the previous target as the "from" position and linearly lerps toward the new target over the EWMA inter-arrival interval (e.g. a 1 Hz GPS feed gives a 1 s travel time, so the camera moves at exactly the vehicle's speed between fixes). At 60 Hz gestures the interval collapses to ~16 ms making the interpolation indistinguishable from an instant snap. Cross-planet jumps (Δ > ~0.5°) bypass interpolation so deliberate teleports remain instant. Antimeridian crossings always rotate the short way. |
-| `altitude` | Exponential, fixed `τ ≈ 40 ms`. |
-| `heading` / `pitch` / `roll` | Exponential on the shortest-arc angular delta, fixed `τ ≈ 20–33 ms`. |
-| `viewCorrection` (quaternion) | SLERP-based exponential, fixed `τ ≈ 20 ms`, hemisphere-corrected so it always takes the short rotation. |
+| `latitude` / `longitude` | **Linear interpolation** — own independent EWMA. Constant-velocity glide at GPS cadence; near-instant at gesture rate. Cross-planet jumps (Δ > ~0.5°) bypass interpolation. Antimeridian crossings always rotate the short way. |
+| `altitude` | **Linear interpolation** — own independent EWMA. Self-tunes whether altitude comes from GPS (1 Hz → 1 s glide) or a barometer (50 Hz → ~20 ms, near-instant). Jumps > 500 m bypass interpolation. |
+| `heading` | **Linear interpolation** — own independent EWMA. Constant yaw-rate between GPS course-over-ground fixes; near-instant when heading comes from a magnetometer at high rate. Jumps > 90° bypass interpolation. |
+| `pitch` / `roll` | Exponential on the shortest-arc angular delta, fixed `τ ≈ 20 ms`. Almost always attitude-sensor driven; ease-out feel is appropriate. |
+| `viewCorrection` (quaternion) | SLERP-based exponential, fixed `τ ≈ 20 ms`, hemisphere-corrected. |
 | `verticalFovDeg` | Applied directly (not smoothed). |
 
 You don't have to do anything special to take advantage of this — the smoother already runs, it's the same code path whether your driver is a Reanimated worklet at 60 Hz, a `setInterval` push at 10 Hz, or a 1 Hz GPS subscription. Just call `setCamera` whenever you have a new value.

@@ -43,30 +43,42 @@ inline constexpr int32_t kDefaultLoadingDescendantLimit       = 20;
 
 // Camera smoothing constants — shared between platform bridges so jank /
 // motion feel is identical on iOS and Android.
-inline constexpr double kSmoothAltitude     = 25.0;
-inline constexpr double kSmoothHeading      = 30.0;
+//
+// lat / lon / altitude / heading use per-DoF linear interpolation inside
+// CameraTargetState::snapshot(): each DoF tracks its own EWMA of inter-arrival
+// times and linearly lerps from its previous value to its current target over
+// that interval. At ~60 Hz (gestures) the EWMA collapses to ~16 ms so the
+// motion is indistinguishable from a snap; at 1 Hz (GPS) the DoF glides at
+// constant velocity between fixes — no teleports or ease-out deceleration.
+// pitch / roll / viewCorrection remain on their fixed exponential curves
+// because they are almost always driven by high-rate attitude sensors.
+
+// Exponential smoothing for pitch / roll / viewCorrection (k = 1/τ).
 inline constexpr double kSmoothPitch        = 50.0;
 inline constexpr double kSmoothRoll         = 50.0;
 inline constexpr double kSmoothViewCorr     = 50.0;
+
+// Convergence epsilons (used by deltaExceedsEpsilon and snap-to-exact).
 inline constexpr double kEpsLatLon          = 1e-7;
 inline constexpr double kEpsAltitudeMeters  = 0.1;
 inline constexpr double kEpsAngleDeg        = 0.05;
 inline constexpr double kEpsQuatDot         = 1e-8;
 
-// Lat/lon are smoothed adaptively: τ = clamp(α · ewmaInterval, τmin, τmax),
-// then per frame we apply 1 - exp(-dt/τ). α<1 means the camera converges
-// before the next sample lands. With ~60 Hz gestures the EWMA interval is
-// ~16 ms ⇒ τ at the floor (5 ms) ⇒ ≤1-frame trail (indistinguishable from
-// the previous snap). With a 1 Hz GPS feed τ ≈ 450 ms ⇒ ~95 % converged
-// before the next sample arrives, removing the per-second teleport.
+// Linear interpolation parameters shared by lat/lon, altitude, and heading.
+//
+// kSmoothPositionTauMax / kSmoothPositionAlpha is the seed value for the EWMA
+// on the first update (gives a generous interpolation window before the cadence
+// is known). kEwmaIntervalAlpha controls how quickly the EWMA adapts to a rate
+// change (0.3 = ~3-5 samples to converge to a new cadence).
 inline constexpr double kSmoothPositionAlpha   = 0.45;
-inline constexpr double kSmoothPositionTauMin  = 0.005;
 inline constexpr double kSmoothPositionTauMax  = 0.6;
-// Genuine teleports (e.g. setCamera(NewYork) → setCamera(Tokyo)) skip the
-// smoother — easing across the planet over 600 ms looks worse than a snap.
-inline constexpr double kPosSnapThroughDeg     = 0.5;
-// EWMA mixing factor for the inter-arrival interval of setCamera calls.
 inline constexpr double kEwmaIntervalAlpha     = 0.3;
+
+// Snap-through guards: deltas larger than these skip interpolation so a
+// deliberate teleport (e.g. setCamera(NewYork → Tokyo)) remains instant.
+inline constexpr double kPosSnapThroughDeg     = 0.5;    // lat or lon, ~55 km
+inline constexpr double kAltSnapThroughMeters  = 500.0;  // altitude
+inline constexpr double kHdgSnapThroughDeg     = 90.0;   // heading
 
 // Metrics throttle: emit telemetry every N rendered frames.
 inline constexpr int kMetricsEmitEveryFrames = 20;

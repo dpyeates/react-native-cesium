@@ -22,41 +22,49 @@ namespace reactnativecesium {
 // `dirty_` and `forceRender_` are independent atomic flags so the read side can
 // poll without taking the lock when the camera has not moved.
 //
-// Lat/lon interpolation
-// ─────────────────────
-// When setHpr is called with a new lat/lon, `posFrom` (old target) and
-// `posUpdateTime` are recorded inside the mutex. snapshot() then linearly
-// interpolates posFrom → target over `ewmaIntervalSec` (EWMA of inter-arrival
-// times). This produces constant-velocity motion between position fixes —
-// realistic for any vehicle/GPS source — without any changes to the public API.
+// Per-DoF linear interpolation (lat/lon, altitude, heading)
+// ──────────────────────────────────────────────────────────
+// Each of lat/lon, altitude, and heading maintains its own independent EWMA
+// of inter-arrival times and only updates that EWMA when *its own value*
+// actually changes. snapshot() then linearly interpolates each DoF from its
+// previous value to its current target over its own EWMA interval.
 //
-// Special cases handled in snapshot():
-//   - t >= 1 : camera has reached the target, returns target_ directly.
-//   - Snap-through guard: deltas > kPosSnapThroughDeg bypass interpolation so
-//     deliberate teleports (setCamera(NewYork → Tokyo)) remain instant.
-//   - First setHpr for a given lat/lon: posFrom is set to the *destination*
-//     so lerp(dest, dest, t) = dest — no startup glide.
-//   - setAll (initialisation only): does not touch interpolation state; always
-//     snaps directly.
+// This means lat/lon, altitude, and heading each self-tune independently:
+//   - 60 Hz gesture input → EWMA ~16 ms → interpolation near-instant (snap)
+//   - 1 Hz GPS → EWMA ~1 s → constant-velocity glide between fixes
+//   - 50 Hz barometer for altitude + 1 Hz GPS for lat/lon → altitude behaves
+//     near-instant, lat/lon glides — with no special-casing needed.
+//
+// Special cases in snapshot():
+//   - t >= 1: camera has reached the target, returns target_ directly.
+//   - Snap-through guard: large jumps bypass interpolation so deliberate
+//     teleports remain instant.
+//   - First change per DoF: "from" = destination, so lerp(dest, dest, t) = dest
+//     for all t — clean snap, no startup glide.
+//   - setAll (init-only): never touches any interpolation state.
+//
+// pitch / roll / viewCorrection are NOT interpolated here; CameraSmoother
+// applies fixed-rate exponential curves to them (appropriate for high-rate
+// attitude sensors).
 class CameraTargetState {
 public:
   CameraTargetState() = default;
 
   // Replace the entire target. Used only for engine initialisation; does NOT
-  // update position-interpolation state so the first rendered frame snaps.
+  // update any interpolation state so the first rendered frame snaps.
   void setAll(const CameraParams& target);
 
   // Update lat/lon/alt + heading/pitch/roll, leaving viewCorrection unchanged.
-  // When lat/lon actually changes, updates the linear-interpolation bookkeeping.
+  // Independently tracks cadence for lat/lon, altitude, and heading.
   void setHpr(double lat, double lon, double alt,
               double heading, double pitch, double roll);
 
   void setViewCorrection(const glm::dquat& q);
 
-  // Snapshot the demand target for this render frame.  Lat/lon are linearly
-  // interpolated between the previous target (posFrom) and the current target
-  // over the EWMA inter-arrival interval.  All other DoFs are returned as-is
-  // (the smoother handles their exponential curves).
+  // Snapshot the demand target for this render frame. lat/lon, altitude, and
+  // heading are linearly interpolated to their "current" position based on
+  // each DoF's own EWMA interval. pitch/roll/viewCorrection are returned as-is
+  // (CameraSmoother handles their exponential curves).
   CameraParams snapshot() const;
 
   // Lightweight, lock-free check used by the render thread to decide whether
@@ -86,18 +94,33 @@ private:
   std::atomic<bool> dirty_{false};
   std::atomic<bool> forceRender_{true};
 
-  // ── Lat/lon linear interpolation state (all protected by mutex_) ──────────
-  // posFromLat_/posFromLon_: the target position when the last update arrived
-  //   (i.e. where we are smoothly moving FROM).
-  // posUpdateTime_:          wall-clock time of the last lat/lon change.
-  // ewmaIntervalSec_:        EWMA of inter-arrival times of lat/lon changes.
-  // hasInterpolation_:       true once we have valid posFrom + posUpdateTime
-  //                          data (false until the second distinct lat/lon value).
-  double                                 posFromLat_{0.0};
-  double                                 posFromLon_{0.0};
-  std::chrono::steady_clock::time_point  posUpdateTime_{};
-  double                                 ewmaIntervalSec_{0.0};
-  bool                                   hasInterpolation_{false};
+  // ── Per-DoF linear interpolation state (all protected by mutex_) ─────────
+  // Each DoF has: a "from" value, a wall-clock timestamp of the last change,
+  // an EWMA of inter-arrival times, and an "active" flag.
+  //
+  // Pattern per DoF:
+  //   First change:      from = destination (snap), seed EWMA, set active.
+  //   Subsequent change: from = old target, update EWMA, reset clock.
+  //   snapshot():        t = clamp(elapsed/ewma, 0, 1); result = from + t*delta.
+
+  // lat / lon
+  double                                posFromLat_{0.0};
+  double                                posFromLon_{0.0};
+  std::chrono::steady_clock::time_point posUpdateTime_{};
+  double                                posEwmaIntervalSec_{0.0};
+  bool                                  hasPosInterp_{false};
+
+  // altitude
+  double                                altFrom_{0.0};
+  std::chrono::steady_clock::time_point altUpdateTime_{};
+  double                                altEwmaIntervalSec_{0.0};
+  bool                                  hasAltInterp_{false};
+
+  // heading
+  double                                hdgFrom_{0.0};
+  std::chrono::steady_clock::time_point hdgUpdateTime_{};
+  double                                hdgEwmaIntervalSec_{0.0};
+  bool                                  hasHdgInterp_{false};
 };
 
 } // namespace reactnativecesium

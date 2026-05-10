@@ -29,34 +29,31 @@ CameraParams CameraSmoother::step(
     const CameraParams& current, const CameraParams& target, double dt) {
   CameraParams next = current;
 
-  // lat/lon: snap directly to the target.
-  // CameraTargetState::snapshot() already produces a linearly-interpolated
-  // position that advances at constant speed between position fixes, so
-  // snapping here gives smooth, constant-velocity motion with no ease-in/out.
+  // lat / lon / altitude / heading: snap directly to the (already linearly-
+  // interpolated) target from CameraTargetState::snapshot(). The constant-
+  // velocity motion is fully handled there; no additional smoothing is applied
+  // here so the movement stays linear rather than decelerating.
   next.latitude  = target.latitude;
   next.longitude = target.longitude;
+  next.altitude  = target.altitude;
+  next.heading   = target.heading;
 
-  const double aAlt   = 1.0 - std::exp(-tunables::kSmoothAltitude * dt);
-  const double aHdg   = 1.0 - std::exp(-tunables::kSmoothHeading  * dt);
+  // pitch / roll / viewCorrection: exponential ease-out. These are almost
+  // always driven by high-rate attitude sensors (accelerometer, gyroscope)
+  // where the ease-out feel is appropriate and desired.
   const double aPitch = 1.0 - std::exp(-tunables::kSmoothPitch    * dt);
   const double aRoll  = 1.0 - std::exp(-tunables::kSmoothRoll     * dt);
   const double aViewQ = 1.0 - std::exp(-tunables::kSmoothViewCorr * dt);
 
-  next.altitude = current.altitude + aAlt * (target.altitude - current.altitude);
-  next.heading  = lerpAngleDeg(current.heading, target.heading, aHdg);
-  next.pitch    = lerpAngleDeg(current.pitch,   target.pitch,   aPitch);
-  next.roll     = lerpAngleDeg(current.roll,    target.roll,    aRoll);
+  next.pitch    = lerpAngleDeg(current.pitch, target.pitch, aPitch);
+  next.roll     = lerpAngleDeg(current.roll,  target.roll,  aRoll);
 
   glm::dquat cq = glm::normalize(current.viewCorrection);
   glm::dquat tq = glm::normalize(target.viewCorrection);
   if (glm::dot(cq, tq) < 0.0) tq = -tq;
   next.viewCorrection = glm::normalize(glm::slerp(cq, tq, aViewQ));
 
-  // Eventually-exact convergence: snap once the residual is sub-epsilon.
-  if (std::abs(target.altitude - next.altitude) <= tunables::kEpsAltitudeMeters)
-    next.altitude = target.altitude;
-  if (angleDeltaAbsDeg(next.heading, target.heading) <= tunables::kEpsAngleDeg)
-    next.heading = target.heading;
+  // Eventually-exact convergence for exponential DoFs: snap once sub-epsilon.
   if (angleDeltaAbsDeg(next.pitch, target.pitch) <= tunables::kEpsAngleDeg)
     next.pitch = target.pitch;
   if (angleDeltaAbsDeg(next.roll, target.roll) <= tunables::kEpsAngleDeg)
