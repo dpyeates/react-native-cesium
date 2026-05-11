@@ -69,8 +69,8 @@ inline constexpr int32_t kDefaultLoadingDescendantLimit       = 20;
 inline constexpr double kAlphaPos    = 0.6;   inline constexpr double kBetaPos    = 0.05;
 inline constexpr double kAlphaAlt    = 0.6;   inline constexpr double kBetaAlt    = 0.05;
 inline constexpr double kAlphaHdg    = 0.55;  inline constexpr double kBetaHdg    = 0.05;
-inline constexpr double kAlphaPitch  = 0.5;   inline constexpr double kBetaPitch  = 0.05;
-inline constexpr double kAlphaRoll   = 0.5;   inline constexpr double kBetaRoll   = 0.05;
+inline constexpr double kAlphaPitch  = 0.75;  inline constexpr double kBetaPitch  = 0.05;
+inline constexpr double kAlphaRoll   = 0.75;  inline constexpr double kBetaRoll   = 0.05;
 inline constexpr double kAlphaVfov     = 0.4;   // no velocity term
 inline constexpr double kAlphaViewCorr = 0.5;   // SLERP toward target
 
