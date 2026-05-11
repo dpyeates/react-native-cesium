@@ -111,6 +111,8 @@ namespace margelo::nitro::reactnativecesium {
       virtual void setMaxGroundSpeedMps(std::optional<double> maxGroundSpeedMps) = 0;
       virtual std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() = 0;
       virtual void setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) = 0;
+      virtual std::optional<std::function<void(const CameraState& /* camera */)>> getOnActualCamera() = 0;
+      virtual void setOnActualCamera(const std::optional<std::function<void(const CameraState& /* camera */)>>& onActualCamera) = 0;
 
     public:
       // Methods

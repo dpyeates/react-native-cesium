@@ -32,6 +32,7 @@
     "maxClimbRateMps": true,
     "maxGroundSpeedMps": true,
     "onMetrics": true,
+    "onActualCamera": true,
     "hybridRef": true
   }
 }

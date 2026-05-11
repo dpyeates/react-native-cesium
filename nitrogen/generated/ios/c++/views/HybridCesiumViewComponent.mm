@@ -219,6 +219,11 @@ using namespace margelo::nitro::reactnativecesium::views;
     swiftPart.setOnMetrics(newViewProps.onMetrics.value);
     newViewProps.onMetrics.isDirty = false;
   }
+  // onActualCamera: optional
+  if (newViewProps.onActualCamera.isDirty) {
+    swiftPart.setOnActualCamera(newViewProps.onActualCamera.value);
+    newViewProps.onActualCamera.isDirty = false;
+  }
 
   swiftPart.afterUpdate();
 

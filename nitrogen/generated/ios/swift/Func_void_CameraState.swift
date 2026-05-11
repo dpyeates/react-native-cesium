@@ -8,21 +8,21 @@
 import NitroModules
 
 /**
- * Wraps a Swift `(_ value: CameraState) -> Void` as a class.
+ * Wraps a Swift `(_ camera: CameraState) -> Void` as a class.
  * This class can be used from C++, e.g. to wrap the Swift closure as a `std::function`.
  */
 public final class Func_void_CameraState {
   public typealias bridge = margelo.nitro.reactnativecesium.bridge.swift
 
-  private let closure: (_ value: CameraState) -> Void
+  private let closure: (_ camera: CameraState) -> Void
 
-  public init(_ closure: @escaping (_ value: CameraState) -> Void) {
+  public init(_ closure: @escaping (_ camera: CameraState) -> Void) {
     self.closure = closure
   }
 
   @inline(__always)
-  public func call(value: CameraState) -> Void {
-    self.closure(value)
+  public func call(camera: CameraState) -> Void {
+    self.closure(camera)
   }
 
   /**

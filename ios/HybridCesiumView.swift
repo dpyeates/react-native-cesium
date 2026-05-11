@@ -145,6 +145,23 @@ class HybridCesiumView: HybridCesiumViewSpec {
 
   var onMetrics: ((CesiumMetrics) -> Void)?
 
+  var onActualCamera: ((CameraState) -> Void)?
+  // Both accessed only on the render queue; no extra locking needed.
+  private var actualCameraLastEmitTime: CFTimeInterval = 0
+  private var actualCameraLastSent: CameraState? = nil
+
+  // Returns true when the two snapshots differ enough to warrant a JS dispatch.
+  // Thresholds mirror EngineTunables.hpp kActualCameraCallbackInterval* constants.
+  private func actualCameraChanged(_ a: CameraState, from b: CameraState) -> Bool {
+    abs(a.latitude       - b.latitude)       > 1e-7 ||
+    abs(a.longitude      - b.longitude)      > 1e-7 ||
+    abs(a.altitude       - b.altitude)       > 0.05 ||
+    abs(a.heading        - b.heading)        > 0.01 ||
+    abs(a.pitch          - b.pitch)          > 0.01 ||
+    abs(a.roll           - b.roll)           > 0.01 ||
+    abs(a.verticalFovDeg - b.verticalFovDeg) > 0.01
+  }
+
   // MARK: - Methods
 
   func getActualCamera() throws -> Promise<CameraState> {
@@ -544,11 +561,35 @@ class HybridCesiumView: HybridCesiumViewSpec {
       ) : nil
       if shouldEmitMetrics { self.metricsFrameCounter = 0 }
 
+      // onActualCamera: poll at 5 Hz (kActualCameraCallbackIntervalSec = 0.2 s),
+      // but only dispatch when at least one field has moved beyond its epsilon.
+      var actualCameraSnapshot: CameraState? = nil
+      if self.onActualCamera != nil && !self.isShutdown &&
+         (nowSeconds - self.actualCameraLastEmitTime) >= 0.2 {
+        self.actualCameraLastEmitTime = nowSeconds
+        let candidate = CameraState(
+          latitude: bridge.readActualLatitude(),
+          longitude: bridge.readActualLongitude(),
+          altitude: bridge.readActualAltitude(),
+          heading: bridge.readActualHeading(),
+          pitch: bridge.readActualPitch(),
+          roll: bridge.readActualRoll(),
+          verticalFovDeg: bridge.readActualVerticalFovDeg()
+        )
+        if self.actualCameraLastSent.map({ self.actualCameraChanged(candidate, from: $0) }) ?? true {
+          actualCameraSnapshot = candidate
+          self.actualCameraLastSent = candidate
+        }
+      }
+
       DispatchQueue.main.async { [weak self] in
         guard let self = self, !self.isShutdown else { return }
         self.setDisplayLinkFrameRate(idle: nextIsIdle)
         if let m = metricsSnapshot, let cb = self.onMetrics {
           cb(m)
+        }
+        if let cam = actualCameraSnapshot, let cb = self.onActualCamera {
+          cb(cam)
         }
       }
       // renderInFlight is cleared by the defer at the top of this closure.
@@ -562,6 +603,8 @@ class HybridCesiumView: HybridCesiumViewSpec {
     // JS dispatcher that may already be gone.
     isShutdown = true
     onMetrics = nil
+    onActualCamera = nil
+    actualCameraLastSent = nil
 
     layoutPollTimer?.invalidate()
     layoutPollTimer = nil

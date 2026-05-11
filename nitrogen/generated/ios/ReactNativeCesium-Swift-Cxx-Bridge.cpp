@@ -22,11 +22,11 @@ namespace margelo::nitro::reactnativecesium::bridge::swift {
     };
   }
   
-  // pragma MARK: std::function<void(const CameraState& /* result */)>
+  // pragma MARK: std::function<void(const CameraState& /* camera */)>
   Func_void_CameraState create_Func_void_CameraState(void* NON_NULL swiftClosureWrapper) noexcept {
     auto swiftClosure = ReactNativeCesium::Func_void_CameraState::fromUnsafe(swiftClosureWrapper);
-    return [swiftClosure = std::move(swiftClosure)](const CameraState& result) mutable -> void {
-      swiftClosure.call(result);
+    return [swiftClosure = std::move(swiftClosure)](const CameraState& camera) mutable -> void {
+      swiftClosure.call(camera);
     };
   }
   

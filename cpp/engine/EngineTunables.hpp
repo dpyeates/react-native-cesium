@@ -130,6 +130,18 @@ inline constexpr double kOutlierHeadingDeg  = 0.0;
 // Metrics throttle: emit telemetry every N rendered frames.
 inline constexpr int kMetricsEmitEveryFrames = 20;
 
+// Minimum interval between onActualCamera callback emissions (seconds).
+// 0.2 s = 5 Hz — fast enough for HUD alignment, light on the JS bridge.
+inline constexpr double kActualCameraCallbackIntervalSec = 0.2;
+
+// Change-detection thresholds for onActualCamera.
+// A new snapshot is only dispatched to JS when at least one field has moved
+// by more than the corresponding epsilon since the last emission.
+inline constexpr double kActualCameraDeltaLatLonDeg = 1e-7;   // ~1 cm at equator
+inline constexpr double kActualCameraDeltaAltMeters = 0.05;   // 5 cm
+inline constexpr double kActualCameraDeltaAngleDeg  = 0.01;   // heading / pitch / roll
+inline constexpr double kActualCameraDeltaFovDeg    = 0.01;   // vertical FoV
+
 // Idle-probe interval (seconds): when the engine is idle, periodically tick
 // to catch late tile completions without redundant full draws.
 inline constexpr double kIdleProbeSeconds = 0.25;

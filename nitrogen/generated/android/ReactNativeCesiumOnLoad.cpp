@@ -17,6 +17,7 @@
 
 #include "JHybridCesiumViewSpec.hpp"
 #include "JFunc_void_CesiumMetrics.hpp"
+#include "JFunc_void_CameraState.hpp"
 #include "views/JHybridCesiumViewStateUpdater.hpp"
 #include <NitroModules/DefaultConstructableObject.hpp>
 
@@ -44,6 +45,7 @@ void registerAllNatives() {
   // Register native JNI methods
   margelo::nitro::reactnativecesium::JHybridCesiumViewSpec::CxxPart::registerNatives();
   margelo::nitro::reactnativecesium::JFunc_void_CesiumMetrics_cxx::registerNatives();
+  margelo::nitro::reactnativecesium::JFunc_void_CameraState_cxx::registerNatives();
   margelo::nitro::reactnativecesium::views::JHybridCesiumViewStateUpdater::registerNatives();
 
   // Register Nitro Hybrid Objects

@@ -23,6 +23,7 @@ namespace margelo::nitro::reactnativecesium { struct Quaternion; }
 #include "JFunc_void_CesiumMetrics.hpp"
 #include <NitroModules/JNICallable.hpp>
 #include "JCesiumMetrics.hpp"
+#include "JFunc_void_CameraState.hpp"
 #include <NitroModules/Promise.hpp>
 #include <NitroModules/JPromise.hpp>
 #include "Quaternion.hpp"
@@ -317,6 +318,23 @@ namespace margelo::nitro::reactnativecesium {
   void JHybridCesiumViewSpec::setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_CesiumMetrics::javaobject> /* onMetrics */)>("setOnMetrics_cxx");
     method(_javaPart, onMetrics.has_value() ? JFunc_void_CesiumMetrics_cxx::fromCpp(onMetrics.value()) : nullptr);
+  }
+  std::optional<std::function<void(const CameraState& /* camera */)>> JHybridCesiumViewSpec::getOnActualCamera() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_CameraState::javaobject>()>("getOnActualCamera_cxx");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional([&]() -> std::function<void(const CameraState& /* camera */)> {
+      if (__result->isInstanceOf(JFunc_void_CameraState_cxx::javaClassStatic())) [[likely]] {
+        auto downcast = jni::static_ref_cast<JFunc_void_CameraState_cxx::javaobject>(__result);
+        return downcast->cthis()->getFunction();
+      } else {
+        auto __resultRef = jni::make_global(__result);
+        return JNICallable<JFunc_void_CameraState, void(CameraState)>(std::move(__resultRef));
+      }
+    }()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setOnActualCamera(const std::optional<std::function<void(const CameraState& /* camera */)>>& onActualCamera) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_CameraState::javaobject> /* onActualCamera */)>("setOnActualCamera_cxx");
+    method(_javaPart, onActualCamera.has_value() ? JFunc_void_CameraState_cxx::fromCpp(onActualCamera.value()) : nullptr);
   }
 
   // Methods

@@ -149,6 +149,10 @@ void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     hybridView->setOnMetrics(props->onMetrics.value);
     props->onMetrics.isDirty = false;
   }
+  if (props->onActualCamera.isDirty) {
+    hybridView->setOnActualCamera(props->onActualCamera.value);
+    props->onActualCamera.isDirty = false;
+  }
 
   // Update hybridRef if it changed
   if (props->hybridRef.isDirty) {

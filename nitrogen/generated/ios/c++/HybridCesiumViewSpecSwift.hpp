@@ -261,6 +261,13 @@ namespace margelo::nitro::reactnativecesium {
     inline void setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) noexcept override {
       _swiftPart.setOnMetrics(onMetrics);
     }
+    inline std::optional<std::function<void(const CameraState& /* camera */)>> getOnActualCamera() noexcept override {
+      auto __result = _swiftPart.getOnActualCamera();
+      return __result;
+    }
+    inline void setOnActualCamera(const std::optional<std::function<void(const CameraState& /* camera */)>>& onActualCamera) noexcept override {
+      _swiftPart.setOnActualCamera(onActualCamera);
+    }
 
   public:
     // Methods

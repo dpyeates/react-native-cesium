@@ -306,6 +306,16 @@ namespace margelo::nitro::reactnativecesium::views {
         throw std::runtime_error(std::string("CesiumView.onMetrics: ") + exc.what());
       }
     }()),
+    onActualCamera([&]() -> CachedProp<std::optional<std::function<void(const CameraState& /* camera */)>>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("onActualCamera", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.onActualCamera;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<std::function<void(const CameraState& /* camera */)>>>::fromRawValue(*runtime, value.asObject(*runtime).getProperty(*runtime, PropNameIDCache::get(*runtime, "f")), sourceProps.onActualCamera);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.onActualCamera: ") + exc.what());
+      }
+    }()),
     hybridRef([&]() -> CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>> {
       try {
         const react::RawValue* rawValue = rawProps.at("hybridRef", nullptr, nullptr);
@@ -347,6 +357,7 @@ namespace margelo::nitro::reactnativecesium::views {
       case hashString("maxClimbRateMps"): return true;
       case hashString("maxGroundSpeedMps"): return true;
       case hashString("onMetrics"): return true;
+      case hashString("onActualCamera"): return true;
       case hashString("hybridRef"): return true;
       default: return false;
     }

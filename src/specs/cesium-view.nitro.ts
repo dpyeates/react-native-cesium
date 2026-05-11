@@ -110,6 +110,15 @@ export interface CesiumViewProps extends HybridViewProps {
   maxGroundSpeedMps?: number
 
   onMetrics?: (metrics: CesiumMetrics) => void
+
+  /**
+   * Called at ~5 Hz with the post-integration actual camera — the same state
+   * returned by `getActualCamera()`. Only fires when at least one field has
+   * changed beyond its epsilon threshold since the last emission, so a
+   * stationary camera produces no bridge traffic. Use this to keep HUD overlay
+   * symbology aligned with the rendered view without polling from JS.
+   */
+  onActualCamera?: (camera: CameraState) => void
 }
 
 /**

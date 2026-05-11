@@ -108,6 +108,43 @@ namespace margelo::nitro::reactnativecesium::bridge::swift {
     return optional.value();
   }
   
+  // pragma MARK: std::function<void(const CameraState& /* camera */)>
+  /**
+   * Specialized version of `std::function<void(const CameraState&)>`.
+   */
+  using Func_void_CameraState = std::function<void(const CameraState& /* camera */)>;
+  /**
+   * Wrapper class for a `std::function<void(const CameraState& / * camera * /)>`, this can be used from Swift.
+   */
+  class Func_void_CameraState_Wrapper final {
+  public:
+    explicit Func_void_CameraState_Wrapper(std::function<void(const CameraState& /* camera */)>&& func): _function(std::make_unique<std::function<void(const CameraState& /* camera */)>>(std::move(func))) {}
+    inline void call(CameraState camera) const noexcept {
+      _function->operator()(camera);
+    }
+  private:
+    std::unique_ptr<std::function<void(const CameraState& /* camera */)>> _function;
+  } SWIFT_NONCOPYABLE;
+  Func_void_CameraState create_Func_void_CameraState(void* NON_NULL swiftClosureWrapper) noexcept;
+  inline Func_void_CameraState_Wrapper wrap_Func_void_CameraState(Func_void_CameraState value) noexcept {
+    return Func_void_CameraState_Wrapper(std::move(value));
+  }
+  
+  // pragma MARK: std::optional<std::function<void(const CameraState& /* camera */)>>
+  /**
+   * Specialized version of `std::optional<std::function<void(const CameraState& / * camera * /)>>`.
+   */
+  using std__optional_std__function_void_const_CameraState_____camera______ = std::optional<std::function<void(const CameraState& /* camera */)>>;
+  inline std::optional<std::function<void(const CameraState& /* camera */)>> create_std__optional_std__function_void_const_CameraState_____camera______(const std::function<void(const CameraState& /* camera */)>& value) noexcept {
+    return std::optional<std::function<void(const CameraState& /* camera */)>>(value);
+  }
+  inline bool has_value_std__optional_std__function_void_const_CameraState_____camera______(const std::optional<std::function<void(const CameraState& /* camera */)>>& optional) noexcept {
+    return optional.has_value();
+  }
+  inline std::function<void(const CameraState& /* camera */)> get_std__optional_std__function_void_const_CameraState_____camera______(const std::optional<std::function<void(const CameraState& /* camera */)>>& optional) noexcept {
+    return optional.value();
+  }
+  
   // pragma MARK: std::shared_ptr<Promise<CameraState>>
   /**
    * Specialized version of `std::shared_ptr<Promise<CameraState>>`.
@@ -118,28 +155,6 @@ namespace margelo::nitro::reactnativecesium::bridge::swift {
   }
   inline PromiseHolder<CameraState> wrap_std__shared_ptr_Promise_CameraState__(std::shared_ptr<Promise<CameraState>> promise) noexcept {
     return PromiseHolder<CameraState>(std::move(promise));
-  }
-  
-  // pragma MARK: std::function<void(const CameraState& /* result */)>
-  /**
-   * Specialized version of `std::function<void(const CameraState&)>`.
-   */
-  using Func_void_CameraState = std::function<void(const CameraState& /* result */)>;
-  /**
-   * Wrapper class for a `std::function<void(const CameraState& / * result * /)>`, this can be used from Swift.
-   */
-  class Func_void_CameraState_Wrapper final {
-  public:
-    explicit Func_void_CameraState_Wrapper(std::function<void(const CameraState& /* result */)>&& func): _function(std::make_unique<std::function<void(const CameraState& /* result */)>>(std::move(func))) {}
-    inline void call(CameraState result) const noexcept {
-      _function->operator()(result);
-    }
-  private:
-    std::unique_ptr<std::function<void(const CameraState& /* result */)>> _function;
-  } SWIFT_NONCOPYABLE;
-  Func_void_CameraState create_Func_void_CameraState(void* NON_NULL swiftClosureWrapper) noexcept;
-  inline Func_void_CameraState_Wrapper wrap_Func_void_CameraState(Func_void_CameraState value) noexcept {
-    return Func_void_CameraState_Wrapper(std::move(value));
   }
   
   // pragma MARK: std::function<void(const std::exception_ptr& /* error */)>

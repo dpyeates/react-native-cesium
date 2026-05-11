@@ -72,6 +72,7 @@ namespace margelo::nitro::reactnativecesium::views {
     CachedProp<std::optional<double>> maxClimbRateMps;
     CachedProp<std::optional<double>> maxGroundSpeedMps;
     CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> onMetrics;
+    CachedProp<std::optional<std::function<void(const CameraState& /* camera */)>>> onActualCamera;
     CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>> hybridRef;
 
   private:

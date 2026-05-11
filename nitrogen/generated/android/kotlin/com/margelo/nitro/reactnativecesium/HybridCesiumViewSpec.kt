@@ -202,6 +202,20 @@ abstract class HybridCesiumViewSpec: HybridView() {
     set(value) {
       onMetrics = value?.let { it }
     }
+  
+  abstract var onActualCamera: ((camera: CameraState) -> Unit)?
+  
+  private var onActualCamera_cxx: Func_void_CameraState?
+    @Keep
+    @DoNotStrip
+    get() {
+      return onActualCamera?.let { Func_void_CameraState_java(it) }
+    }
+    @Keep
+    @DoNotStrip
+    set(value) {
+      onActualCamera = value?.let { it }
+    }
 
   // Methods
   @DoNotStrip

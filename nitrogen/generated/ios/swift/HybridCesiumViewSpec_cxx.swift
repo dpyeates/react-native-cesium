@@ -683,6 +683,38 @@ open class HybridCesiumViewSpec_cxx {
       }()
     }
   }
+  
+  public final var onActualCamera: bridge.std__optional_std__function_void_const_CameraState_____camera______ {
+    @inline(__always)
+    get {
+      return { () -> bridge.std__optional_std__function_void_const_CameraState_____camera______ in
+        if let __unwrappedValue = self.__implementation.onActualCamera {
+          return bridge.create_std__optional_std__function_void_const_CameraState_____camera______({ () -> bridge.Func_void_CameraState in
+            let __closureWrapper = Func_void_CameraState(__unwrappedValue)
+            return bridge.create_Func_void_CameraState(__closureWrapper.toUnsafe())
+          }())
+        } else {
+          return .init()
+        }
+      }()
+    }
+    @inline(__always)
+    set {
+      self.__implementation.onActualCamera = { () -> ((_ camera: CameraState) -> Void)? in
+        if bridge.has_value_std__optional_std__function_void_const_CameraState_____camera______(newValue) {
+          let __unwrapped = bridge.get_std__optional_std__function_void_const_CameraState_____camera______(newValue)
+          return { () -> (CameraState) -> Void in
+            let __wrappedFunction = bridge.wrap_Func_void_CameraState(__unwrapped)
+            return { (__camera: CameraState) -> Void in
+              __wrappedFunction.call(__camera)
+            }
+          }()
+        } else {
+          return nil
+        }
+      }()
+    }
+  }
 
   // Methods
   @inline(__always)

@@ -70,6 +70,8 @@ namespace margelo::nitro::reactnativecesium {
       prototype.registerHybridSetter("maxGroundSpeedMps", &HybridCesiumViewSpec::setMaxGroundSpeedMps);
       prototype.registerHybridGetter("onMetrics", &HybridCesiumViewSpec::getOnMetrics);
       prototype.registerHybridSetter("onMetrics", &HybridCesiumViewSpec::setOnMetrics);
+      prototype.registerHybridGetter("onActualCamera", &HybridCesiumViewSpec::getOnActualCamera);
+      prototype.registerHybridSetter("onActualCamera", &HybridCesiumViewSpec::setOnActualCamera);
       prototype.registerHybridMethod("setPosition", &HybridCesiumViewSpec::setPosition);
       prototype.registerHybridMethod("setAltitude", &HybridCesiumViewSpec::setAltitude);
       prototype.registerHybridMethod("setHeading", &HybridCesiumViewSpec::setHeading);

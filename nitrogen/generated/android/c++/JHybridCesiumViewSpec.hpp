@@ -106,6 +106,8 @@ namespace margelo::nitro::reactnativecesium {
     void setMaxGroundSpeedMps(std::optional<double> maxGroundSpeedMps) override;
     std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() override;
     void setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) override;
+    std::optional<std::function<void(const CameraState& /* camera */)>> getOnActualCamera() override;
+    void setOnActualCamera(const std::optional<std::function<void(const CameraState& /* camera */)>>& onActualCamera) override;
 
   public:
     // Methods

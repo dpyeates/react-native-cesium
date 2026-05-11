@@ -38,6 +38,7 @@ public protocol HybridCesiumViewSpec_protocol: HybridObject, HybridView {
   var maxClimbRateMps: Double? { get set }
   var maxGroundSpeedMps: Double? { get set }
   var onMetrics: ((_ metrics: CesiumMetrics) -> Void)? { get set }
+  var onActualCamera: ((_ camera: CameraState) -> Void)? { get set }
 
   // Methods
   func setPosition(latitude: Double, longitude: Double) throws -> Void

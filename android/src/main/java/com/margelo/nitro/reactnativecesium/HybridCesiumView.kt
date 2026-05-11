@@ -152,6 +152,22 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
 
   override var onMetrics: ((metrics: CesiumMetrics) -> Unit)? = null
 
+  override var onActualCamera: ((camera: CameraState) -> Unit)? = null
+  // Both accessed only on the render thread; no extra locking needed.
+  private var actualCameraLastEmitSec: Double = 0.0
+  private var actualCameraLastSent: CameraState? = null
+
+  // Returns true when the two snapshots differ enough to warrant a JS dispatch.
+  // Thresholds mirror EngineTunables.hpp kActualCameraCallbackInterval* constants.
+  private fun actualCameraChanged(a: CameraState, b: CameraState): Boolean =
+    Math.abs(a.latitude       - b.latitude)       > 1e-7  ||
+    Math.abs(a.longitude      - b.longitude)      > 1e-7  ||
+    Math.abs(a.altitude       - b.altitude)       > 0.05  ||
+    Math.abs(a.heading        - b.heading)        > 0.01  ||
+    Math.abs(a.pitch          - b.pitch)          > 0.01  ||
+    Math.abs(a.roll           - b.roll)           > 0.01  ||
+    Math.abs(a.verticalFovDeg - b.verticalFovDeg) > 0.01
+
   override val view: View get() = surfaceView
 
   private val frameCallback = Choreographer.FrameCallback {
@@ -214,6 +230,27 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
           tilesetReady = b.getMetricsTilesetReady(),
           creditsPlainText = b.getMetricsCreditsPlainText(),
         ))
+      }
+    }
+
+    // onActualCamera: poll at 5 Hz (kActualCameraCallbackIntervalSec = 0.2 s),
+    // but only dispatch when at least one field has moved beyond its epsilon.
+    val acCb = if (isShutdown) null else onActualCamera
+    if (acCb != null && (nowSeconds - actualCameraLastEmitSec) >= 0.2) {
+      actualCameraLastEmitSec = nowSeconds
+      val candidate = CameraState(
+        latitude     = b.getActualLatitude(),
+        longitude    = b.getActualLongitude(),
+        altitude     = b.getActualAltitude(),
+        heading      = b.getActualHeading(),
+        pitch        = b.getActualPitch(),
+        roll         = b.getActualRoll(),
+        verticalFovDeg = b.getActualVerticalFovDeg(),
+      )
+      val prev = actualCameraLastSent
+      if (prev == null || actualCameraChanged(candidate, prev)) {
+        actualCameraLastSent = candidate
+        acCb(candidate)
       }
     }
 
@@ -292,6 +329,8 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
       // into a dying JS runtime.
       isShutdown = true
       onMetrics = null
+      onActualCamera = null
+      actualCameraLastSent = null
 
       val rh = renderHandler
       val ht = renderThread
