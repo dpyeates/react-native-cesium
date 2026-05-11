@@ -25,8 +25,8 @@ namespace margelo::nitro::reactnativecesium { struct Quaternion; }
 #include <optional>
 #include "CesiumMetrics.hpp"
 #include <functional>
-#include <NitroModules/Promise.hpp>
 #include "Quaternion.hpp"
+#include <NitroModules/Promise.hpp>
 
 namespace margelo::nitro::reactnativecesium {
 
@@ -99,14 +99,30 @@ namespace margelo::nitro::reactnativecesium {
       virtual void setTaskProcessorThreads(std::optional<double> taskProcessorThreads) = 0;
       virtual std::optional<double> getMinAltitudeAboveTerrain() = 0;
       virtual void setMinAltitudeAboveTerrain(std::optional<double> minAltitudeAboveTerrain) = 0;
+      virtual std::optional<double> getMaxYawRateDegSec() = 0;
+      virtual void setMaxYawRateDegSec(std::optional<double> maxYawRateDegSec) = 0;
+      virtual std::optional<double> getMaxPitchRateDegSec() = 0;
+      virtual void setMaxPitchRateDegSec(std::optional<double> maxPitchRateDegSec) = 0;
+      virtual std::optional<double> getMaxRollRateDegSec() = 0;
+      virtual void setMaxRollRateDegSec(std::optional<double> maxRollRateDegSec) = 0;
+      virtual std::optional<double> getMaxClimbRateMps() = 0;
+      virtual void setMaxClimbRateMps(std::optional<double> maxClimbRateMps) = 0;
+      virtual std::optional<double> getMaxGroundSpeedMps() = 0;
+      virtual void setMaxGroundSpeedMps(std::optional<double> maxGroundSpeedMps) = 0;
       virtual std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() = 0;
       virtual void setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) = 0;
 
     public:
       // Methods
-      virtual std::shared_ptr<Promise<CameraState>> getCameraState() = 0;
-      virtual void setCamera(const CameraState& camera) = 0;
-      virtual void setCameraQuaternion(const CameraState& camera, const Quaternion& viewCorrection) = 0;
+      virtual void setPosition(double latitude, double longitude) = 0;
+      virtual void setAltitude(double altitudeMeters) = 0;
+      virtual void setHeading(double headingDeg) = 0;
+      virtual void setAttitude(double pitchDeg, double rollDeg) = 0;
+      virtual void setViewCorrection(const Quaternion& q) = 0;
+      virtual void setVerticalFov(double deg) = 0;
+      virtual void teleport(const CameraState& camera) = 0;
+      virtual std::shared_ptr<Promise<CameraState>> getActualCamera() = 0;
+      virtual std::shared_ptr<Promise<CameraState>> getDemandCamera() = 0;
       virtual std::shared_ptr<Promise<Quaternion>> getViewCorrection() = 0;
 
     protected:

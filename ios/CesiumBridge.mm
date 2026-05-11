@@ -1,8 +1,7 @@
 #import "CesiumBridge.h"
 #import <CoreFoundation/CoreFoundation.h>
 
-#include "engine/CameraSmoother.hpp"
-#include "engine/CameraTargetState.hpp"
+#include "engine/CameraIntegrator.hpp"
 #include "engine/CesiumEngine.hpp"
 #include "engine/EngineTunables.hpp"
 #include "engine/GeoidConverter.hpp"
@@ -13,6 +12,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -22,14 +22,24 @@
   std::unique_ptr<reactnativecesium::CesiumEngine>      _engine;
   reactnativecesium::FrameResult                        _frameResult;
 
-  reactnativecesium::EngineConfig         _config;
-  reactnativecesium::CameraTargetState    _target;
-  reactnativecesium::MetricsAggregator    _metrics;
+  reactnativecesium::EngineConfig                       _config;
+  std::unique_ptr<reactnativecesium::CameraIntegrator>  _integrator;
+  reactnativecesium::MetricsAggregator                  _metrics;
+
+  // Force-render flag — set on every demand change so the render loop knows
+  // to dispatch at least one frame to advance the integrator. Cleared once
+  // the integrator reports isActive() == false.
+  std::atomic<bool>                                     _forceRender;
 
   int   _viewportWidth;
   int   _viewportHeight;
   BOOL  _initialized;
   BOOL  _suspended;
+
+  // Last wall-clock tick used to compute the metrics-only frame dt EMA. Kept
+  // per-instance (not a function-local static) so a hot reload that destroys
+  // and recreates the bridge does not pollute the new bridge's first frame.
+  double _lastTickSec;
 
   NSString* _cacheDir;
 }
@@ -44,6 +54,8 @@
     _viewportHeight    = height;
     _initialized       = NO;
     _suspended         = NO;
+    _lastTickSec       = 0.0;
+    _forceRender.store(true, std::memory_order_release);
     _cacheDir          = [cacheDir copy];
 
     _config.cacheDatabasePath =
@@ -79,7 +91,7 @@
 - (void)appWillResignActive:(NSNotification *)note { _suspended = YES; }
 - (void)appDidBecomeActive:(NSNotification *)note  {
   _suspended = NO;
-  _target.requestForceRender();
+  _forceRender.store(true, std::memory_order_release);
 }
 
 - (void)buildEngine {
@@ -87,9 +99,11 @@
   _engine = std::make_unique<reactnativecesium::CesiumEngine>();
   _engine->initialize(_config);
 
-  // Seed the demand target from the engine's initial camera so the first
-  // frame is not a "snap from default" jump.
-  _target.setAll(_engine->camera().getParams());
+  // Seed the integrator from the engine's initial camera (which itself was
+  // populated by GlobeCamera's defaults). This puts the demand and actual
+  // states in sync from the very first frame; no "snap from default" jump.
+  _integrator = std::make_unique<reactnativecesium::CameraIntegrator>(
+      _engine->camera().getParams());
 
   auto* backendPtr = _metalBackend.get();
   _engine->getResourcePreparer()->setGPUTextureCreator(
@@ -100,8 +114,6 @@
       [](void* tex) {
         if (tex) CFRelease(tex);
       });
-  // Water mask textures reuse the same MTLTexture creator; the binding slot is
-  // set at draw time on Metal so no separate factory is needed.
   _engine->getResourcePreparer()->setWaterMaskTextureCreator(
       [backendPtr](const uint8_t* pixels, int32_t w, int32_t h) -> void* {
         return backendPtr->createRasterTexture(pixels, w, h);
@@ -115,7 +127,7 @@
 - (void)applyEngineConfig {
   if (!_engine) return;
   _engine->updateConfig(_config);
-  _target.requestForceRender();
+  _forceRender.store(true, std::memory_order_release);
 }
 
 - (void)updateIonAccessToken:(NSString *)token assetId:(int64_t)assetId {
@@ -129,53 +141,93 @@
   if (!_initialized) return;
   _config.ionImageryAssetId = (assetId <= 0) ? 1 : assetId;
   _engine->setImageryAssetId(_config.ionImageryAssetId);
-  _target.requestForceRender();
+  _forceRender.store(true, std::memory_order_release);
 }
 
-- (void)updateCameraLatitude:(double)lat
-                   longitude:(double)lon
-                    altitude:(double)alt
-                     heading:(double)heading
-                       pitch:(double)pitch
-                        roll:(double)roll {
+// ── Per-DoF setters ──────────────────────────────────────────────────────
+
+- (void)setPositionLatitude:(double)lat longitude:(double)lon {
   if (!_initialized) return;
-  _target.setHpr(lat, lon, alt, heading, pitch, roll);
+  _integrator->setPosition(lat, lon);
+  _forceRender.store(true, std::memory_order_release);
 }
 
-- (void)updateCameraQuaternionLatitude:(double)lat
-                             longitude:(double)lon
-                              altitude:(double)alt
-                               heading:(double)heading
-                                 pitch:(double)pitch
-                                  roll:(double)roll
-                       viewCorrectionW:(double)qw
-                                     x:(double)qx
-                                     y:(double)qy
-                                     z:(double)qz {
+- (void)setAltitude:(double)alt {
   if (!_initialized) return;
-  _target.setHpr(lat, lon, alt, heading, pitch, roll);
-  const double ql2 = qw * qw + qx * qx + qy * qy + qz * qz;
-  glm::dquat q;
-  if (ql2 < 1e-20) {
-    q = glm::dquat(1.0, 0.0, 0.0, 0.0);
-  } else {
-    const double inv = 1.0 / std::sqrt(ql2);
-    q = glm::dquat(qw * inv, qx * inv, qy * inv, qz * inv);
-  }
-  _target.setViewCorrection(q);
+  _integrator->setAltitude(alt);
+  _forceRender.store(true, std::memory_order_release);
+}
+
+- (void)setHeadingDeg:(double)deg {
+  if (!_initialized) return;
+  _integrator->setHeading(deg);
+  _forceRender.store(true, std::memory_order_release);
+}
+
+- (void)setAttitudePitch:(double)pitch roll:(double)roll {
+  if (!_initialized) return;
+  _integrator->setAttitude(pitch, roll);
+  _forceRender.store(true, std::memory_order_release);
+}
+
+- (void)setViewCorrectionW:(double)qw x:(double)qx y:(double)qy z:(double)qz {
+  if (!_initialized) return;
+  _integrator->setViewCorrection(glm::dquat(qw, qx, qy, qz));
+  _forceRender.store(true, std::memory_order_release);
+}
+
+- (void)teleportLatitude:(double)lat
+                longitude:(double)lon
+                 altitude:(double)alt
+                  heading:(double)heading
+                    pitch:(double)pitch
+                     roll:(double)roll
+           verticalFovDeg:(double)vfov {
+  if (!_initialized) return;
+  reactnativecesium::CameraParams p;
+  p.latitude    = lat;
+  p.longitude   = lon;
+  p.altitude    = alt;
+  p.heading     = heading;
+  p.pitch       = pitch;
+  p.roll        = roll;
+  p.verticalFov = vfov;
+  // Keep the latest viewCorrection target — teleport is a position/orientation
+  // jump, not a boresight reset. Use setViewCorrection(identity) to clear it.
+  p.viewCorrection = _integrator->getActual().viewCorrection;
+  _integrator->teleport(p);
+  // Apply directly to the engine so the next render uses the teleported value
+  // without one frame of "almost there" interpolation.
+  _engine->camera().setParams(p);
+  _forceRender.store(true, std::memory_order_release);
 }
 
 - (void)resize:(int)width height:(int)height {
   _viewportWidth  = width;
   _viewportHeight = height;
   if (_metalBackend) _metalBackend->resize(width, height);
-  _target.requestForceRender();
+  _forceRender.store(true, std::memory_order_release);
 }
 
 - (void)setVerticalFovDeg:(double)degrees {
   if (!_initialized) return;
-  _engine->camera().setVerticalFovDegrees(degrees);
-  _target.requestForceRender();
+  _integrator->setVerticalFov(degrees);
+  _forceRender.store(true, std::memory_order_release);
+}
+
+- (void)setRateCapsYaw:(double)yawDegSec
+                  pitch:(double)pitchDegSec
+                   roll:(double)rollDegSec
+                  climb:(double)climbMps
+            groundSpeed:(double)groundMps {
+  if (!_initialized) return;
+  reactnativecesium::CameraRateCaps caps;
+  caps.maxYawRateDegSec   = yawDegSec;
+  caps.maxPitchRateDegSec = pitchDegSec;
+  caps.maxRollRateDegSec  = rollDegSec;
+  caps.maxClimbRateMps    = climbMps;
+  caps.maxGroundSpeedMps  = groundMps;
+  _integrator->setRateCaps(caps);
 }
 
 - (void)setMaximumScreenSpaceError:(double)v {
@@ -241,43 +293,35 @@
 - (void)setMinAltitudeAboveTerrain:(float)v {
   _config.minAltitudeAboveTerrain = std::max(0.0f, v);
   if (_engine) _engine->updateConfig(_config);
-  _target.requestForceRender();
+  _forceRender.store(true, std::memory_order_release);
 }
 
 - (void)setMsaaSampleCount:(int)samples {
   if (_metalBackend) _metalBackend->setMsaaSampleCount(samples);
-  _target.requestForceRender();
+  _forceRender.store(true, std::memory_order_release);
 }
 
-- (void)markNeedsRender { _target.requestForceRender(); }
+- (void)markNeedsRender { _forceRender.store(true, std::memory_order_release); }
 
 - (BOOL)shouldRenderNextFrame {
   if (!_initialized || _suspended || !_engine) return NO;
-  if (_target.consumeForceRender()) {
-    _target.requestForceRender(); // sticky for one frame so we make it through
-    return YES;
-  }
+  if (_forceRender.load(std::memory_order_acquire))            return YES;
   if (_frameResult.tilesLoading > 0 || !_frameResult.tilesetActive) return YES;
-  if (_target.isDirty()) {
-    const auto cur = _engine->camera().getParams();
-    const auto tgt = _target.snapshot();
-    if (reactnativecesium::CameraTargetState::deltaExceedsEpsilon(cur, tgt)) {
-      return YES;
-    }
-    _target.clearDirty();
-  }
+  if (_integrator && _integrator->isActive())                  return YES;
   return NO;
 }
 
-- (void)renderFrameWithDt:(double)dt {
+- (void)renderFrameAt:(double)nowSeconds {
   if (!_initialized || _suspended) return;
+  if (!_engine || !_integrator || !_metalBackend) return;
 
   @autoreleasepool {
-    (void)_target.consumeForceRender();
+    // Consume the force-render flag (we're rendering this frame either way).
+    _forceRender.store(false, std::memory_order_release);
 
-    const auto cur    = _engine->camera().getParams();
-    const auto tgt    = _target.snapshot();
-    auto smooth = reactnativecesium::CameraSmoother::step(cur, tgt, dt);
+    // The integrator owns its own clock now — see CameraIntegrator::step().
+    // `nowSeconds` is still used below for the FPS-EMA dt only.
+    auto actual = _integrator->step();
 
     // ── Terrain floor clamp ───────────────────────────────────────────────
     // Uses terrain floor from the previous frame (one-frame lag is
@@ -285,23 +329,26 @@
     const float minAbove = _engine->getConfig().minAltitudeAboveTerrain;
     if (minAbove > 0.0f) {
       const double geoidOffset =
-          reactnativecesium::mslToEllipsoidMeters(smooth.latitude, smooth.longitude, 0.0);
+          reactnativecesium::mslToEllipsoidMeters(actual.latitude, actual.longitude, 0.0);
       const double camEllipsoid =
-          reactnativecesium::mslToEllipsoidMeters(smooth.latitude, smooth.longitude, smooth.altitude);
+          reactnativecesium::mslToEllipsoidMeters(actual.latitude, actual.longitude, actual.altitude);
       const double minEllipsoid =
           static_cast<double>(_engine->terrainFloorEllipsoidMeters()) + minAbove;
       if (camEllipsoid < minEllipsoid) {
-        smooth.altitude = minEllipsoid - geoidOffset;
+        const double clampedMsl = minEllipsoid - geoidOffset;
+        _integrator->clampActualAltitude(clampedMsl);
+        actual.altitude = clampedMsl;
       }
     }
 
-    _engine->camera().setParams(smooth);
-
-    if (!reactnativecesium::CameraTargetState::deltaExceedsEpsilon(smooth, tgt)) {
-      _target.clearDirty();
-    }
+    _engine->camera().setParams(actual);
 
     _engine->updateFrame(_viewportWidth, _viewportHeight, _frameResult);
+    // For metrics purposes only — keeps the FPS EMA in something close to the
+    // wall-clock cadence. Not used by the integrator.
+    double dt = (_lastTickSec > 0.0) ? (nowSeconds - _lastTickSec) : (1.0 / 60.0);
+    _lastTickSec = nowSeconds;
+    if (dt > 0.5 || dt <= 0.0) dt = 1.0 / 60.0;
     _metrics.tick(dt, _frameResult, !_config.tlsCaBundlePath.empty());
 
     reactnativecesium::FrameParams params;
@@ -322,33 +369,72 @@
   return [NSString stringWithUTF8String:_metrics.latest().creditsPlainText.c_str()];
 }
 
-- (double)readCameraLatitude  { return _engine ? _engine->camera().getParams().latitude  : 0.0; }
-- (double)readCameraLongitude { return _engine ? _engine->camera().getParams().longitude : 0.0; }
-- (double)readCameraAltitude  { return _engine ? _engine->camera().getParams().altitude  : 0.0; }
-- (double)readCameraHeading   { return _engine ? _engine->camera().getParams().heading   : 0.0; }
-- (double)readCameraPitch     { return _engine ? _engine->camera().getParams().pitch     : 0.0; }
-- (double)readCameraRoll      { return _engine ? _engine->camera().getParams().roll      : 0.0; }
-- (double)readVerticalFovDeg  { return _engine ? _engine->camera().getVerticalFovDegrees() : 60.0; }
+// ── Actual camera readback (post-integration; what was rendered) ─────────
+- (double)readActualLatitude       { return _integrator ? _integrator->getActual().latitude       : 0.0; }
+- (double)readActualLongitude      { return _integrator ? _integrator->getActual().longitude      : 0.0; }
+- (double)readActualAltitude       { return _integrator ? _integrator->getActual().altitude       : 0.0; }
+- (double)readActualHeading        { return _integrator ? _integrator->getActual().heading        : 0.0; }
+- (double)readActualPitch          { return _integrator ? _integrator->getActual().pitch          : 0.0; }
+- (double)readActualRoll           { return _integrator ? _integrator->getActual().roll           : 0.0; }
+- (double)readActualVerticalFovDeg { return _integrator ? _integrator->getActual().verticalFov    : 60.0; }
+
+// ── Demand camera readback (what the consumer last asked for) ────────────
+- (double)readDemandLatitude       { return _integrator ? _integrator->getDemand().latitude       : 0.0; }
+- (double)readDemandLongitude      { return _integrator ? _integrator->getDemand().longitude      : 0.0; }
+- (double)readDemandAltitude       { return _integrator ? _integrator->getDemand().altitude       : 0.0; }
+- (double)readDemandHeading        { return _integrator ? _integrator->getDemand().heading        : 0.0; }
+- (double)readDemandPitch          { return _integrator ? _integrator->getDemand().pitch          : 0.0; }
+- (double)readDemandRoll           { return _integrator ? _integrator->getDemand().roll           : 0.0; }
+- (double)readDemandVerticalFovDeg { return _integrator ? _integrator->getDemand().verticalFov    : 60.0; }
 
 - (double)readViewCorrectionW {
-  if (!_engine) return 1.0;
-  return _engine->camera().getParams().viewCorrection.w;
+  return _integrator ? _integrator->getActual().viewCorrection.w : 1.0;
 }
 - (double)readViewCorrectionX {
-  return _engine ? _engine->camera().getParams().viewCorrection.x : 0.0;
+  return _integrator ? _integrator->getActual().viewCorrection.x : 0.0;
 }
 - (double)readViewCorrectionY {
-  return _engine ? _engine->camera().getParams().viewCorrection.y : 0.0;
+  return _integrator ? _integrator->getActual().viewCorrection.y : 0.0;
 }
 - (double)readViewCorrectionZ {
-  return _engine ? _engine->camera().getParams().viewCorrection.z : 0.0;
+  return _integrator ? _integrator->getActual().viewCorrection.z : 0.0;
 }
 
 - (void)shutdown {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
+
+  // Mark uninitialised up-front so any late prop setters that race the
+  // teardown become no-ops instead of touching half-destroyed state.
+  _initialized = NO;
+
   if (_engine) _engine->shutdown();
   if (_metalBackend) _metalBackend->shutdown();
-  _initialized = NO;
+
+  // Release the engine (and therefore the SqliteCache it owns) here rather
+  // than waiting for ARC to dealloc this CesiumBridge. During fast refresh
+  // the next CesiumView can mount and open the same cesium_cache.db file
+  // before our owning Swift view's deinit completes; freeing the unique_ptr
+  // now closes the SQLite handle synchronously and avoids "database is
+  // locked" warnings from the new engine's SqliteCache.
+  _integrator.reset();
+  _engine.reset();
+  _metalBackend.reset();
+}
+
+- (void)dealloc {
+  // Defensive: shutdown should already have run from the owning Swift view's
+  // deinit. If something exotic happened (e.g. a partially-built bridge that
+  // never had shutdown invoked, or an Objective-C exception path) we still
+  // need to detach from NSNotificationCenter and free the C++ owners in a
+  // deterministic order before ARC walks the ivar block.
+  if (_initialized) {
+    [self shutdown];
+  } else {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    _integrator.reset();
+    _engine.reset();
+    _metalBackend.reset();
+  }
 }
 
 @end

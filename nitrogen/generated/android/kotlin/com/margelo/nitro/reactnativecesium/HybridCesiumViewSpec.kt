@@ -159,6 +159,36 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @set:Keep
   abstract var minAltitudeAboveTerrain: Double?
   
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var maxYawRateDegSec: Double?
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var maxPitchRateDegSec: Double?
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var maxRollRateDegSec: Double?
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var maxClimbRateMps: Double?
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var maxGroundSpeedMps: Double?
+  
   abstract var onMetrics: ((metrics: CesiumMetrics) -> Unit)?
   
   private var onMetrics_cxx: Func_void_CesiumMetrics?
@@ -176,15 +206,39 @@ abstract class HybridCesiumViewSpec: HybridView() {
   // Methods
   @DoNotStrip
   @Keep
-  abstract fun getCameraState(): Promise<CameraState>
+  abstract fun setPosition(latitude: Double, longitude: Double): Unit
   
   @DoNotStrip
   @Keep
-  abstract fun setCamera(camera: CameraState): Unit
+  abstract fun setAltitude(altitudeMeters: Double): Unit
   
   @DoNotStrip
   @Keep
-  abstract fun setCameraQuaternion(camera: CameraState, viewCorrection: Quaternion): Unit
+  abstract fun setHeading(headingDeg: Double): Unit
+  
+  @DoNotStrip
+  @Keep
+  abstract fun setAttitude(pitchDeg: Double, rollDeg: Double): Unit
+  
+  @DoNotStrip
+  @Keep
+  abstract fun setViewCorrection(q: Quaternion): Unit
+  
+  @DoNotStrip
+  @Keep
+  abstract fun setVerticalFov(deg: Double): Unit
+  
+  @DoNotStrip
+  @Keep
+  abstract fun teleport(camera: CameraState): Unit
+  
+  @DoNotStrip
+  @Keep
+  abstract fun getActualCamera(): Promise<CameraState>
+  
+  @DoNotStrip
+  @Keep
+  abstract fun getDemandCamera(): Promise<CameraState>
   
   @DoNotStrip
   @Keep

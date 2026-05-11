@@ -246,6 +246,56 @@ namespace margelo::nitro::reactnativecesium::views {
         throw std::runtime_error(std::string("CesiumView.minAltitudeAboveTerrain: ") + exc.what());
       }
     }()),
+    maxYawRateDegSec([&]() -> CachedProp<std::optional<double>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("maxYawRateDegSec", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.maxYawRateDegSec;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maxYawRateDegSec);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.maxYawRateDegSec: ") + exc.what());
+      }
+    }()),
+    maxPitchRateDegSec([&]() -> CachedProp<std::optional<double>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("maxPitchRateDegSec", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.maxPitchRateDegSec;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maxPitchRateDegSec);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.maxPitchRateDegSec: ") + exc.what());
+      }
+    }()),
+    maxRollRateDegSec([&]() -> CachedProp<std::optional<double>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("maxRollRateDegSec", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.maxRollRateDegSec;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maxRollRateDegSec);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.maxRollRateDegSec: ") + exc.what());
+      }
+    }()),
+    maxClimbRateMps([&]() -> CachedProp<std::optional<double>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("maxClimbRateMps", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.maxClimbRateMps;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maxClimbRateMps);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.maxClimbRateMps: ") + exc.what());
+      }
+    }()),
+    maxGroundSpeedMps([&]() -> CachedProp<std::optional<double>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("maxGroundSpeedMps", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.maxGroundSpeedMps;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maxGroundSpeedMps);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("CesiumView.maxGroundSpeedMps: ") + exc.what());
+      }
+    }()),
     onMetrics([&]() -> CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> {
       try {
         const react::RawValue* rawValue = rawProps.at("onMetrics", nullptr, nullptr);
@@ -291,6 +341,11 @@ namespace margelo::nitro::reactnativecesium::views {
       case hashString("sqliteCacheMaxRows"): return true;
       case hashString("taskProcessorThreads"): return true;
       case hashString("minAltitudeAboveTerrain"): return true;
+      case hashString("maxYawRateDegSec"): return true;
+      case hashString("maxPitchRateDegSec"): return true;
+      case hashString("maxRollRateDegSec"): return true;
+      case hashString("maxClimbRateMps"): return true;
+      case hashString("maxGroundSpeedMps"): return true;
       case hashString("onMetrics"): return true;
       case hashString("hybridRef"): return true;
       default: return false;

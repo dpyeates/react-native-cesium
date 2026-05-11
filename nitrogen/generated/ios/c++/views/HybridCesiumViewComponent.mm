@@ -189,6 +189,31 @@ using namespace margelo::nitro::reactnativecesium::views;
     swiftPart.setMinAltitudeAboveTerrain(newViewProps.minAltitudeAboveTerrain.value);
     newViewProps.minAltitudeAboveTerrain.isDirty = false;
   }
+  // maxYawRateDegSec: optional
+  if (newViewProps.maxYawRateDegSec.isDirty) {
+    swiftPart.setMaxYawRateDegSec(newViewProps.maxYawRateDegSec.value);
+    newViewProps.maxYawRateDegSec.isDirty = false;
+  }
+  // maxPitchRateDegSec: optional
+  if (newViewProps.maxPitchRateDegSec.isDirty) {
+    swiftPart.setMaxPitchRateDegSec(newViewProps.maxPitchRateDegSec.value);
+    newViewProps.maxPitchRateDegSec.isDirty = false;
+  }
+  // maxRollRateDegSec: optional
+  if (newViewProps.maxRollRateDegSec.isDirty) {
+    swiftPart.setMaxRollRateDegSec(newViewProps.maxRollRateDegSec.value);
+    newViewProps.maxRollRateDegSec.isDirty = false;
+  }
+  // maxClimbRateMps: optional
+  if (newViewProps.maxClimbRateMps.isDirty) {
+    swiftPart.setMaxClimbRateMps(newViewProps.maxClimbRateMps.value);
+    newViewProps.maxClimbRateMps.isDirty = false;
+  }
+  // maxGroundSpeedMps: optional
+  if (newViewProps.maxGroundSpeedMps.isDirty) {
+    swiftPart.setMaxGroundSpeedMps(newViewProps.maxGroundSpeedMps.value);
+    newViewProps.maxGroundSpeedMps.isDirty = false;
+  }
   // onMetrics: optional
   if (newViewProps.onMetrics.isDirty) {
     swiftPart.setOnMetrics(newViewProps.onMetrics.value);

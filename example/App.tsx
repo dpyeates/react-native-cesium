@@ -74,7 +74,7 @@ function AppContent() {
           loadingDescendantLimit={20}
           msaaSampleCount={1}
           ionImageryAssetId={imageryAssetId}
-          minAltitudeAboveTerrain={2}
+          minAltitudeAboveTerrain={5}
           onMetrics={metricsCallback}
         />
       </MapGestureHandler>

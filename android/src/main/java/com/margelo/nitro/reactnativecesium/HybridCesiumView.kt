@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import android.view.Choreographer
 import android.view.SurfaceHolder
@@ -16,34 +17,39 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec() {
   private val surfaceView = SurfaceView(appContext)
+
   /// Bridge is only ever read on the render thread. The UI thread posts
-  /// requests via `renderHandler`. Marked volatile so init/shutdown observers
-  /// (`bridge != null`) on the UI thread see the latest reference, but real
-  /// work is always serialized through the render thread.
+  /// requests via `renderHandler`. Marked volatile so observers on the UI
+  /// thread (`bridge != null`) see the latest reference; real work is always
+  /// serialized through the render thread for config-style writes, and
+  /// goes directly into CameraIntegrator (with its own mutex) for camera
+  /// demand writes.
   @Volatile private var bridge: CesiumBridgeJNI? = null
   private var metricsFrameCounter = 0
   private var idleProbeAccumulator = 0.0
-  private var lastFrameTimeNanos = 0L
-  /// Last-pushed camera state — read/written on the render thread (via
-  /// `renderHandler.post`), never directly on the UI thread.
-  private var lastPushedCamera: CameraState? = null
-  private var lastPushedViewCorrection: Quaternion? = null
-  /// Camera state requested by `setCamera` before the bridge was ready.
-  /// Updated on the UI thread, drained on the render thread.
-  @Volatile private var pendingRuntimeCamera: CameraState? = null
-  @Volatile private var pendingRuntimeViewCorrection: Quaternion? = null
-  /// True while a Choreographer frame callback is pending. Mutated on the UI
-  /// thread inside the callback / scheduleNextFrame.
   private var renderLoopActive = false
-  /// Drops Choreographer ticks while the render thread is still finishing the
-  /// previous frame. Set on UI thread when posting; cleared on render thread
-  /// after the bridge call completes.
   private val renderInFlight = AtomicBoolean(false)
 
-  /// Dedicated render thread — owns all CesiumEngine + GPU work. Created lazily
-  /// when the first SurfaceHolder.Callback fires. The Choreographer (UI thread)
-  /// posts render requests here; bridge config setters likewise post here so
-  /// they serialize with rendering and never race with engine state.
+  /// Set in `surfaceDestroyed` before any teardown work begins. Render-thread
+  /// callbacks and choreographer frame ticks check this flag and bail out so
+  /// they don't try to emit `onMetrics` into a JS dispatcher that may already
+  /// have been torn down by fast refresh / view unmount. Volatile so the
+  /// render thread sees the write made on the UI thread.
+  @Volatile private var isShutdown = false
+
+  // Demand values that arrived before the bridge was created. Drained once
+  // in surfaceCreated after the seed teleport.
+  @Volatile private var pendingTeleport: CameraState? = null
+  @Volatile private var pendingLat: Double? = null
+  @Volatile private var pendingLon: Double? = null
+  @Volatile private var pendingAltitude: Double? = null
+  @Volatile private var pendingHeading: Double? = null
+  @Volatile private var pendingPitch: Double? = null
+  @Volatile private var pendingRoll: Double? = null
+  @Volatile private var pendingVfov: Double? = null
+  @Volatile private var pendingViewCorrection: Quaternion? = null
+
+  /// Dedicated render thread — owns all CesiumEngine + GPU work.
   private var renderThread: HandlerThread? = null
   private var renderHandler: Handler? = null
 
@@ -123,27 +129,38 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
   override var minAltitudeAboveTerrain: Double? = null
     set(value) { field = value; if (value != null) postToRender { bridge?.setMinAltitudeAboveTerrain(value.toFloat()) } }
 
+  // ── Rate caps ────────────────────────────────────────────────────────────
+  override var maxYawRateDegSec: Double?   = null
+    set(value) { field = value; pushRateCaps() }
+  override var maxPitchRateDegSec: Double? = null
+    set(value) { field = value; pushRateCaps() }
+  override var maxRollRateDegSec: Double?  = null
+    set(value) { field = value; pushRateCaps() }
+  override var maxClimbRateMps: Double?    = null
+    set(value) { field = value; pushRateCaps() }
+  override var maxGroundSpeedMps: Double?  = null
+    set(value) { field = value; pushRateCaps() }
+
+  private fun pushRateCaps() {
+    val yaw   = maxYawRateDegSec ?: 0.0
+    val pitch = maxPitchRateDegSec ?: 0.0
+    val roll  = maxRollRateDegSec ?: 0.0
+    val climb = maxClimbRateMps ?: 0.0
+    val gnd   = maxGroundSpeedMps ?: 0.0
+    postToRender { bridge?.setRateCaps(yaw, pitch, roll, climb, gnd) }
+  }
+
   override var onMetrics: ((metrics: CesiumMetrics) -> Unit)? = null
 
   override val view: View get() = surfaceView
 
-  private val frameCallback = Choreographer.FrameCallback { frameTimeNanos ->
+  private val frameCallback = Choreographer.FrameCallback {
     renderLoopActive = false
-    if (pauseRendering || bridge == null) {
+    if (isShutdown || pauseRendering || bridge == null) {
       return@FrameCallback
     }
 
-    val dt = if (lastFrameTimeNanos > 0) {
-      (frameTimeNanos - lastFrameTimeNanos).coerceAtLeast(1_000_000L) / 1_000_000_000.0
-    } else {
-      1.0 / 60.0
-    }
-    lastFrameTimeNanos = frameTimeNanos
-
-    // Drop the tick if the previous frame's render hasn't finished — keeps the
-    // render thread from queuing up an unbounded backlog under stutter.
     if (!renderInFlight.compareAndSet(false, true)) {
-      // Re-arm so we try again next vsync.
       scheduleNextFrame(immediate = true)
       return@FrameCallback
     }
@@ -153,13 +170,13 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
       renderInFlight.set(false)
       return@FrameCallback
     }
-    rh.post { runFrameOnRenderThread(dt) }
+    val nowSeconds = SystemClock.elapsedRealtimeNanos() / 1_000_000_000.0
+    rh.post { runFrameOnRenderThread(nowSeconds) }
   }
 
-  /// Called on the render thread. Owns ALL CesiumEngine + GPU access; the UI
-  /// thread only signals demand here. Safe to read `onMetrics` because Nitro
-  /// callbacks dispatch internally to the JS thread.
-  private fun runFrameOnRenderThread(dt: Double) {
+  /// Run on the render thread immediately after the bridge is created, before
+  /// the first frame.
+  private fun runFrameOnRenderThread(nowSeconds: Double) {
     val b = bridge
     if (b == null) {
       renderInFlight.set(false)
@@ -170,10 +187,11 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
     val nextImmediate: Boolean
     if (shouldRender) {
       idleProbeAccumulator = 0.0
-      b.renderFrame(dt)
+      b.renderFrame(nowSeconds)
       nextImmediate = true
     } else {
-      idleProbeAccumulator += dt
+      // Approximate dt for the idle probe; not used for motion.
+      idleProbeAccumulator += 1.0 / 60.0
       if (idleProbeAccumulator >= 0.25) {
         idleProbeAccumulator = 0.0
         b.markNeedsRender()
@@ -184,7 +202,7 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
     metricsFrameCounter++
     if (metricsFrameCounter >= 20) {
       metricsFrameCounter = 0
-      val cb = onMetrics
+      val cb = if (isShutdown) null else onMetrics
       if (cb != null) {
         cb(CesiumMetrics(
           fps = b.getMetricsFps(),
@@ -201,9 +219,6 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
 
     renderInFlight.set(false)
 
-    // Re-arm on the UI thread so Choreographer remains the source of truth
-    // for vsync timing. Posting a no-op runnable to surfaceView keeps us off
-    // the render thread for that small piece of bookkeeping.
     surfaceView.post { scheduleNextFrame(immediate = nextImmediate) }
   }
 
@@ -214,47 +229,38 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
       val h = surfaceView.height
       if (w <= 0 || h <= 0) return
 
-      // Spin up the render thread on first surfaceCreated. If we previously
-      // tore it down (e.g. on backgrounding), re-spawn cleanly.
       ensureRenderThread()
       val rh = renderHandler ?: return
 
       val cacheDir = appContext.cacheDir.absolutePath
       val cacertPath = extractCacert()
-      // Init runs on the render thread because Vulkan instance/device creation
-      // and Cesium Native init both touch state we'd rather only ever poke
-      // from one thread.
       rh.post {
         val b = CesiumBridgeJNI()
         b.init(surface, w, h, cacheDir, cacertPath)
         bridge = b
         syncBridgePropsOnRenderThread(b)
 
-        b.updateCamera(
-          initialCamera.latitude, initialCamera.longitude, initialCamera.altitude,
-          initialCamera.heading, initialCamera.pitch, initialCamera.roll,
+        val seed = pendingTeleport ?: initialCamera
+        b.teleport(
+          seed.latitude, seed.longitude, seed.altitude,
+          seed.heading, seed.pitch, seed.roll, seed.verticalFovDeg,
         )
-        b.setVerticalFovDeg(initialCamera.verticalFovDeg)
-        lastPushedCamera = initialCamera
+        pendingTeleport = null
 
-        val pending = pendingRuntimeCamera
-        if (pending != null) {
-          val q = pendingRuntimeViewCorrection
-          if (q != null) {
-            b.updateCameraQuaternion(
-              pending.latitude, pending.longitude, pending.altitude,
-              pending.heading, pending.pitch, pending.roll,
-              q.w, q.x, q.y, q.z,
-            )
-            lastPushedViewCorrection = q
-          } else {
-            b.updateCamera(
-              pending.latitude, pending.longitude, pending.altitude,
-              pending.heading, pending.pitch, pending.roll,
-            )
-          }
-          b.setVerticalFovDeg(pending.verticalFovDeg)
-          lastPushedCamera = pending
+        val la = pendingLat
+        val lo = pendingLon
+        if (la != null && lo != null) {
+          b.setPosition(la, lo); pendingLat = null; pendingLon = null
+        }
+        pendingAltitude?.let { b.setAltitude(it);  pendingAltitude = null }
+        pendingHeading?.let  { b.setHeading(it);   pendingHeading  = null }
+        val p = pendingPitch; val r = pendingRoll
+        if (p != null && r != null) {
+          b.setAttitude(p, r); pendingPitch = null; pendingRoll = null
+        }
+        pendingVfov?.let { b.setVerticalFovDeg(it); pendingVfov = null }
+        pendingViewCorrection?.let { q ->
+          b.setViewCorrection(q.w, q.x, q.y, q.z); pendingViewCorrection = null
         }
 
         if (ionAccessToken.isNotEmpty()) {
@@ -265,9 +271,8 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
         }
         b.setMsaa(msaaSampleCount.toInt())
 
-        // Start the rendering loop here, after the bridge is fully
-        // initialized. scheduleNextFrame must be invoked on the UI thread
-        // because Choreographer.postFrameCallback() requires it.
+        pushRateCaps()
+
         surfaceView.post { scheduleNextFrame(immediate = true) }
       }
     }
@@ -276,30 +281,28 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
       postToRender {
         bridge?.resize(width, height)
         bridge?.markNeedsRender()
-        // Re-arm the loop in case surfaceChanged fires before the bridge was
-        // created (rare, but possible on cold starts). Idempotent: scheduleNextFrame
-        // early-returns if the loop is already active.
         surfaceView.post { scheduleNextFrame(immediate = true) }
       }
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+      // Flip the shutdown gate and drop the JS callback before any teardown
+      // work — any in-flight render-thread frame or queued choreographer tick
+      // will then bail out without touching the bridge or emitting metrics
+      // into a dying JS runtime.
+      isShutdown = true
+      onMetrics = null
+
       val rh = renderHandler
       val ht = renderThread
 
       if (rh == null || ht == null) {
-        // Nothing to drain; clear bridge reference if it somehow exists.
         bridge?.shutdown()
         bridge?.destroy()
         bridge = null
         return
       }
 
-      // Block the UI thread (briefly) until the render thread has shut the
-      // bridge down — surfaceDestroyed contract requires the surface to be
-      // released before this returns. We cap our wait so a stuck GPU teardown
-      // can't hang the UI thread indefinitely (matches our 1s shutdown
-      // semaphore policy on the Vulkan / Metal side).
       val done = java.util.concurrent.CountDownLatch(1)
       rh.post {
         try {
@@ -313,8 +316,7 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
         }
       }
       if (!done.await(1500, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-        Log.w("CesiumView", "Render-thread shutdown did not complete in 1.5s; "
-                + "tearing down handler thread anyway.")
+        Log.w("CesiumView", "Render-thread shutdown did not complete in 1.5s; tearing down handler thread anyway.")
       }
       stopRenderThread()
     }
@@ -341,53 +343,35 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
     ht.quitSafely()
   }
 
-  /// Posts an action to the render thread. When the render thread isn't
-  /// running yet (early prop assignment, or after teardown), we silently drop
-  /// the action — bridges always take their initial config from the
-  /// `syncBridgePropsOnRenderThread` step inside surfaceCreated.
   private fun postToRender(action: () -> Unit) {
     renderHandler?.post(action)
   }
 
-  /// Camera reads cross the JNI from the JS thread (Nitro promise resolution).
-  /// They read snapshot scalar values through CesiumBridgeAndroid → engine →
-  /// GlobeCamera, none of which is mutated outside the render thread, so the
-  /// worst that can happen is observing a value from a frame slightly behind
-  /// what the render thread is encoding right now — acceptable for a UI-driven
-  /// camera read.
-  override fun getCameraState(): Promise<CameraState> {
+  // ── Camera readback ─────────────────────────────────────────────────────
+  override fun getActualCamera(): Promise<CameraState> {
     val b = bridge ?: return Promise.resolved(initialCamera)
     return Promise.resolved(CameraState(
-      latitude = b.getCameraLat(),
-      longitude = b.getCameraLon(),
-      altitude = b.getCameraAlt(),
-      heading = b.getCameraHeading(),
-      pitch = b.getCameraPitch(),
-      roll = b.getCameraRoll(),
-      verticalFovDeg = b.getVerticalFovDeg(),
+      latitude = b.getActualLatitude(),
+      longitude = b.getActualLongitude(),
+      altitude = b.getActualAltitude(),
+      heading = b.getActualHeading(),
+      pitch = b.getActualPitch(),
+      roll = b.getActualRoll(),
+      verticalFovDeg = b.getActualVerticalFovDeg(),
     ))
   }
 
-  override fun setCamera(camera: CameraState) {
-    // Runtime camera control. Does NOT mutate `initialCamera` (which is
-    // construction-time only).
-    pendingRuntimeCamera = camera
-    pendingRuntimeViewCorrection = null
-    postToRender {
-      pushCameraIfChanged(camera)
-      bridge?.markNeedsRender()
-    }
-    scheduleNextFrame(immediate = true)
-  }
-
-  override fun setCameraQuaternion(camera: CameraState, viewCorrection: Quaternion) {
-    pendingRuntimeCamera = camera
-    pendingRuntimeViewCorrection = viewCorrection
-    postToRender {
-      pushCameraQuaternionIfChanged(camera, viewCorrection)
-      bridge?.markNeedsRender()
-    }
-    scheduleNextFrame(immediate = true)
+  override fun getDemandCamera(): Promise<CameraState> {
+    val b = bridge ?: return Promise.resolved(initialCamera)
+    return Promise.resolved(CameraState(
+      latitude = b.getDemandLatitude(),
+      longitude = b.getDemandLongitude(),
+      altitude = b.getDemandAltitude(),
+      heading = b.getDemandHeading(),
+      pitch = b.getDemandPitch(),
+      roll = b.getDemandRoll(),
+      verticalFovDeg = b.getDemandVerticalFovDeg(),
+    ))
   }
 
   override fun getViewCorrection(): Promise<Quaternion> {
@@ -403,65 +387,63 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
     )
   }
 
-  private fun pushCameraIfChanged(camera: CameraState) {
-    val b = bridge ?: return
-    val last = lastPushedCamera
-    if (last != null &&
-        last.latitude == camera.latitude &&
-        last.longitude == camera.longitude &&
-        last.altitude == camera.altitude &&
-        last.heading == camera.heading &&
-        last.pitch == camera.pitch &&
-        last.roll == camera.roll &&
-        last.verticalFovDeg == camera.verticalFovDeg) {
-      return
+  // ── Per-DoF camera setters ──────────────────────────────────────────────
+  // These bypass the renderHandler hop: the underlying CameraIntegrator owns
+  // its own mutex and handles concurrent writers safely. Keeping the hot
+  // path off the render thread reduces latency for high-frequency
+  // (Reanimated worklet, 50 Hz IMU) drivers.
+  override fun setPosition(latitude: Double, longitude: Double) {
+    val b = bridge
+    if (b != null) {
+      b.setPosition(latitude, longitude)
+      scheduleNextFrame(immediate = true)
+    } else {
+      pendingLat = latitude; pendingLon = longitude
     }
-    lastPushedCamera = camera
-    b.updateCamera(camera.latitude, camera.longitude, camera.altitude,
-                   camera.heading, camera.pitch, camera.roll)
-    b.setVerticalFovDeg(camera.verticalFovDeg)
   }
 
-  private fun pushCameraQuaternionIfChanged(camera: CameraState, viewCorrection: Quaternion) {
-    val b = bridge ?: return
-    val last = lastPushedCamera
-    val lastQ = lastPushedViewCorrection
-    if (last != null && lastQ != null &&
-      last.latitude == camera.latitude &&
-      last.longitude == camera.longitude &&
-      last.altitude == camera.altitude &&
-      last.heading == camera.heading &&
-      last.pitch == camera.pitch &&
-      last.roll == camera.roll &&
-      last.verticalFovDeg == camera.verticalFovDeg &&
-      lastQ.w == viewCorrection.w &&
-      lastQ.x == viewCorrection.x &&
-      lastQ.y == viewCorrection.y &&
-      lastQ.z == viewCorrection.z
-    ) {
-      return
-    }
-    lastPushedCamera = camera
-    lastPushedViewCorrection = viewCorrection
-    b.updateCameraQuaternion(
-      camera.latitude,
-      camera.longitude,
-      camera.altitude,
-      camera.heading,
-      camera.pitch,
-      camera.roll,
-      viewCorrection.w,
-      viewCorrection.x,
-      viewCorrection.y,
-      viewCorrection.z,
-    )
-    b.setVerticalFovDeg(camera.verticalFovDeg)
+  override fun setAltitude(altitudeMeters: Double) {
+    val b = bridge
+    if (b != null) { b.setAltitude(altitudeMeters); scheduleNextFrame(immediate = true) }
+    else           { pendingAltitude = altitudeMeters }
   }
 
-  /// Run on the render thread immediately after the bridge is created, before
-  /// the first frame. Matches Swift's syncBridgeOptionsFromProps and pushes
-  /// every prop into the freshly-built CesiumEngine so the consumer doesn't
-  /// have to re-set them after the surface comes up.
+  override fun setHeading(headingDeg: Double) {
+    val b = bridge
+    if (b != null) { b.setHeading(headingDeg); scheduleNextFrame(immediate = true) }
+    else           { pendingHeading = headingDeg }
+  }
+
+  override fun setAttitude(pitchDeg: Double, rollDeg: Double) {
+    val b = bridge
+    if (b != null) { b.setAttitude(pitchDeg, rollDeg); scheduleNextFrame(immediate = true) }
+    else           { pendingPitch = pitchDeg; pendingRoll = rollDeg }
+  }
+
+  override fun setViewCorrection(q: Quaternion) {
+    val b = bridge
+    if (b != null) { b.setViewCorrection(q.w, q.x, q.y, q.z); scheduleNextFrame(immediate = true) }
+    else           { pendingViewCorrection = q }
+  }
+
+  override fun setVerticalFov(deg: Double) {
+    val b = bridge
+    if (b != null) { b.setVerticalFovDeg(deg); scheduleNextFrame(immediate = true) }
+    else           { pendingVfov = deg }
+  }
+
+  override fun teleport(camera: CameraState) {
+    val b = bridge
+    if (b != null) {
+      b.teleport(camera.latitude, camera.longitude, camera.altitude,
+                 camera.heading, camera.pitch, camera.roll, camera.verticalFovDeg)
+      scheduleNextFrame(immediate = true)
+    } else {
+      pendingTeleport = camera
+    }
+  }
+
+  /// Render-thread setup, called once after the bridge is built.
   private fun syncBridgePropsOnRenderThread(b: CesiumBridgeJNI) {
     b.setMaxSSE(maximumScreenSpaceError)
     b.setMaxSimLoads(maximumSimultaneousTileLoads.toInt())
@@ -483,12 +465,6 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
 
   /**
    * Schedule the next frame callback.
-   *
-   * - `immediate = true`: the engine wants to render this vsync (active pan,
-   *   tile loading, prop change). Re-post on the next available vsync.
-   * - `immediate = false`: the engine is idle. Re-post in 250ms — matches the
-   *   iOS low-refresh range and keeps the main thread mostly asleep while
-   *   still picking up late tile completions / network responses.
    */
   private fun scheduleNextFrame(immediate: Boolean) {
     if (renderLoopActive || pauseRendering || bridge == null) return
@@ -504,15 +480,12 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
     val outFile = File(appContext.cacheDir, "cacert.pem")
     try {
       appContext.assets.open("cacert.pem").use { input ->
-        // Re-extract if the cached copy is missing or a different size to the
-        // bundled asset (handles the file being updated across app versions).
         val assetSize = input.available().toLong()
         if (!outFile.exists() || outFile.length() != assetSize) {
           FileOutputStream(outFile).use { output -> input.copyTo(output) }
         }
       }
     } catch (_: Exception) {
-      // cacert.pem not bundled as asset — libcurl will use system certs
       return if (outFile.exists()) outFile.absolutePath else ""
     }
     return outFile.absolutePath

@@ -24,8 +24,8 @@ namespace margelo::nitro::reactnativecesium { struct Quaternion; }
 #include <optional>
 #include "CesiumMetrics.hpp"
 #include <functional>
-#include <NitroModules/Promise.hpp>
 #include "Quaternion.hpp"
+#include <NitroModules/Promise.hpp>
 
 #include "ReactNativeCesium-Swift-Cxx-Umbrella.hpp"
 
@@ -219,6 +219,41 @@ namespace margelo::nitro::reactnativecesium {
     inline void setMinAltitudeAboveTerrain(std::optional<double> minAltitudeAboveTerrain) noexcept override {
       _swiftPart.setMinAltitudeAboveTerrain(minAltitudeAboveTerrain);
     }
+    inline std::optional<double> getMaxYawRateDegSec() noexcept override {
+      auto __result = _swiftPart.getMaxYawRateDegSec();
+      return __result;
+    }
+    inline void setMaxYawRateDegSec(std::optional<double> maxYawRateDegSec) noexcept override {
+      _swiftPart.setMaxYawRateDegSec(maxYawRateDegSec);
+    }
+    inline std::optional<double> getMaxPitchRateDegSec() noexcept override {
+      auto __result = _swiftPart.getMaxPitchRateDegSec();
+      return __result;
+    }
+    inline void setMaxPitchRateDegSec(std::optional<double> maxPitchRateDegSec) noexcept override {
+      _swiftPart.setMaxPitchRateDegSec(maxPitchRateDegSec);
+    }
+    inline std::optional<double> getMaxRollRateDegSec() noexcept override {
+      auto __result = _swiftPart.getMaxRollRateDegSec();
+      return __result;
+    }
+    inline void setMaxRollRateDegSec(std::optional<double> maxRollRateDegSec) noexcept override {
+      _swiftPart.setMaxRollRateDegSec(maxRollRateDegSec);
+    }
+    inline std::optional<double> getMaxClimbRateMps() noexcept override {
+      auto __result = _swiftPart.getMaxClimbRateMps();
+      return __result;
+    }
+    inline void setMaxClimbRateMps(std::optional<double> maxClimbRateMps) noexcept override {
+      _swiftPart.setMaxClimbRateMps(maxClimbRateMps);
+    }
+    inline std::optional<double> getMaxGroundSpeedMps() noexcept override {
+      auto __result = _swiftPart.getMaxGroundSpeedMps();
+      return __result;
+    }
+    inline void setMaxGroundSpeedMps(std::optional<double> maxGroundSpeedMps) noexcept override {
+      _swiftPart.setMaxGroundSpeedMps(maxGroundSpeedMps);
+    }
     inline std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() noexcept override {
       auto __result = _swiftPart.getOnMetrics();
       return __result;
@@ -229,25 +264,63 @@ namespace margelo::nitro::reactnativecesium {
 
   public:
     // Methods
-    inline std::shared_ptr<Promise<CameraState>> getCameraState() override {
-      auto __result = _swiftPart.getCameraState();
+    inline void setPosition(double latitude, double longitude) override {
+      auto __result = _swiftPart.setPosition(std::forward<decltype(latitude)>(latitude), std::forward<decltype(longitude)>(longitude));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline void setAltitude(double altitudeMeters) override {
+      auto __result = _swiftPart.setAltitude(std::forward<decltype(altitudeMeters)>(altitudeMeters));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline void setHeading(double headingDeg) override {
+      auto __result = _swiftPart.setHeading(std::forward<decltype(headingDeg)>(headingDeg));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline void setAttitude(double pitchDeg, double rollDeg) override {
+      auto __result = _swiftPart.setAttitude(std::forward<decltype(pitchDeg)>(pitchDeg), std::forward<decltype(rollDeg)>(rollDeg));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline void setViewCorrection(const Quaternion& q) override {
+      auto __result = _swiftPart.setViewCorrection(std::forward<decltype(q)>(q));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline void setVerticalFov(double deg) override {
+      auto __result = _swiftPart.setVerticalFov(std::forward<decltype(deg)>(deg));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline void teleport(const CameraState& camera) override {
+      auto __result = _swiftPart.teleport(std::forward<decltype(camera)>(camera));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline std::shared_ptr<Promise<CameraState>> getActualCamera() override {
+      auto __result = _swiftPart.getActualCamera();
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }
       auto __value = std::move(__result.value());
       return __value;
     }
-    inline void setCamera(const CameraState& camera) override {
-      auto __result = _swiftPart.setCamera(std::forward<decltype(camera)>(camera));
+    inline std::shared_ptr<Promise<CameraState>> getDemandCamera() override {
+      auto __result = _swiftPart.getDemandCamera();
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }
-    }
-    inline void setCameraQuaternion(const CameraState& camera, const Quaternion& viewCorrection) override {
-      auto __result = _swiftPart.setCameraQuaternion(std::forward<decltype(camera)>(camera), std::forward<decltype(viewCorrection)>(viewCorrection));
-      if (__result.hasError()) [[unlikely]] {
-        std::rethrow_exception(__result.error());
-      }
+      auto __value = std::move(__result.value());
+      return __value;
     }
     inline std::shared_ptr<Promise<Quaternion>> getViewCorrection() override {
       auto __result = _swiftPart.getViewCorrection();

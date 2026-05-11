@@ -16,11 +16,22 @@ static constexpr double kFarPlane  = 50000000.0;
 static constexpr double kMinVfov   = 20.0;
 static constexpr double kMaxVfov   = 100.0;
 
-GlobeCamera::GlobeCamera() { recompute(); }
+GlobeCamera::GlobeCamera() {
+  params_.verticalFov = std::clamp(params_.verticalFov, kMinVfov, kMaxVfov);
+  recompute();
+}
 
 void GlobeCamera::setParams(const CameraParams& p) {
   std::lock_guard<std::mutex> lk(mutex_);
   params_ = p;
+  // A zero (default-init) verticalFov means "leave the previous value";
+  // anything else is clamped to the supported range.
+  if (p.verticalFov > 0.0) {
+    params_.verticalFov = std::clamp(p.verticalFov, kMinVfov, kMaxVfov);
+  } else {
+    // Restore the existing value rather than letting a zero overwrite it.
+    params_.verticalFov = std::clamp(params_.verticalFov, kMinVfov, kMaxVfov);
+  }
   dirty_  = true;
 }
 
@@ -31,12 +42,12 @@ CameraParams GlobeCamera::getParams() const {
 
 void GlobeCamera::setVerticalFovDegrees(double degrees) {
   std::lock_guard<std::mutex> lk(mutex_);
-  verticalFovDeg_ = std::clamp(degrees, kMinVfov, kMaxVfov);
+  params_.verticalFov = std::clamp(degrees, kMinVfov, kMaxVfov);
 }
 
 double GlobeCamera::getVerticalFovDegrees() const {
   std::lock_guard<std::mutex> lk(mutex_);
-  return verticalFovDeg_;
+  return params_.verticalFov;
 }
 
 void GlobeCamera::recompute() const {
@@ -151,7 +162,7 @@ GlobeCamera::computeViewState(double w, double h) const {
   recompute();
 
   double aspect = w / std::max(h, 1.0);
-  double vfov   = glm::radians(verticalFovDeg_);
+  double vfov   = glm::radians(params_.verticalFov);
   double hfov   = 2.0 * std::atan(std::tan(vfov * 0.5) * aspect);
 
   return Cesium3DTilesSelection::ViewState(
@@ -168,7 +179,7 @@ glm::mat4 GlobeCamera::computeVPMatrix(double w, double h) const {
       fullView[0], fullView[1], fullView[2], glm::dvec4(0.0, 0.0, 0.0, 1.0)));
 
   double aspect   = w / std::max(h, 1.0);
-  double vfov     = glm::radians(verticalFovDeg_);
+  double vfov     = glm::radians(params_.verticalFov);
   double tanHalfV = std::tan(vfov * 0.5);
   double tanHalfH = tanHalfV * aspect;
 
@@ -193,7 +204,7 @@ glm::dmat4 GlobeCamera::computeVPMatrixDouble(double w, double h) const {
       fullView[0], fullView[1], fullView[2], glm::dvec4(0.0, 0.0, 0.0, 1.0));
 
   double aspect   = w / std::max(h, 1.0);
-  double vfov     = glm::radians(verticalFovDeg_);
+  double vfov     = glm::radians(params_.verticalFov);
   double tanHalfV = std::tan(vfov * 0.5);
   double tanHalfH = tanHalfV * aspect;
 

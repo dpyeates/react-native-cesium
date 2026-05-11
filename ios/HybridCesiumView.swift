@@ -2,7 +2,17 @@ import Foundation
 import Metal
 import MetalKit
 import NitroModules
+import QuartzCore
 import UIKit
+
+/// Weak proxy for CADisplayLink so the timer does not strongly retain its
+/// owning view. Without this, CADisplayLink → HybridCesiumView → displayLink
+/// forms a cycle that prevents `deinit` from ever firing, which in turn
+/// prevents the C++ engine and SqliteCache handle from being released.
+private final class DisplayLinkProxy {
+  weak var owner: HybridCesiumView?
+  @objc func tick() { owner?.handleDisplayLinkTick() }
+}
 
 class HybridCesiumView: HybridCesiumViewSpec {
   // MARK: - Props
@@ -22,9 +32,9 @@ class HybridCesiumView: HybridCesiumViewSpec {
     }
   }
 
-  /// Construction-time seed camera. Used exactly once when the native bridge
-  /// is created; subsequent prop writes are ignored. Use `setCamera(_:)` to
-  /// drive the camera at runtime — it does NOT mutate this value.
+  /// Construction-time seed camera. Used exactly once via `teleport(...)`
+  /// when the native bridge is created; subsequent prop writes are ignored.
+  /// Use the per-DoF setters (or `teleport(...)`) for runtime updates.
   var initialCamera: CameraState = CameraState(
     latitude: 46.15,
     longitude: 7.35,
@@ -55,7 +65,6 @@ class HybridCesiumView: HybridCesiumViewSpec {
   var msaaSampleCount: Double = 1 {
     didSet {
       let s = Int32(msaaSampleCount)
-      // applyMtkViewMsaa touches MTKView/UIKit so it stays on main.
       applyMtkViewMsaa(Int(s))
       postToRender { [weak self] in self?.bridge?.setMsaaSampleCount(s) }
     }
@@ -105,12 +114,31 @@ class HybridCesiumView: HybridCesiumViewSpec {
     didSet { if let v = minAltitudeAboveTerrain { postToRender { [weak self] in self?.bridge?.setMinAltitudeAboveTerrain(Float(v)) } } }
   }
 
+  // ── Rate caps ────────────────────────────────────────────────────────────
+  var maxYawRateDegSec: Double?   { didSet { pushRateCaps() } }
+  var maxPitchRateDegSec: Double? { didSet { pushRateCaps() } }
+  var maxRollRateDegSec: Double?  { didSet { pushRateCaps() } }
+  var maxClimbRateMps: Double?    { didSet { pushRateCaps() } }
+  var maxGroundSpeedMps: Double?  { didSet { pushRateCaps() } }
+
+  private func pushRateCaps() {
+    let yaw   = maxYawRateDegSec ?? 0
+    let pitch = maxPitchRateDegSec ?? 0
+    let roll  = maxRollRateDegSec ?? 0
+    let climb = maxClimbRateMps ?? 0
+    let gnd   = maxGroundSpeedMps ?? 0
+    postToRender { [weak self] in
+      self?.bridge?.setRateCapsYaw(yaw, pitch: pitch, roll: roll,
+                                   climb: climb, groundSpeed: gnd)
+    }
+  }
+
   // MARK: - Render-thread dispatch helper
 
   /// Posts a closure to the dedicated render queue. Used by every prop setter
-  /// that mutates engine state, so the EngineConfig + GPU resources are only
-  /// ever touched from one thread (renderQueue) — the render path itself, the
-  /// surface init, and bridge teardown all run there.
+  /// that mutates engine state. Camera demand setters do **not** hop here —
+  /// the CameraIntegrator's mutex makes per-DoF writes safe from any thread,
+  /// and skipping the dispatch keeps latency minimal for high-rate updates.
   private func postToRender(_ action: @escaping () -> Void) {
     renderQueue.async { action() }
   }
@@ -119,7 +147,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
 
   // MARK: - Methods
 
-  func getCameraState() throws -> Promise<CameraState> {
+  func getActualCamera() throws -> Promise<CameraState> {
     guard let b = bridge else {
       return Promise.rejected(
         withError: NSError(
@@ -129,47 +157,102 @@ class HybridCesiumView: HybridCesiumViewSpec {
         )
       )
     }
-    let s = CameraState(
-      latitude: b.readCameraLatitude(),
-      longitude: b.readCameraLongitude(),
-      altitude: b.readCameraAltitude(),
-      heading: b.readCameraHeading(),
-      pitch: b.readCameraPitch(),
-      roll: b.readCameraRoll(),
-      verticalFovDeg: b.readVerticalFovDeg()
+    return Promise.resolved(
+      withResult: CameraState(
+        latitude: b.readActualLatitude(),
+        longitude: b.readActualLongitude(),
+        altitude: b.readActualAltitude(),
+        heading: b.readActualHeading(),
+        pitch: b.readActualPitch(),
+        roll: b.readActualRoll(),
+        verticalFovDeg: b.readActualVerticalFovDeg()
+      )
     )
-    return Promise.resolved(withResult: s)
   }
 
-  func setCamera(camera: CameraState) throws {
-    // Runtime camera updates flow through this method. We do *not* mutate
-    // `initialCamera` (it is construction-time only). If the view is not
-    // ready yet, the value is buffered in `pendingRuntimeCamera` and pushed
-    // during initialization.
-    pendingRuntimeCamera = camera
-    pendingRuntimeViewCorrection = nil
-    postToRender { [weak self] in self?.pushCameraStateIfChanged(camera) }
+  func getDemandCamera() throws -> Promise<CameraState> {
+    guard let b = bridge else {
+      return Promise.rejected(
+        withError: NSError(
+          domain: "HybridCesiumView",
+          code: 1,
+          userInfo: [NSLocalizedDescriptionKey: "Native bridge not initialized"]
+        )
+      )
+    }
+    return Promise.resolved(
+      withResult: CameraState(
+        latitude: b.readDemandLatitude(),
+        longitude: b.readDemandLongitude(),
+        altitude: b.readDemandAltitude(),
+        heading: b.readDemandHeading(),
+        pitch: b.readDemandPitch(),
+        roll: b.readDemandRoll(),
+        verticalFovDeg: b.readDemandVerticalFovDeg()
+      )
+    )
   }
 
-  func setCameraQuaternion(camera: CameraState, viewCorrection: Quaternion) throws {
-    pendingRuntimeCamera = camera
-    pendingRuntimeViewCorrection = viewCorrection
-    postToRender { [weak self] in self?.pushCameraQuaternionIfChanged(camera, viewCorrection: viewCorrection) }
+  func setPosition(latitude: Double, longitude: Double) throws {
+    if let b = bridge {
+      b.setPositionLatitude(latitude, longitude: longitude)
+    } else {
+      pendingLat = latitude
+      pendingLon = longitude
+    }
+  }
+
+  func setAltitude(altitudeMeters: Double) throws {
+    if let b = bridge { b.setAltitude(altitudeMeters) }
+    else              { pendingAltitude = altitudeMeters }
+  }
+
+  func setHeading(headingDeg: Double) throws {
+    if let b = bridge { b.setHeadingDeg(headingDeg) }
+    else              { pendingHeading = headingDeg }
+  }
+
+  func setAttitude(pitchDeg: Double, rollDeg: Double) throws {
+    if let b = bridge { b.setAttitudePitch(pitchDeg, roll: rollDeg) }
+    else              { pendingPitch = pitchDeg; pendingRoll = rollDeg }
+  }
+
+  func setViewCorrection(q: Quaternion) throws {
+    if let b = bridge { b.setViewCorrectionW(q.w, x: q.x, y: q.y, z: q.z) }
+    else              { pendingViewCorrection = q }
+  }
+
+  func setVerticalFov(deg: Double) throws {
+    if let b = bridge { b.setVerticalFovDeg(deg) }
+    else              { pendingVfov = deg }
+  }
+
+  func teleport(camera: CameraState) throws {
+    if let b = bridge {
+      b.teleportLatitude(camera.latitude,
+                         longitude: camera.longitude,
+                         altitude: camera.altitude,
+                         heading: camera.heading,
+                         pitch: camera.pitch,
+                         roll: camera.roll,
+                         verticalFovDeg: camera.verticalFovDeg)
+    } else {
+      pendingTeleport = camera
+    }
   }
 
   func getViewCorrection() throws -> Promise<Quaternion> {
     guard let b = bridge else {
-      return Promise.resolved(
-        withResult: Quaternion(w: 1, x: 0, y: 0, z: 0)
-      )
+      return Promise.resolved(withResult: Quaternion(w: 1, x: 0, y: 0, z: 0))
     }
-    let q = Quaternion(
-      w: b.readViewCorrectionW(),
-      x: b.readViewCorrectionX(),
-      y: b.readViewCorrectionY(),
-      z: b.readViewCorrectionZ()
+    return Promise.resolved(
+      withResult: Quaternion(
+        w: b.readViewCorrectionW(),
+        x: b.readViewCorrectionX(),
+        y: b.readViewCorrectionY(),
+        z: b.readViewCorrectionZ()
+      )
     )
-    return Promise.resolved(withResult: q)
   }
 
   // MARK: - View
@@ -177,35 +260,49 @@ class HybridCesiumView: HybridCesiumViewSpec {
   private let metalView: MTKView
   private var bridge: CesiumBridge?
   private var displayLink: CADisplayLink?
+  private let displayLinkProxy = DisplayLinkProxy()
   private var layoutPollTimer: Timer?
   private var metricsFrameCounter: Int = 0
   private var idleProbeAccumulator: Double = 0
   private var usingLowRefreshRate = false
   private var hasConfiguredFrameRate = false
-  private var lastPushedCameraState: CameraState?
-  /// Last quaternion pushed via `setCameraQuaternion`; `nil` if only `setCamera` has been used.
-  private var lastPushedViewCorrection: Quaternion?
-  /// Camera state requested by `setCamera` before the bridge was ready.
-  private var pendingRuntimeCamera: CameraState?
-  private var pendingRuntimeViewCorrection: Quaternion?
   private var lastBridgePixelSize: CGSize = .zero
+
+  /// Demand values that arrived before the bridge was created. Drained once
+  /// in `ensureInitialized()` after the seed teleport.
+  private var pendingTeleport: CameraState?
+  private var pendingLat: Double?
+  private var pendingLon: Double?
+  private var pendingAltitude: Double?
+  private var pendingHeading: Double?
+  private var pendingPitch: Double?
+  private var pendingRoll: Double?
+  private var pendingVfov: Double?
+  private var pendingViewCorrection: Quaternion?
 
   /// Dedicated serial render queue. CADisplayLink fires on `.main`, but the
   /// actual `bridge.shouldRenderNextFrame()` / `bridge.renderFrame(...)` work
   /// is dispatched here so the main thread is never blocked on Cesium tile
   /// loading or Metal command-buffer encoding. All bridge prop setters also
   /// dispatch here so they serialize with rendering and never race with
-  /// engine state.
+  /// engine state. Per-DoF camera writes deliberately bypass this hop —
+  /// CameraIntegrator's internal mutex handles cross-thread safety.
   private let renderQueue = DispatchQueue(
     label: "com.margelo.cesium.render",
     qos: .userInteractive
   )
   /// Drops a CADisplayLink tick if the render queue is still finishing the
-  /// previous frame — keeps it from queuing up an unbounded backlog under
-  /// stutter (Metal's frameSemaphore would already throttle, but this saves
-  /// the dispatch hop and keeps `dt` accurate).
+  /// previous frame.
   private var renderInFlight = false
   private let renderInFlightLock = NSLock()
+
+  /// Set to true at the start of `deinit`. Any work still queued on the
+  /// render or main queues checks this before touching the bridge or
+  /// invoking JS callbacks. Avoids two classes of warnings during fast
+  /// refresh / unmount: Nitro "Dispatcher has already been destroyed"
+  /// when emitting `onMetrics` into a dying JS runtime, and stray frame
+  /// ticks running after the bridge has been torn down.
+  private var isShutdown = false
 
   var view: UIView { metalView }
 
@@ -270,17 +367,29 @@ class HybridCesiumView: HybridCesiumViewSpec {
     if !ionAccessToken.isEmpty {
       bridge?.updateIonAccessToken(ionAccessToken, assetId: Int64(ionAssetId))
     }
-    // Apply construction-time seed first; if the consumer already invoked
-    // setCamera / setCameraQuaternion before we were ready, replay it last so
-    // the runtime value wins.
-    pushCameraStateIfChanged(initialCamera)
-    if let runtime = pendingRuntimeCamera {
-      if let q = pendingRuntimeViewCorrection {
-        pushCameraQuaternionIfChanged(runtime, viewCorrection: q)
-      } else {
-        pushCameraStateIfChanged(runtime)
-      }
+    // Seed from initialCamera, then replay anything the consumer set before
+    // we were ready.
+    let seed = pendingTeleport ?? initialCamera
+    bridge?.teleportLatitude(seed.latitude,
+                             longitude: seed.longitude,
+                             altitude: seed.altitude,
+                             heading: seed.heading,
+                             pitch: seed.pitch,
+                             roll: seed.roll,
+                             verticalFovDeg: seed.verticalFovDeg)
+    pendingTeleport = nil
+
+    if let la = pendingLat, let lo = pendingLon {
+      bridge?.setPositionLatitude(la, longitude: lo); pendingLat = nil; pendingLon = nil
     }
+    if let a = pendingAltitude       { bridge?.setAltitude(a);                           pendingAltitude = nil }
+    if let h = pendingHeading        { bridge?.setHeadingDeg(h);                         pendingHeading  = nil }
+    if let p = pendingPitch, let r = pendingRoll {
+      bridge?.setAttitudePitch(p, roll: r); pendingPitch = nil; pendingRoll = nil
+    }
+    if let f = pendingVfov           { bridge?.setVerticalFovDeg(f);                     pendingVfov     = nil }
+    if let q = pendingViewCorrection { bridge?.setViewCorrectionW(q.w, x: q.x, y: q.y, z: q.z); pendingViewCorrection = nil }
+
     if ionImageryAssetId != 1 {
       bridge?.updateImageryAssetId(Int64(ionImageryAssetId))
     }
@@ -288,6 +397,8 @@ class HybridCesiumView: HybridCesiumViewSpec {
     let sc = Int32(msaaSampleCount)
     bridge?.setMsaaSampleCount(sc)
     applyMtkViewMsaa(Int(sc))
+
+    pushRateCaps()
 
     startRenderLoop()
   }
@@ -325,69 +436,14 @@ class HybridCesiumView: HybridCesiumViewSpec {
     if let v = minAltitudeAboveTerrain { bridge?.setMinAltitudeAboveTerrain(Float(v)) }
   }
 
-  /// Pushes camera state into native bridge only when values changed.
-  private func pushCameraStateIfChanged(_ camera: CameraState) {
-    guard bridge != nil else { return }
-    if let last = lastPushedCameraState,
-       last.latitude == camera.latitude,
-       last.longitude == camera.longitude,
-       last.altitude == camera.altitude,
-       last.heading == camera.heading,
-       last.pitch == camera.pitch,
-       last.roll == camera.roll,
-       last.verticalFovDeg == camera.verticalFovDeg {
-      return
-    }
-    lastPushedCameraState = camera
-    bridge?.updateCameraLatitude(
-      camera.latitude,
-      longitude: camera.longitude,
-      altitude: camera.altitude,
-      heading: camera.heading,
-      pitch: camera.pitch,
-      roll: camera.roll
-    )
-    bridge?.setVerticalFovDeg(camera.verticalFovDeg)
-  }
-
-  private func pushCameraQuaternionIfChanged(_ camera: CameraState, viewCorrection: Quaternion) {
-    guard bridge != nil else { return }
-    if let lastCam = lastPushedCameraState,
-       let lastQ = lastPushedViewCorrection,
-       lastCam.latitude == camera.latitude,
-       lastCam.longitude == camera.longitude,
-       lastCam.altitude == camera.altitude,
-       lastCam.heading == camera.heading,
-       lastCam.pitch == camera.pitch,
-       lastCam.roll == camera.roll,
-       lastCam.verticalFovDeg == camera.verticalFovDeg,
-       lastQ.w == viewCorrection.w,
-       lastQ.x == viewCorrection.x,
-       lastQ.y == viewCorrection.y,
-       lastQ.z == viewCorrection.z {
-      return
-    }
-    lastPushedCameraState = camera
-    lastPushedViewCorrection = viewCorrection
-    bridge?.updateCameraQuaternionLatitude(
-      camera.latitude,
-      longitude: camera.longitude,
-      altitude: camera.altitude,
-      heading: camera.heading,
-      pitch: camera.pitch,
-      roll: camera.roll,
-      viewCorrectionW: viewCorrection.w,
-      x: viewCorrection.x,
-      y: viewCorrection.y,
-      z: viewCorrection.z
-    )
-    bridge?.setVerticalFovDeg(camera.verticalFovDeg)
-  }
-
   // MARK: - Render Loop
 
   private func startRenderLoop() {
-    displayLink = CADisplayLink(target: self, selector: #selector(renderFrame))
+    displayLinkProxy.owner = self
+    displayLink = CADisplayLink(
+      target: displayLinkProxy,
+      selector: #selector(DisplayLinkProxy.tick)
+    )
     setDisplayLinkFrameRate(idle: false)
     displayLink?.add(to: .main, forMode: .common)
     displayLink?.isPaused = pauseRendering
@@ -403,12 +459,11 @@ class HybridCesiumView: HybridCesiumViewSpec {
       : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
   }
 
-  @objc private func renderFrame() {
+  /// Invoked by `DisplayLinkProxy` on every CADisplayLink tick (main thread).
+  fileprivate func handleDisplayLinkTick() {
     guard !pauseRendering,
-          let dl = displayLink,
+          !isShutdown,
           let bridge else { return }
-
-    let dt = max(dl.targetTimestamp - dl.timestamp, 1.0 / 120.0)
 
     // metalView.bounds / drawableSize are UIKit, must stay on main.
     let scale = metalView.contentScaleFactor
@@ -424,9 +479,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
       }
     }
 
-    // Throttle: drop the tick if the render queue hasn't finished the previous
-    // frame yet. This keeps the dispatch backlog at zero and lets the next
-    // CADisplayLink fire pick up a fresh dt.
+    // Drop the tick if the render queue hasn't finished the previous frame yet.
     renderInFlightLock.lock()
     if renderInFlight {
       renderInFlightLock.unlock()
@@ -435,16 +488,24 @@ class HybridCesiumView: HybridCesiumViewSpec {
     renderInFlight = true
     renderInFlightLock.unlock()
 
+    // Wall-clock time used for the metrics-only frame-dt EMA inside the
+    // bridge. The camera integrator owns its own clock — see
+    // CameraIntegrator::step().
+    let nowSeconds = CACurrentMediaTime()
+
     let resizedW = w
     let resizedH = h
-    let weakSelf = self  // captured for main-thread post-frame work
     renderQueue.async { [weak self, weak bridge] in
-      guard let self = self, let bridge = bridge else {
-        weakSelf.renderInFlightLock.lock()
-        weakSelf.renderInFlight = false
-        weakSelf.renderInFlightLock.unlock()
-        return
+      guard let self = self else { return }
+      // `renderInFlight` must always be cleared so a single dropped tick
+      // doesn't permanently wedge the render loop. defer guarantees it
+      // regardless of which early-return path we take below.
+      defer {
+        self.renderInFlightLock.lock()
+        self.renderInFlight = false
+        self.renderInFlightLock.unlock()
       }
+      guard let bridge = bridge else { return }
 
       if didResize {
         bridge.resize(Int32(resizedW), height: Int32(resizedH))
@@ -455,12 +516,13 @@ class HybridCesiumView: HybridCesiumViewSpec {
       let nextIsIdle: Bool
       if shouldRenderNow {
         self.idleProbeAccumulator = 0
-        bridge.renderFrame(withDt: dt)
+        bridge.renderFrame(at: nowSeconds)
         nextIsIdle = false
       } else {
-        self.idleProbeAccumulator += dt
+        // Approximate dt for the idle probe. We don't need precision here.
+        let probeDt = 1.0 / 60.0
+        self.idleProbeAccumulator += probeDt
         if self.idleProbeAccumulator >= 0.25 {
-          // Safety probe: occasionally tick engine state for late tile completions.
           self.idleProbeAccumulator = 0
           bridge.markNeedsRender()
         }
@@ -469,7 +531,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
 
       self.metricsFrameCounter += 1
       let shouldEmitMetrics =
-        self.metricsFrameCounter >= 20 && self.onMetrics != nil
+        self.metricsFrameCounter >= 20 && self.onMetrics != nil && !self.isShutdown
       let metricsSnapshot: CesiumMetrics? = shouldEmitMetrics ? CesiumMetrics(
         fps: bridge.metricsFps,
         tilesRendered: Double(bridge.metricsTilesRendered),
@@ -482,32 +544,38 @@ class HybridCesiumView: HybridCesiumViewSpec {
       ) : nil
       if shouldEmitMetrics { self.metricsFrameCounter = 0 }
 
-      // Hop back to main to update CADisplayLink rate (UIKit) and emit the
-      // metrics callback (consumer may touch UI from it).
       DispatchQueue.main.async { [weak self] in
-        guard let self = self else { return }
+        guard let self = self, !self.isShutdown else { return }
         self.setDisplayLinkFrameRate(idle: nextIsIdle)
         if let m = metricsSnapshot, let cb = self.onMetrics {
           cb(m)
         }
       }
-
-      self.renderInFlightLock.lock()
-      self.renderInFlight = false
-      self.renderInFlightLock.unlock()
+      // renderInFlight is cleared by the defer at the top of this closure.
     }
   }
 
   deinit {
-    layoutPollTimer?.invalidate()
-    displayLink?.invalidate()
+    // Set the shutdown gate first so any in-flight render-queue tick and
+    // any queued main-queue follow-on (metric emission, frame-rate update)
+    // bail out before they touch the bridge or invoke onMetrics into a
+    // JS dispatcher that may already be gone.
+    isShutdown = true
+    onMetrics = nil
 
-    // Drain the render queue so we don't release `bridge` while it's
-    // mid-encode. `sync` here is bounded by Metal's frameSemaphore wait —
-    // which itself is already bounded to 1 s in MetalBackend::shutdown().
+    layoutPollTimer?.invalidate()
+    layoutPollTimer = nil
+    displayLink?.invalidate()
+    displayLink = nil
+    displayLinkProxy.owner = nil
+
     let bridgeRef = bridge
     bridge = nil
     if let b = bridgeRef {
+      // Drain anything already on the render queue, then ask the bridge
+      // to release its engine + Metal backend synchronously. We do this
+      // inside the sync hop so the SqliteCache file handle is closed
+      // before any subsequent CesiumView mount can open the same cache.
       renderQueue.sync {
         b.shutdown()
       }

@@ -6,7 +6,7 @@ This app is the reference integration for `react-native-cesium`. For the current
 
 - rendering `CesiumView` inside a React Native screen
 - wiring a Nitro `hybridRef`
-- driving the camera with `setCamera(...)`
+- driving the camera through the per-DoF setters (`setPosition`, `setAltitude`, `setHeading`, `setAttitude`) from a Reanimated worklet — see [`hooks/useCameraController.ts`](./hooks/useCameraController.ts)
 - receiving runtime telemetry through `onMetrics`
 - showing Cesium attribution text from `creditsPlainText`
 

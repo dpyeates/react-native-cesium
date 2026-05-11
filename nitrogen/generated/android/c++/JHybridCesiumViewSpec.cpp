@@ -256,6 +256,51 @@ namespace margelo::nitro::reactnativecesium {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* minAltitudeAboveTerrain */)>("setMinAltitudeAboveTerrain");
     method(_javaPart, minAltitudeAboveTerrain.has_value() ? jni::JDouble::valueOf(minAltitudeAboveTerrain.value()) : nullptr);
   }
+  std::optional<double> JHybridCesiumViewSpec::getMaxYawRateDegSec() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getMaxYawRateDegSec");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setMaxYawRateDegSec(std::optional<double> maxYawRateDegSec) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* maxYawRateDegSec */)>("setMaxYawRateDegSec");
+    method(_javaPart, maxYawRateDegSec.has_value() ? jni::JDouble::valueOf(maxYawRateDegSec.value()) : nullptr);
+  }
+  std::optional<double> JHybridCesiumViewSpec::getMaxPitchRateDegSec() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getMaxPitchRateDegSec");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setMaxPitchRateDegSec(std::optional<double> maxPitchRateDegSec) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* maxPitchRateDegSec */)>("setMaxPitchRateDegSec");
+    method(_javaPart, maxPitchRateDegSec.has_value() ? jni::JDouble::valueOf(maxPitchRateDegSec.value()) : nullptr);
+  }
+  std::optional<double> JHybridCesiumViewSpec::getMaxRollRateDegSec() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getMaxRollRateDegSec");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setMaxRollRateDegSec(std::optional<double> maxRollRateDegSec) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* maxRollRateDegSec */)>("setMaxRollRateDegSec");
+    method(_javaPart, maxRollRateDegSec.has_value() ? jni::JDouble::valueOf(maxRollRateDegSec.value()) : nullptr);
+  }
+  std::optional<double> JHybridCesiumViewSpec::getMaxClimbRateMps() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getMaxClimbRateMps");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setMaxClimbRateMps(std::optional<double> maxClimbRateMps) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* maxClimbRateMps */)>("setMaxClimbRateMps");
+    method(_javaPart, maxClimbRateMps.has_value() ? jni::JDouble::valueOf(maxClimbRateMps.value()) : nullptr);
+  }
+  std::optional<double> JHybridCesiumViewSpec::getMaxGroundSpeedMps() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getMaxGroundSpeedMps");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setMaxGroundSpeedMps(std::optional<double> maxGroundSpeedMps) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* maxGroundSpeedMps */)>("setMaxGroundSpeedMps");
+    method(_javaPart, maxGroundSpeedMps.has_value() ? jni::JDouble::valueOf(maxGroundSpeedMps.value()) : nullptr);
+  }
   std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> JHybridCesiumViewSpec::getOnMetrics() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_CesiumMetrics::javaobject>()>("getOnMetrics_cxx");
     auto __result = method(_javaPart);
@@ -275,8 +320,36 @@ namespace margelo::nitro::reactnativecesium {
   }
 
   // Methods
-  std::shared_ptr<Promise<CameraState>> JHybridCesiumViewSpec::getCameraState() {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>()>("getCameraState");
+  void JHybridCesiumViewSpec::setPosition(double latitude, double longitude) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* latitude */, double /* longitude */)>("setPosition");
+    method(_javaPart, latitude, longitude);
+  }
+  void JHybridCesiumViewSpec::setAltitude(double altitudeMeters) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* altitudeMeters */)>("setAltitude");
+    method(_javaPart, altitudeMeters);
+  }
+  void JHybridCesiumViewSpec::setHeading(double headingDeg) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* headingDeg */)>("setHeading");
+    method(_javaPart, headingDeg);
+  }
+  void JHybridCesiumViewSpec::setAttitude(double pitchDeg, double rollDeg) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* pitchDeg */, double /* rollDeg */)>("setAttitude");
+    method(_javaPart, pitchDeg, rollDeg);
+  }
+  void JHybridCesiumViewSpec::setViewCorrection(const Quaternion& q) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JQuaternion> /* q */)>("setViewCorrection");
+    method(_javaPart, JQuaternion::fromCpp(q));
+  }
+  void JHybridCesiumViewSpec::setVerticalFov(double deg) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* deg */)>("setVerticalFov");
+    method(_javaPart, deg);
+  }
+  void JHybridCesiumViewSpec::teleport(const CameraState& camera) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JCameraState> /* camera */)>("teleport");
+    method(_javaPart, JCameraState::fromCpp(camera));
+  }
+  std::shared_ptr<Promise<CameraState>> JHybridCesiumViewSpec::getActualCamera() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>()>("getActualCamera");
     auto __result = method(_javaPart);
     return [&]() {
       auto __promise = Promise<CameraState>::create();
@@ -291,13 +364,21 @@ namespace margelo::nitro::reactnativecesium {
       return __promise;
     }();
   }
-  void JHybridCesiumViewSpec::setCamera(const CameraState& camera) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JCameraState> /* camera */)>("setCamera");
-    method(_javaPart, JCameraState::fromCpp(camera));
-  }
-  void JHybridCesiumViewSpec::setCameraQuaternion(const CameraState& camera, const Quaternion& viewCorrection) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JCameraState> /* camera */, jni::alias_ref<JQuaternion> /* viewCorrection */)>("setCameraQuaternion");
-    method(_javaPart, JCameraState::fromCpp(camera), JQuaternion::fromCpp(viewCorrection));
+  std::shared_ptr<Promise<CameraState>> JHybridCesiumViewSpec::getDemandCamera() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>()>("getDemandCamera");
+    auto __result = method(_javaPart);
+    return [&]() {
+      auto __promise = Promise<CameraState>::create();
+      __result->cthis()->addOnResolvedListener([=](const jni::alias_ref<jni::JObject>& __boxedResult) {
+        auto __result = jni::static_ref_cast<JCameraState>(__boxedResult);
+        __promise->resolve(__result->toCpp());
+      });
+      __result->cthis()->addOnRejectedListener([=](const jni::alias_ref<jni::JThrowable>& __throwable) {
+        jni::JniException __jniError(__throwable);
+        __promise->reject(std::make_exception_ptr(__jniError));
+      });
+      return __promise;
+    }();
   }
   std::shared_ptr<Promise<Quaternion>> JHybridCesiumViewSpec::getViewCorrection() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>()>("getViewCorrection");

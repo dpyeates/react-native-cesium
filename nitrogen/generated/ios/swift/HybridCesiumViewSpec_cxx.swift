@@ -532,6 +532,126 @@ open class HybridCesiumViewSpec_cxx {
     }
   }
   
+  public final var maxYawRateDegSec: bridge.std__optional_double_ {
+    @inline(__always)
+    get {
+      return { () -> bridge.std__optional_double_ in
+        if let __unwrappedValue = self.__implementation.maxYawRateDegSec {
+          return bridge.create_std__optional_double_(__unwrappedValue)
+        } else {
+          return .init()
+        }
+      }()
+    }
+    @inline(__always)
+    set {
+      self.__implementation.maxYawRateDegSec = { () -> Double? in
+        if bridge.has_value_std__optional_double_(newValue) {
+          let __unwrapped = bridge.get_std__optional_double_(newValue)
+          return __unwrapped
+        } else {
+          return nil
+        }
+      }()
+    }
+  }
+  
+  public final var maxPitchRateDegSec: bridge.std__optional_double_ {
+    @inline(__always)
+    get {
+      return { () -> bridge.std__optional_double_ in
+        if let __unwrappedValue = self.__implementation.maxPitchRateDegSec {
+          return bridge.create_std__optional_double_(__unwrappedValue)
+        } else {
+          return .init()
+        }
+      }()
+    }
+    @inline(__always)
+    set {
+      self.__implementation.maxPitchRateDegSec = { () -> Double? in
+        if bridge.has_value_std__optional_double_(newValue) {
+          let __unwrapped = bridge.get_std__optional_double_(newValue)
+          return __unwrapped
+        } else {
+          return nil
+        }
+      }()
+    }
+  }
+  
+  public final var maxRollRateDegSec: bridge.std__optional_double_ {
+    @inline(__always)
+    get {
+      return { () -> bridge.std__optional_double_ in
+        if let __unwrappedValue = self.__implementation.maxRollRateDegSec {
+          return bridge.create_std__optional_double_(__unwrappedValue)
+        } else {
+          return .init()
+        }
+      }()
+    }
+    @inline(__always)
+    set {
+      self.__implementation.maxRollRateDegSec = { () -> Double? in
+        if bridge.has_value_std__optional_double_(newValue) {
+          let __unwrapped = bridge.get_std__optional_double_(newValue)
+          return __unwrapped
+        } else {
+          return nil
+        }
+      }()
+    }
+  }
+  
+  public final var maxClimbRateMps: bridge.std__optional_double_ {
+    @inline(__always)
+    get {
+      return { () -> bridge.std__optional_double_ in
+        if let __unwrappedValue = self.__implementation.maxClimbRateMps {
+          return bridge.create_std__optional_double_(__unwrappedValue)
+        } else {
+          return .init()
+        }
+      }()
+    }
+    @inline(__always)
+    set {
+      self.__implementation.maxClimbRateMps = { () -> Double? in
+        if bridge.has_value_std__optional_double_(newValue) {
+          let __unwrapped = bridge.get_std__optional_double_(newValue)
+          return __unwrapped
+        } else {
+          return nil
+        }
+      }()
+    }
+  }
+  
+  public final var maxGroundSpeedMps: bridge.std__optional_double_ {
+    @inline(__always)
+    get {
+      return { () -> bridge.std__optional_double_ in
+        if let __unwrappedValue = self.__implementation.maxGroundSpeedMps {
+          return bridge.create_std__optional_double_(__unwrappedValue)
+        } else {
+          return .init()
+        }
+      }()
+    }
+    @inline(__always)
+    set {
+      self.__implementation.maxGroundSpeedMps = { () -> Double? in
+        if bridge.has_value_std__optional_double_(newValue) {
+          let __unwrapped = bridge.get_std__optional_double_(newValue)
+          return __unwrapped
+        } else {
+          return nil
+        }
+      }()
+    }
+  }
+  
   public final var onMetrics: bridge.std__optional_std__function_void_const_CesiumMetrics_____metrics______ {
     @inline(__always)
     get {
@@ -566,9 +686,86 @@ open class HybridCesiumViewSpec_cxx {
 
   // Methods
   @inline(__always)
-  public final func getCameraState() -> bridge.Result_std__shared_ptr_Promise_CameraState___ {
+  public final func setPosition(latitude: Double, longitude: Double) -> bridge.Result_void_ {
     do {
-      let __result = try self.__implementation.getCameraState()
+      try self.__implementation.setPosition(latitude: latitude, longitude: longitude)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func setAltitude(altitudeMeters: Double) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.setAltitude(altitudeMeters: altitudeMeters)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func setHeading(headingDeg: Double) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.setHeading(headingDeg: headingDeg)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func setAttitude(pitchDeg: Double, rollDeg: Double) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.setAttitude(pitchDeg: pitchDeg, rollDeg: rollDeg)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func setViewCorrection(q: Quaternion) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.setViewCorrection(q: q)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func setVerticalFov(deg: Double) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.setVerticalFov(deg: deg)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func teleport(camera: CameraState) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.teleport(camera: camera)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func getActualCamera() -> bridge.Result_std__shared_ptr_Promise_CameraState___ {
+    do {
+      let __result = try self.__implementation.getActualCamera()
       let __resultCpp = { () -> bridge.std__shared_ptr_Promise_CameraState__ in
         let __promise = bridge.create_std__shared_ptr_Promise_CameraState__()
         let __promiseHolder = bridge.wrap_std__shared_ptr_Promise_CameraState__(__promise)
@@ -585,24 +782,21 @@ open class HybridCesiumViewSpec_cxx {
   }
   
   @inline(__always)
-  public final func setCamera(camera: CameraState) -> bridge.Result_void_ {
+  public final func getDemandCamera() -> bridge.Result_std__shared_ptr_Promise_CameraState___ {
     do {
-      try self.__implementation.setCamera(camera: camera)
-      return bridge.create_Result_void_()
+      let __result = try self.__implementation.getDemandCamera()
+      let __resultCpp = { () -> bridge.std__shared_ptr_Promise_CameraState__ in
+        let __promise = bridge.create_std__shared_ptr_Promise_CameraState__()
+        let __promiseHolder = bridge.wrap_std__shared_ptr_Promise_CameraState__(__promise)
+        __result
+          .then({ __result in __promiseHolder.resolve(__result) })
+          .catch({ __error in __promiseHolder.reject(__error.toCpp()) })
+        return __promise
+      }()
+      return bridge.create_Result_std__shared_ptr_Promise_CameraState___(__resultCpp)
     } catch (let __error) {
       let __exceptionPtr = __error.toCpp()
-      return bridge.create_Result_void_(__exceptionPtr)
-    }
-  }
-  
-  @inline(__always)
-  public final func setCameraQuaternion(camera: CameraState, viewCorrection: Quaternion) -> bridge.Result_void_ {
-    do {
-      try self.__implementation.setCameraQuaternion(camera: camera, viewCorrection: viewCorrection)
-      return bridge.create_Result_void_()
-    } catch (let __error) {
-      let __exceptionPtr = __error.toCpp()
-      return bridge.create_Result_void_(__exceptionPtr)
+      return bridge.create_Result_std__shared_ptr_Promise_CameraState___(__exceptionPtr)
     }
   }
   

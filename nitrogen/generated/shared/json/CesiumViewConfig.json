@@ -26,6 +26,11 @@
     "sqliteCacheMaxRows": true,
     "taskProcessorThreads": true,
     "minAltitudeAboveTerrain": true,
+    "maxYawRateDegSec": true,
+    "maxPitchRateDegSec": true,
+    "maxRollRateDegSec": true,
+    "maxClimbRateMps": true,
+    "maxGroundSpeedMps": true,
     "onMetrics": true,
     "hybridRef": true
   }

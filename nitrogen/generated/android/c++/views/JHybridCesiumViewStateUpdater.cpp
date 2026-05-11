@@ -125,6 +125,26 @@ void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     hybridView->setMinAltitudeAboveTerrain(props->minAltitudeAboveTerrain.value);
     props->minAltitudeAboveTerrain.isDirty = false;
   }
+  if (props->maxYawRateDegSec.isDirty) {
+    hybridView->setMaxYawRateDegSec(props->maxYawRateDegSec.value);
+    props->maxYawRateDegSec.isDirty = false;
+  }
+  if (props->maxPitchRateDegSec.isDirty) {
+    hybridView->setMaxPitchRateDegSec(props->maxPitchRateDegSec.value);
+    props->maxPitchRateDegSec.isDirty = false;
+  }
+  if (props->maxRollRateDegSec.isDirty) {
+    hybridView->setMaxRollRateDegSec(props->maxRollRateDegSec.value);
+    props->maxRollRateDegSec.isDirty = false;
+  }
+  if (props->maxClimbRateMps.isDirty) {
+    hybridView->setMaxClimbRateMps(props->maxClimbRateMps.value);
+    props->maxClimbRateMps.isDirty = false;
+  }
+  if (props->maxGroundSpeedMps.isDirty) {
+    hybridView->setMaxGroundSpeedMps(props->maxGroundSpeedMps.value);
+    props->maxGroundSpeedMps.isDirty = false;
+  }
   if (props->onMetrics.isDirty) {
     hybridView->setOnMetrics(props->onMetrics.value);
     props->onMetrics.isDirty = false;

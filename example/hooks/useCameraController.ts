@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FrameInfo } from 'react-native-reanimated';
 import {
   useAnimatedReaction,
@@ -11,7 +11,7 @@ import type { CameraState, CesiumViewMethods } from 'react-native-cesium';
 const HUD_UPDATE_INTERVAL_MS = 100;
 
 export type CameraControllerResult = {
-  /** Shared camera value driven by gestures, joystick, and native sync. */
+  /** Shared camera value driven by gestures, joystick, and the joystick frame loop. */
   camera: ReturnType<typeof useSharedValue<CameraState>>;
   /** Throttled React state copy of the camera for HUD rendering. */
   hudCamera: CameraState;
@@ -23,7 +23,12 @@ export type CameraControllerResult = {
 
 /**
  * Manages the shared camera value, joystick pitch/roll integration, throttled
- * HUD updates, and native setCamera calls.
+ * HUD updates, and the native per-DoF camera setters.
+ *
+ * The native side runs an α-β tracker per DoF, so each setter only needs the
+ * value that actually changed. We split the writes per DoF here so a high-rate
+ * IMU feed (50 Hz attitude) does not drag stale GPS lat/lon through every
+ * call.
  *
  * @param initialCamera - Seed value for the camera shared value. Reactive
  * changes to this argument after mount are ignored.
@@ -38,7 +43,19 @@ export function useCameraController(
 
   const [cesiumView, setCesiumView] = useState<CesiumViewMethods | null>(null);
   const [hudCamera, setHudCamera] = useState<CameraState>(initialCamera);
-  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Previous values pushed to native — kept on the UI thread (shared values)
+  // so the per-DoF diffing logic stays inside the worklet reaction below.
+  // -1 / NaN sentinels mark "not seeded yet" so the first reaction issues a
+  // single teleport, after which we diff per DoF.
+  const prevSeeded = useSharedValue(false);
+  const prevLat   = useSharedValue(0);
+  const prevLon   = useSharedValue(0);
+  const prevAlt   = useSharedValue(0);
+  const prevHdg   = useSharedValue(0);
+  const prevPitch = useSharedValue(0);
+  const prevRoll  = useSharedValue(0);
+  const prevVfov  = useSharedValue(0);
 
   const updateHudCamera = useCallback((nextCamera: CameraState) => {
     setHudCamera(nextCamera);
@@ -70,51 +87,81 @@ export function useCameraController(
 
   useFrameCallback(integrateJoystick);
 
-  // Push camera state to native on every change; throttle HUD React state
-  // updates to avoid flooding the JS thread.
+  // Push camera state to native via per-DoF setters; throttle HUD React
+  // state updates so the JS thread isn't flooded.
   useAnimatedReaction(
     () => camera.value,
     (cur) => {
-      cesiumView?.setCamera(cur);
+      'worklet';
+      if (cesiumView == null) return;
+      if (!prevSeeded.value) {
+        cesiumView.teleport(cur);
+        prevSeeded.value = true;
+      } else {
+        if (cur.latitude !== prevLat.value || cur.longitude !== prevLon.value) {
+          cesiumView.setPosition(cur.latitude, cur.longitude);
+        }
+        if (cur.altitude !== prevAlt.value) cesiumView.setAltitude(cur.altitude);
+        if (cur.heading !== prevHdg.value)  cesiumView.setHeading(cur.heading);
+        if (cur.pitch !== prevPitch.value || cur.roll !== prevRoll.value) {
+          cesiumView.setAttitude(cur.pitch, cur.roll);
+        }
+        if (cur.verticalFovDeg !== prevVfov.value) {
+          cesiumView.setVerticalFov(cur.verticalFovDeg);
+        }
+      }
+      prevLat.value   = cur.latitude;
+      prevLon.value   = cur.longitude;
+      prevAlt.value   = cur.altitude;
+      prevHdg.value   = cur.heading;
+      prevPitch.value = cur.pitch;
+      prevRoll.value  = cur.roll;
+      prevVfov.value  = cur.verticalFovDeg;
+
       const now = Date.now();
       if (now - lastHudDispatchMs.value < HUD_UPDATE_INTERVAL_MS) return;
       lastHudDispatchMs.value = now;
       scheduleOnRN(updateHudCamera, cur);
     },
-    [cesiumView, lastHudDispatchMs, updateHudCamera],
+    [
+      cesiumView,
+      lastHudDispatchMs,
+      updateHudCamera,
+      prevSeeded,
+      prevLat,
+      prevLon,
+      prevAlt,
+      prevHdg,
+      prevPitch,
+      prevRoll,
+      prevVfov,
+    ],
   );
 
-  // Keep camera.value in sync with the native-clamped altitude so that
-  // gesture anchors (snap.alt in MapGestureHandler) always start from the
-  // actual rendered altitude. Without this, the native terrain floor clamp
-  // silently diverges from the JS value and causes a dead zone on zoom-out.
+  // The native integrator writes the clamped altitude back into its own
+  // *actual* state via the terrain-floor hook, but the shared `camera` value
+  // (and therefore the gesture pan/zoom anchors) is a JS-side construct. We
+  // need a single nudge after mount so the anchors track reality. After that,
+  // any subsequent pinch will overwrite altitude from the latest demand
+  // anyway, so we don't need to poll continuously.
   useEffect(() => {
     if (!cesiumView) return;
-    let active = true;
-
-    const sync = async () => {
-      if (!active || !cesiumView) return;
+    let cancelled = false;
+    const id = setTimeout(async () => {
+      if (cancelled || !cesiumView) return;
       try {
-        const state = await cesiumView.getCameraState();
-        if (!active) return;
-        // Only intervene when native raised the altitude (i.e., clamped us).
-        // Use a 0.5 m threshold to ignore floating-point noise.
+        const state = await cesiumView.getActualCamera();
+        if (cancelled) return;
         if (state.altitude > camera.value.altitude + 0.5) {
           camera.value = { ...camera.value, altitude: state.altitude };
         }
       } catch (_) {
-        // ignore — bridge not yet ready or tearing down
+        // bridge not ready yet
       }
-      if (active) {
-        syncTimerRef.current = setTimeout(sync, 200);
-      }
-    };
-
-    // Start after a short delay so the bridge is fully initialised.
-    syncTimerRef.current = setTimeout(sync, 500);
+    }, 750);
     return () => {
-      active = false;
-      if (syncTimerRef.current !== null) clearTimeout(syncTimerRef.current);
+      cancelled = true;
+      clearTimeout(id);
     };
   }, [cesiumView, camera]);
 

@@ -11,12 +11,16 @@
 namespace reactnativecesium {
 
 struct CameraParams {
-  double latitude  = 46.10;
-  double longitude = 7.80;
-  double altitude  = 5500.0;
-  double heading   = 220.0;
-  double pitch     = -10.0;
-  double roll      = 0.0;
+  double latitude    = 46.10;
+  double longitude   = 7.80;
+  double altitude    = 5500.0;
+  double heading     = 220.0;
+  double pitch       = -10.0;
+  double roll        = 0.0;
+  /// Vertical field of view in degrees. Clamped to [kMinVfov, kMaxVfov] by
+  /// GlobeCamera when written. Zero means "leave the previous value" — used
+  /// by partial constructors that don't want to opine on FOV.
+  double verticalFov = 60.0;
   /// Camera-space rotation applied after HPR (unit quaternion; w,x,y,z).
   glm::dquat viewCorrection{1.0, 0.0, 0.0, 0.0};
 };
@@ -28,6 +32,7 @@ public:
   void setParams(const CameraParams& params);
   CameraParams getParams() const;
 
+  /// Convenience helper — equivalent to mutating only verticalFov via setParams.
   void setVerticalFovDegrees(double degrees);
   double getVerticalFovDegrees() const;
 
@@ -55,8 +60,6 @@ private:
 
   mutable std::mutex mutex_;
   CameraParams params_;
-
-  double verticalFovDeg_ = 60.0;
 
   mutable bool       dirty_        = true;
   mutable glm::dvec3 ecefPosition_{0.0};

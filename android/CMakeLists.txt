@@ -71,8 +71,7 @@ add_library(${PACKAGE_NAME} SHARED
         ../cpp/engine/GlobeCamera.cpp
         ../cpp/engine/GeoidConverter.cpp
         ../cpp/engine/TileLifecycleManager.cpp
-        ../cpp/engine/CameraSmoother.cpp
-        ../cpp/engine/CameraTargetState.cpp
+        ../cpp/engine/CameraIntegrator.cpp
         ../cpp/engine/MetricsAggregator.cpp
         ../cpp/third_party/egm96/EGM96.c
         src/main/cpp/vulkan/VulkanBackend.cpp

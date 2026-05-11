@@ -94,14 +94,30 @@ namespace margelo::nitro::reactnativecesium {
     void setTaskProcessorThreads(std::optional<double> taskProcessorThreads) override;
     std::optional<double> getMinAltitudeAboveTerrain() override;
     void setMinAltitudeAboveTerrain(std::optional<double> minAltitudeAboveTerrain) override;
+    std::optional<double> getMaxYawRateDegSec() override;
+    void setMaxYawRateDegSec(std::optional<double> maxYawRateDegSec) override;
+    std::optional<double> getMaxPitchRateDegSec() override;
+    void setMaxPitchRateDegSec(std::optional<double> maxPitchRateDegSec) override;
+    std::optional<double> getMaxRollRateDegSec() override;
+    void setMaxRollRateDegSec(std::optional<double> maxRollRateDegSec) override;
+    std::optional<double> getMaxClimbRateMps() override;
+    void setMaxClimbRateMps(std::optional<double> maxClimbRateMps) override;
+    std::optional<double> getMaxGroundSpeedMps() override;
+    void setMaxGroundSpeedMps(std::optional<double> maxGroundSpeedMps) override;
     std::optional<std::function<void(const CesiumMetrics& /* metrics */)>> getOnMetrics() override;
     void setOnMetrics(const std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>& onMetrics) override;
 
   public:
     // Methods
-    std::shared_ptr<Promise<CameraState>> getCameraState() override;
-    void setCamera(const CameraState& camera) override;
-    void setCameraQuaternion(const CameraState& camera, const Quaternion& viewCorrection) override;
+    void setPosition(double latitude, double longitude) override;
+    void setAltitude(double altitudeMeters) override;
+    void setHeading(double headingDeg) override;
+    void setAttitude(double pitchDeg, double rollDeg) override;
+    void setViewCorrection(const Quaternion& q) override;
+    void setVerticalFov(double deg) override;
+    void teleport(const CameraState& camera) override;
+    std::shared_ptr<Promise<CameraState>> getActualCamera() override;
+    std::shared_ptr<Promise<CameraState>> getDemandCamera() override;
     std::shared_ptr<Promise<Quaternion>> getViewCorrection() override;
 
   private:

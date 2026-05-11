@@ -280,7 +280,7 @@ When you pass a callback ref to `CesiumView`, wrap it with `callback(...)` from 
 | --- | --- | --- |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `ionAccessToken` | `string` | _none_ | Cesium Ion token for authenticated asset/imagery requests. An invalid token usually leaves the globe empty or partially loaded due to 401/403 responses.                                                     |
 | `ionAssetId` | `number` | _none_ | Main Ion asset to render (tileset/terrain).                                                                                                                                                                  |
-| `initialCamera` | `CameraState` | _none_ | Initial camera used when the view is created. This is only used for initial camera; use `setCamera()` for runtime moves.                                                                                     |
+| `initialCamera` | `CameraState` | _none_ | Camera applied via `teleport(...)` once when the view is created. **Only the initial mount writes this value**; subsequent prop changes are ignored. Use the per-DoF setters (`setPosition` / `setAltitude` / `setHeading` / `setAttitude` / `setVerticalFov`) or `teleport(...)` for runtime moves. |
 | `pauseRendering` | `boolean` | `false` | Pauses the native render loop. Set `true` to stop rendering and reduce GPU/CPU usage.                                                                                                                        |
 | `maximumScreenSpaceError` | `number` | `32` | Quality/performance trade-off for tile refinement. Lower values are sharper (more work); higher values are faster/blurrier.                                                                                  |
 | `maximumSimultaneousTileLoads` | `number` | `12` | Max concurrent tile fetch/decode operations. Raising `8 -> 16` can improve fast camera moves on good networks but may increase memory/bandwidth spikes.                                                      |
@@ -312,6 +312,11 @@ These props are all optional. Leave them unset to use the built-in defaults; set
 | `lodTransitionLength` | `number` | `1.0` | Length in seconds of the LOD cross-fade when `enableLodTransitionPeriod` is `true`. |
 | `sqliteCacheMaxRows` | `number` | `4096` | Maximum number of cached HTTP responses Cesium keeps in `cesium_cache.db` between sessions. Tablets can comfortably go to `16384`. **Re-applied only on the next view init** — runtime changes take effect after the next mount. |
 | `taskProcessorThreads` | `number` | `0` (auto) | Worker pool size for tile parsing / texture decode. `0` (default) auto-sizes to `clamp(2, std::thread::hardware_concurrency() - 1, 8)`. Override for benchmarking or to throttle background CPU on shared-render apps. **Re-applied only on the next view init.** |
+| `maxYawRateDegSec` | `number` | `0` (uncapped, but compile-time default `360`) | Hard ceiling on the integrator's heading velocity (deg/s). Useful when your heading feed is noisy and you would rather drop a sudden spike than visually spin the camera. |
+| `maxPitchRateDegSec` | `number` | `0` (uncapped, but compile-time default `360`) | Hard ceiling on the integrator's pitch velocity (deg/s). |
+| `maxRollRateDegSec` | `number` | `0` (uncapped, but compile-time default `720`) | Hard ceiling on the integrator's roll velocity (deg/s). |
+| `maxClimbRateMps` | `number` | `0` (uncapped) | Hard ceiling on the integrator's altitude velocity (m/s). |
+| `maxGroundSpeedMps` | `number` | `0` (uncapped) | Hard ceiling on the integrator's horizontal ground velocity (m/s). |
 
 #### Suggested presets
 
@@ -361,7 +366,7 @@ Use this when matching **Skia**, **custom HUDs**, or **CesiumJS** math to the sa
 
 ### `Quaternion`
 
-Used for **camera-space view correction** with `setCameraQuaternion` (see below). Components are `w, x, y, z` (Hamilton convention). Non-unit values are normalized on the native side.
+Used for **camera-space view correction** with `setViewCorrection(q)` (see below). Components are `w, x, y, z` (Hamilton convention). Non-unit values are normalized on the native side.
 
 ```ts
 type Quaternion = {
@@ -374,45 +379,87 @@ type Quaternion = {
 
 ### `CesiumViewMethods`
 
-| Method | Signature | Description                                                                                                                                   |
-| --- | --- |-----------------------------------------------------------------------------------------------------------------------------------------------|
-| `setCamera` | `(camera: CameraState) => void` | Applies a new camera state at runtime (position, heading, pitch, roll, vertical FOV). Does **not** change the stored view-correction quaternion; use `setCameraQuaternion` when you need to update that. |
-| `setCameraQuaternion` | `(camera: CameraState, viewCorrection: Quaternion) => void` | Same camera fields as `setCamera`, plus a rotation applied **in camera space after** heading/pitch/roll. Use this for screen-fixed adjustments (e.g. boresight calibration, aligning a synthetic horizon overlay) without expressing the offset as extra Euler angles. |
-| `getCameraState` | `() => Promise<CameraState>` | Returns the current native camera snapshot (lat/lon/alt, HPR, VFOV). This is the underlying globe attitude; it does **not** encode the view correction into HPR. |
-| `getViewCorrection` | `() => Promise<Quaternion>` | Returns the **smoothed** view-correction quaternion currently applied (identity `w=1,x=y=z=0` if you have never called `setCameraQuaternion`). |
+Each axis (position, altitude, heading, attitude, viewCorrection, verticalFov) has its own α-β tracker on the native side, so you only need to push the values that actually changed. Combined with a `teleport(...)` for hard jumps and a `getActualCamera()` / `getDemandCamera()` pair for read-back, this is the entire camera API.
 
-#### Threading: `setCamera` / `setCameraQuaternion` vs `getCameraState` / `getViewCorrection`
+| Method | Signature | Description |
+| --- | --- | --- |
+| `setPosition` | `(latitude: number, longitude: number) => void` | New geographic position **demand** (degrees). Each call stamps the measurement with the native steady-clock time of arrival and runs one α-β update against the predicted state at that instant. Latitude is clamped to ±90 on extrapolation; longitude is continuous (no wrap normalisation) so shortest-arc residual maths stays correct across the antimeridian. |
+| `setAltitude` | `(altitudeMeters: number) => void` | New altitude demand (metres MSL). |
+| `setHeading` | `(headingDeg: number) => void` | New heading demand (degrees; `0` = north, increasing clockwise). The integrator computes the shortest-arc residual, so feeding it `359 → 1` rotates 2° clockwise, not 358° counter-clockwise. |
+| `setAttitude` | `(pitchDeg: number, rollDeg: number) => void` | New pitch and roll demand (degrees). Bundled because almost every IMU emits them together — but you can pass the previous value for either axis if only one of them has changed. |
+| `setViewCorrection` | `(q: Quaternion) => void` | New camera-space rotation applied **after** HPR. SLERPed toward the latest demand each frame. Use for boresight calibration, screen-fixed HUD alignment, etc. Non-unit values are normalised on the native side. |
+| `setVerticalFov` | `(deg: number) => void` | New vertical FOV demand (degrees). Clamped to `20..100` on the native side. |
+| `teleport` | `(camera: CameraState) => void` | Hard scene jump — atomically resets every DoF (value, velocity, demand) to `camera`. Bypasses the integrator entirely. Use for `Fly to coordinate` actions or seeding from saved state. |
+| `getActualCamera` | `() => Promise<CameraState>` | Most recently rendered camera (post-integration). This is what the user is currently looking at and what a HUD overlay should mirror. Differs from `getDemandCamera()` while a glide is in progress or when the terrain-floor clamp has raised the altitude. |
+| `getDemandCamera` | `() => Promise<CameraState>` | What the consumer last asked for (per-DoF demand). Useful for diagnostics, or for showing the requested camera alongside the rendered one. |
+| `getViewCorrection` | `() => Promise<Quaternion>` | Current view-correction quaternion (smoothed toward the latest demand). Identity (`w=1, x=y=z=0`) if you have never called `setViewCorrection`. |
+
+#### Threading: setters vs getters
 
 | Call style | Supported / best practice |
 | --- | --- |
-| **`setCamera` / `setCameraQuaternion`** | **Synchronous** native updates. **Supported** from the **UI thread**, including **Reanimated worklets** and **`useAnimatedReaction`** when you call through a Nitro `hybridRef` (same pattern as driving camera demand from shared values). This is the intended path for high-frequency camera updates. |
-| **`getCameraState` / `getViewCorrection`** | **Async** (`Promise`). **Call from the JavaScript thread** (e.g. `useEffect`, handlers, throttled HUD state)—not from worklets—unless you have a clear, tested pattern for async in your runtime. |
+| **`setPosition` / `setAltitude` / `setHeading` / `setAttitude` / `setViewCorrection` / `setVerticalFov` / `teleport`** | **Synchronous** native updates. **Supported** from the **UI thread**, including **Reanimated worklets** and **`useAnimatedReaction`** when you call through a Nitro `hybridRef`. The integrator takes its mutex briefly (uncontested in practice) and returns immediately — this is the intended path for high-frequency camera updates (e.g. a 50 Hz IMU feed). |
+| **`getActualCamera` / `getDemandCamera` / `getViewCorrection`** | **Async** (`Promise`). **Call from the JavaScript thread** (e.g. `useEffect`, handlers, throttled HUD state) — not from worklets — unless you have a clear, tested pattern for async in your runtime. |
 
 Avoid assuming **main-thread-only** vs **JS-thread-only** labels beyond the above: Nitro invokes the hybrid object on the thread that called the method; use sync setters on the UI/worklet path you already use for gestures, and reserve Promise-based getters for JS.
 
-#### `setCamera` vs `setCameraQuaternion`
+#### Choosing the right setter
 
-- Use **`setCamera`** alone when you only need the classic globe camera.
-- Use **`setCameraQuaternion`** when you need both the usual `CameraState` **and** a small rotation relative to the uncorrected camera (HUD alignment, horizon line offset in screen space, lens/display calibration, etc.).
-- You may **mix** the two: calling `setCamera` updates position and HPR but leaves the last view-correction target unchanged, so a calibration quaternion set earlier continues to apply until you change it with `setCameraQuaternion`.
-- Prefer **`setCameraQuaternion`** on frames where you need to drive both the globe camera and the correction together so the native target stays consistent.
+- Stream **only what changed**. A 1 Hz GPS fix that does not move you should not call `setPosition` every second; a 50 Hz IMU does not need to call `setPosition` at all.
+- Use **`teleport`** when the new camera has no continuous relationship to the previous one — "Fly to coordinate", loading a saved view, an in-app scene switch. Teleport zeroes velocity, so the camera will start gliding from rest the next time a setter is called.
+- Use **`setViewCorrection(identity)`** to clear a calibration quaternion. `teleport` deliberately preserves the latest view-correction target — it is a position/orientation jump, not a boresight reset.
+
+#### Demand vs actual camera
+
+The integrator tracks two camera states simultaneously:
+
+- **Demand** — what the consumer asked for, exactly as it was passed to the setters. `getDemandCamera()` returns this.
+- **Actual** — what the integrator extrapolated to and what was passed to the GPU on the last frame. `getActualCamera()` returns this.
+
+For a steady GPS feed with no terrain clamp the two values converge within a few frames. They diverge when:
+
+- A glide is in progress (you just called `setPosition` and the α-β tracker is still chasing the demand).
+- The terrain-floor clamp (`minAltitudeAboveTerrain`) has raised the actual altitude above the demand.
+- A sudden change is in flight and you want to display the requested value rather than the partially-tracked one (e.g. a HUD).
+
+`hudCamera` in the example app reads from `getActualCamera()` via a worklet-side mirror so what the user sees in the HUD matches what is on screen.
 
 #### Smoothing of incoming camera updates
 
-Every value you pass to `setCamera` / `setCameraQuaternion` is treated as a **demand** target — what you would *like* the camera to be — rather than a per-frame command. The native render thread interpolates the displayed camera toward your demand target every frame, which means a coarse 1 Hz position feed (e.g. external GPS) does **not** teleport the view once a second. Instead it moves at constant speed — exactly like looking out the window of the vehicle being tracked.
+Every value you pass to a setter is treated as a **demand** target — what you would *like* the camera to be — rather than a per-frame command. The native render thread runs an α-β (constant-velocity) tracker per DoF and extrapolates to the next vsync, which means a coarse 1 Hz position feed (e.g. external GPS) does **not** teleport the view once a second. Instead it moves at the implied ground speed between fixes — exactly like looking out the window of the vehicle being tracked.
 
 | DoF | Smoothing |
 | --- | --- |
-| `latitude` / `longitude` | **Linear interpolation** — own independent EWMA. Constant-velocity glide at GPS cadence; near-instant at gesture rate. Cross-planet jumps (Δ > ~0.5°) bypass interpolation. Antimeridian crossings always rotate the short way. |
-| `altitude` | **Linear interpolation** — own independent EWMA. Self-tunes whether altitude comes from GPS (1 Hz → 1 s glide) or a barometer (50 Hz → ~20 ms, near-instant). Jumps > 500 m bypass interpolation. |
-| `heading` | **Linear interpolation** — own independent EWMA. Constant yaw-rate between GPS course-over-ground fixes; near-instant when heading comes from a magnetometer at high rate. Jumps > 90° bypass interpolation. |
-| `pitch` / `roll` | Exponential on the shortest-arc angular delta, fixed `τ ≈ 20 ms`. Almost always attitude-sensor driven; ease-out feel is appropriate. |
-| `viewCorrection` (quaternion) | SLERP-based exponential, fixed `τ ≈ 20 ms`, hemisphere-corrected. |
-| `verticalFovDeg` | Applied directly (not smoothed). |
+| `latitude` / `longitude` | α-β tracker. Velocity is learned from inter-arrival times. Steady at constant motion (zero lag at constant ground speed), gliding through brief network gaps. Optional outlier rejection (`kOutlierLatLonDeg`) drops a single measurement whose residual exceeds the threshold. |
+| `altitude` | α-β tracker. Self-adapts whether altitude comes from GPS (1 Hz, learned m/s climb) or a barometer (50 Hz, ≈zero glide). |
+| `heading` | α-β tracker, residual on shortest-arc angular delta. Antimeridian-safe. Yaw rate is the learned velocity, capped by `maxYawRateDegSec`. |
+| `pitch` / `roll` | α-β tracker, residual on shortest-arc angular delta. Constant-rate roll/pitch under steady IMU input; capped by `maxPitchRateDegSec` / `maxRollRateDegSec`. |
+| `viewCorrection` (quaternion) | Single-coefficient SLERP toward the latest demand each frame, hemisphere-corrected. |
+| `verticalFovDeg` | α-only (no velocity term). |
 
-You don't have to do anything special to take advantage of this — the smoother already runs, it's the same code path whether your driver is a Reanimated worklet at 60 Hz, a `setInterval` push at 10 Hz, or a 1 Hz GPS subscription. Just call `setCamera` whenever you have a new value.
+You don't have to do anything special to take advantage of this — the integrator runs whenever a frame is rendered, regardless of whether your driver is a Reanimated worklet at 60 Hz, a `setInterval` push at 10 Hz, or a 1 Hz GPS subscription. Just call the appropriate per-DoF setter when you have a new value, and call `teleport(...)` when you want to bypass smoothing entirely.
 
-If the smoothing ever feels off for your data source, the relevant constants live in [`cpp/engine/EngineTunables.hpp`](cpp/engine/EngineTunables.hpp) (`kSmoothPositionAlpha`, `kSmoothPositionTauMin`, `kSmoothPositionTauMax`, `kPosSnapThroughDeg`, `kEwmaIntervalAlpha`, plus the per-DoF `kSmooth*` rates).
+Each DoF also tracks the EWMA of its measurement inter-arrival time and bleeds the learned velocity exponentially once measurements stop arriving (silence > `1.5 ×` mean interval). This keeps a 60 Hz worklet feed from "coasting" the camera after the user releases a pan gesture or returns the joystick to centre, while leaving a 1 Hz GPS glide untouched between fixes — bleed never engages unless the sensor falls measurably behind its usual cadence.
+
+If the smoothing ever feels off for your data source, the relevant constants live in [`cpp/engine/EngineTunables.hpp`](cpp/engine/EngineTunables.hpp): `kAlphaPos` / `kBetaPos`, `kAlphaAlt` / `kBetaAlt`, `kAlphaHdg` / `kBetaHdg`, `kAlphaPitch` / `kBetaPitch`, `kAlphaRoll` / `kBetaRoll`, `kAlphaVfov`, `kAlphaViewCorr`. The velocity bleed is tuned via `kVelocitySilenceGraceFactor`, `kVelocityBleedTauFactor`, and `kIntervalEwmaAlpha`. Per-DoF rate caps and optional outlier thresholds are also defined there (`kMaxYawRateDegSec`, `kMaxPitchRateDegSec`, `kMaxRollRateDegSec`, `kMaxClimbRateMps`, `kMaxGroundSpeedMps`, `kMaxFrameDtSec`, `kOutlierLatLonDeg`, `kOutlierAltMeters`, `kOutlierHeadingDeg`). Use the `maxYawRateDegSec` etc. view props to override the caps at runtime.
+
+#### Driving the camera from native sensors
+
+High-rate sensors can feed their matching setter directly — there is no need to round-trip through a shared `CameraState` value:
+
+```ts
+gpsSubscription.on('fix', (fix) => {
+  cesiumViewRef.current?.setPosition(fix.latitude, fix.longitude)
+  cesiumViewRef.current?.setAltitude(fix.altitudeMsl)
+})
+
+imuSubscription.on('attitude', (att) => {
+  cesiumViewRef.current?.setHeading(att.yawDeg)
+  cesiumViewRef.current?.setAttitude(att.pitchDeg, att.rollDeg)
+})
+```
+
+Each setter is synchronous, takes the integrator's mutex briefly, and is safe to call at any rate from any thread.
 
 ### `CesiumMetrics`
 
@@ -432,8 +479,9 @@ If the smoothing ever feels off for your data source, the relevant constants liv
 The example app in [`example/App.tsx`](./example/App.tsx) is the best current integration reference. It shows:
 
 - creating and storing a Nitro `hybridRef`
-- driving camera updates with `setCamera(...)` from a Reanimated **`useAnimatedReaction`** (UI-thread / worklet path; see **Threading** under `CesiumViewMethods` above)
-- the `setCameraQuaternion` / `getViewCorrection` APIs for camera-space HUD alignment (the example does not demonstrate them yet; see **`CesiumViewMethods`** above)
+- driving camera updates via per-DoF setters from a Reanimated **`useAnimatedReaction`** (see [`example/hooks/useCameraController.ts`](./example/hooks/useCameraController.ts)) — note how the reaction diffs each DoF and only calls the setters that actually changed
+- a one-shot `getActualCamera()` after mount so the gesture-handler pan anchors track the terrain-clamped altitude (see same hook)
+- the `setViewCorrection` / `getViewCorrection` APIs for camera-space HUD alignment (the example does not demonstrate them yet; see **`CesiumViewMethods`** above)
 - listening to `onMetrics`
 - switching imagery layers
 - presenting Cesium attribution from `creditsPlainText`
@@ -441,6 +489,31 @@ The example app in [`example/App.tsx`](./example/App.tsx) is the best current in
 Before running the example, copy `example/.env_example` to `example/.env` and set `CESIUM_ION_ACCESS_TOKEN` to your own token. Restart Metro after editing `.env` so the env transform is reapplied.
 
 The example project currently links this library locally via `link:..`.
+
+## Troubleshooting
+
+### Noisy logs during fast refresh
+
+When React Native fast-refresh (or `r` from the Metro terminal) tears down
+the current bundle and re-mounts the view, you may briefly see one or both
+of the following in the device log:
+
+- `[AsyncJSCallback] Failed to call AsyncJSCallback<...> - the Dispatcher has already been destroyed!`
+- `[SqliteCache.cpp:...] database is locked`
+
+Both are harmless. The first means a queued `onMetrics` callback reached the
+JS side after the old runtime's dispatcher had already been torn down; the
+view's render-thread teardown drops the callback before invoking it on the
+next refresh. The second comes from Cesium Native's `SqliteCache` and only
+appears when a new `CesiumView` opens the on-disk tile cache while the old
+one is still in the process of releasing it; the cache writer simply skips
+the contended row and retries on the next request. Neither indicates a
+bug in your code, and neither appears in release builds without
+fast-refresh churn.
+
+If you do see these in production (i.e., not during fast refresh), make
+sure you are not mounting two `<CesiumView />` instances against the same
+cache directory simultaneously.
 
 ## Credits
 

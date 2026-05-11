@@ -1,25 +1,40 @@
 #pragma once
 
+#include <atomic>
 #include <jni.h>
 #include <memory>
 #include <string>
 
-#include "engine/CameraTargetState.hpp"
+#include "engine/CameraIntegrator.hpp"
 #include "engine/CesiumEngine.hpp"
 #include "engine/MetricsAggregator.hpp"
+
+struct ANativeWindow;
 
 namespace reactnativecesium {
 class VulkanBackend;
 struct FrameResult;
 } // namespace reactnativecesium
 
-// Thin Android shell. All cross-platform logic (camera demand state +
-// smoothing, FPS / metrics aggregation, credit HTML stripping) lives in
-// shared C++ next to CesiumEngine. This class only owns:
+// Thin Android shell. All cross-platform logic (per-DoF camera integrator,
+// FPS / metrics aggregation, credit HTML stripping) lives in shared C++ next
+// to CesiumEngine. This class only owns:
 //   - the JNI/window surface,
 //   - the Vulkan backend instance, and
 //   - the EngineConfig snapshot mirrored from JS props.
 struct CesiumBridgeAndroid {
+  CesiumBridgeAndroid() = default;
+  // Defensive: if Kotlin ever forgets to call shutdown() before destroy() the
+  // destructor still tears down the engine and releases the ANativeWindow
+  // reference acquired in init(), preventing native handle / SQLite handle
+  // leaks.
+  ~CesiumBridgeAndroid();
+
+  CesiumBridgeAndroid(const CesiumBridgeAndroid&) = delete;
+  CesiumBridgeAndroid& operator=(const CesiumBridgeAndroid&) = delete;
+  CesiumBridgeAndroid(CesiumBridgeAndroid&&) = delete;
+  CesiumBridgeAndroid& operator=(CesiumBridgeAndroid&&) = delete;
+
   void init(JNIEnv* env, jobject surface, int width, int height,
             const std::string& cacheDir, const std::string& cacertPath);
   void shutdown();
@@ -28,12 +43,20 @@ struct CesiumBridgeAndroid {
 
   void updateIonAccessToken(const std::string& token, int64_t assetId);
   void updateImageryAssetId(int64_t assetId);
-  void updateCamera(double lat, double lon, double alt,
-                    double heading, double pitch, double roll);
-  void updateCameraQuaternion(double lat, double lon, double alt,
-                              double heading, double pitch, double roll,
-                              double qw, double qx, double qy, double qz);
+
+  // ── Per-DoF camera demand setters ──────────────────────────────────────
+  void setPosition(double lat, double lon);
+  void setAltitude(double alt);
+  void setHeading(double headingDeg);
+  void setAttitude(double pitchDeg, double rollDeg);
+  void setViewCorrection(double qw, double qx, double qy, double qz);
+  void teleport(double lat, double lon, double alt,
+                double heading, double pitch, double roll, double vfov);
+
   void setVerticalFovDeg(double degrees);
+  void setRateCaps(double yawDegSec, double pitchDegSec, double rollDegSec,
+                   double climbMps, double groundMps);
+
   void setMaximumScreenSpaceError(double v);
   void setMaximumSimultaneousTileLoads(int32_t v);
   void setLoadingDescendantLimit(int32_t v);
@@ -56,16 +79,27 @@ struct CesiumBridgeAndroid {
 
   void markNeedsRender();
   bool shouldRenderNextFrame();
-  void renderFrame(double dt);
+  // Wall-clock seconds (steady_clock), used by the integrator to extrapolate
+  // every DoF forward to the time we are about to render.
+  void renderFrame(double nowSeconds);
 
-  // Camera readback
-  double readCameraLatitude();
-  double readCameraLongitude();
-  double readCameraAltitude();
-  double readCameraHeading();
-  double readCameraPitch();
-  double readCameraRoll();
-  double readVerticalFovDeg();
+  // Actual camera readback (post-integration; what was rendered).
+  double readActualLatitude();
+  double readActualLongitude();
+  double readActualAltitude();
+  double readActualHeading();
+  double readActualPitch();
+  double readActualRoll();
+  double readActualVerticalFovDeg();
+  // Demand camera readback (what the consumer last asked for).
+  double readDemandLatitude();
+  double readDemandLongitude();
+  double readDemandAltitude();
+  double readDemandHeading();
+  double readDemandPitch();
+  double readDemandRoll();
+  double readDemandVerticalFovDeg();
+
   double readViewCorrectionW();
   double readViewCorrectionX();
   double readViewCorrectionY();
@@ -85,20 +119,29 @@ struct CesiumBridgeAndroid {
 
 private:
   void buildEngine();
-  // Push the current `config_` state to the live engine (runtime-mutable
-  // fields go through tileset_->getOptions(); token/asset id changes force
-  // a tileset rebuild).
+  // Push the current `config_` state to the live engine.
   void applyEngineConfig();
 
-  std::unique_ptr<reactnativecesium::VulkanBackend> vulkanBackend_;
-  std::unique_ptr<reactnativecesium::CesiumEngine>  engine_;
-  std::unique_ptr<reactnativecesium::FrameResult>   frameResult_;
+  std::unique_ptr<reactnativecesium::VulkanBackend>     vulkanBackend_;
+  std::unique_ptr<reactnativecesium::CesiumEngine>      engine_;
+  std::unique_ptr<reactnativecesium::FrameResult>       frameResult_;
+  std::unique_ptr<reactnativecesium::CameraIntegrator>  integrator_;
+
+  // ANativeWindow* acquired via ANativeWindow_fromSurface in init(). The
+  // bridge owns one strong reference and must release it in shutdown() once
+  // the Vulkan backend (which renders into it) is gone. Leaving this dangling
+  // leaks one ANativeWindow per view create/destroy cycle.
+  ANativeWindow*                                        nativeWindow_ = nullptr;
 
   int  viewportWidth_  = 0;
   int  viewportHeight_ = 0;
   bool initialized_    = false;
 
-  reactnativecesium::EngineConfig config_;
-  reactnativecesium::CameraTargetState target_;
+  // Force-render flag — set on every demand change so the render loop knows
+  // to dispatch at least one frame.
+  std::atomic<bool> forceRender_{true};
+
+  reactnativecesium::EngineConfig      config_;
   reactnativecesium::MetricsAggregator metrics_;
+  double                               lastTickSeconds_ = 0.0;
 };

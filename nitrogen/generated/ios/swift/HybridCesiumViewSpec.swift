@@ -32,12 +32,23 @@ public protocol HybridCesiumViewSpec_protocol: HybridObject, HybridView {
   var sqliteCacheMaxRows: Double? { get set }
   var taskProcessorThreads: Double? { get set }
   var minAltitudeAboveTerrain: Double? { get set }
+  var maxYawRateDegSec: Double? { get set }
+  var maxPitchRateDegSec: Double? { get set }
+  var maxRollRateDegSec: Double? { get set }
+  var maxClimbRateMps: Double? { get set }
+  var maxGroundSpeedMps: Double? { get set }
   var onMetrics: ((_ metrics: CesiumMetrics) -> Void)? { get set }
 
   // Methods
-  func getCameraState() throws -> Promise<CameraState>
-  func setCamera(camera: CameraState) throws -> Void
-  func setCameraQuaternion(camera: CameraState, viewCorrection: Quaternion) throws -> Void
+  func setPosition(latitude: Double, longitude: Double) throws -> Void
+  func setAltitude(altitudeMeters: Double) throws -> Void
+  func setHeading(headingDeg: Double) throws -> Void
+  func setAttitude(pitchDeg: Double, rollDeg: Double) throws -> Void
+  func setViewCorrection(q: Quaternion) throws -> Void
+  func setVerticalFov(deg: Double) throws -> Void
+  func teleport(camera: CameraState) throws -> Void
+  func getActualCamera() throws -> Promise<CameraState>
+  func getDemandCamera() throws -> Promise<CameraState>
   func getViewCorrection() throws -> Promise<Quaternion>
 }
 

@@ -23,22 +23,25 @@ class CesiumBridgeJNI {
   fun resize(w: Int, h: Int) = nativeResize(nativePtr, w, h)
   fun updateIonAccessToken(token: String, assetId: Long) = nativeUpdateIonAccessToken(nativePtr, token, assetId)
   fun updateImageryAssetId(assetId: Long) = nativeUpdateImageryAssetId(nativePtr, assetId)
-  fun updateCamera(lat: Double, lon: Double, alt: Double, heading: Double, pitch: Double, roll: Double) =
-    nativeUpdateCamera(nativePtr, lat, lon, alt, heading, pitch, roll)
 
-  fun updateCameraQuaternion(
-    lat: Double,
-    lon: Double,
-    alt: Double,
-    heading: Double,
-    pitch: Double,
-    roll: Double,
-    qw: Double,
-    qx: Double,
-    qy: Double,
-    qz: Double,
-  ) = nativeUpdateCameraQuaternion(nativePtr, lat, lon, alt, heading, pitch, roll, qw, qx, qy, qz)
+  // ── Per-DoF camera setters ───────────────────────────────────────────────
+  fun setPosition(lat: Double, lon: Double) = nativeSetPosition(nativePtr, lat, lon)
+  fun setAltitude(alt: Double) = nativeSetAltitude(nativePtr, alt)
+  fun setHeading(headingDeg: Double) = nativeSetHeading(nativePtr, headingDeg)
+  fun setAttitude(pitchDeg: Double, rollDeg: Double) = nativeSetAttitude(nativePtr, pitchDeg, rollDeg)
+  fun setViewCorrection(qw: Double, qx: Double, qy: Double, qz: Double) =
+    nativeSetViewCorrection(nativePtr, qw, qx, qy, qz)
+  fun teleport(
+    lat: Double, lon: Double, alt: Double,
+    heading: Double, pitch: Double, roll: Double, vfov: Double,
+  ) = nativeTeleport(nativePtr, lat, lon, alt, heading, pitch, roll, vfov)
+
   fun setVerticalFovDeg(deg: Double) = nativeSetVerticalFovDeg(nativePtr, deg)
+  fun setRateCaps(
+    yawDegSec: Double, pitchDegSec: Double, rollDegSec: Double,
+    climbMps: Double, groundMps: Double,
+  ) = nativeSetRateCaps(nativePtr, yawDegSec, pitchDegSec, rollDegSec, climbMps, groundMps)
+
   fun setMaxSSE(v: Double) = nativeSetMaxSSE(nativePtr, v)
   fun setMaxSimLoads(v: Int) = nativeSetMaxSimLoads(nativePtr, v)
   fun setLoadDescLim(v: Int) = nativeSetLoadDescLim(nativePtr, v)
@@ -46,15 +49,25 @@ class CesiumBridgeJNI {
 
   fun markNeedsRender() = nativeMarkNeedsRender(nativePtr)
   fun shouldRenderNextFrame(): Boolean = nativeShouldRenderNextFrame(nativePtr)
-  fun renderFrame(dt: Double) = nativeRenderFrame(nativePtr, dt)
+  fun renderFrame(nowSeconds: Double) = nativeRenderFrame(nativePtr, nowSeconds)
 
-  fun getCameraLat(): Double = nativeGetCameraLat(nativePtr)
-  fun getCameraLon(): Double = nativeGetCameraLon(nativePtr)
-  fun getCameraAlt(): Double = nativeGetCameraAlt(nativePtr)
-  fun getCameraHeading(): Double = nativeGetCameraHeading(nativePtr)
-  fun getCameraPitch(): Double = nativeGetCameraPitch(nativePtr)
-  fun getCameraRoll(): Double = nativeGetCameraRoll(nativePtr)
-  fun getVerticalFovDeg(): Double = nativeGetVerticalFovDeg(nativePtr)
+  // ── Actual camera readback ───────────────────────────────────────────────
+  fun getActualLatitude(): Double = nativeGetActualLatitude(nativePtr)
+  fun getActualLongitude(): Double = nativeGetActualLongitude(nativePtr)
+  fun getActualAltitude(): Double = nativeGetActualAltitude(nativePtr)
+  fun getActualHeading(): Double = nativeGetActualHeading(nativePtr)
+  fun getActualPitch(): Double = nativeGetActualPitch(nativePtr)
+  fun getActualRoll(): Double = nativeGetActualRoll(nativePtr)
+  fun getActualVerticalFovDeg(): Double = nativeGetActualVerticalFovDeg(nativePtr)
+
+  // ── Demand camera readback ───────────────────────────────────────────────
+  fun getDemandLatitude(): Double = nativeGetDemandLatitude(nativePtr)
+  fun getDemandLongitude(): Double = nativeGetDemandLongitude(nativePtr)
+  fun getDemandAltitude(): Double = nativeGetDemandAltitude(nativePtr)
+  fun getDemandHeading(): Double = nativeGetDemandHeading(nativePtr)
+  fun getDemandPitch(): Double = nativeGetDemandPitch(nativePtr)
+  fun getDemandRoll(): Double = nativeGetDemandRoll(nativePtr)
+  fun getDemandVerticalFovDeg(): Double = nativeGetDemandVerticalFovDeg(nativePtr)
 
   fun getViewCorrectionW(): Double = nativeGetViewCorrectionW(nativePtr)
   fun getViewCorrectionX(): Double = nativeGetViewCorrectionX(nativePtr)
@@ -91,35 +104,46 @@ class CesiumBridgeJNI {
   private external fun nativeResize(ptr: Long, w: Int, h: Int)
   private external fun nativeUpdateIonAccessToken(ptr: Long, token: String, assetId: Long)
   private external fun nativeUpdateImageryAssetId(ptr: Long, assetId: Long)
-  private external fun nativeUpdateCamera(ptr: Long, lat: Double, lon: Double, alt: Double, heading: Double, pitch: Double, roll: Double)
-  private external fun nativeUpdateCameraQuaternion(
-    ptr: Long,
-    lat: Double,
-    lon: Double,
-    alt: Double,
-    heading: Double,
-    pitch: Double,
-    roll: Double,
-    qw: Double,
-    qx: Double,
-    qy: Double,
-    qz: Double,
+
+  private external fun nativeSetPosition(ptr: Long, lat: Double, lon: Double)
+  private external fun nativeSetAltitude(ptr: Long, alt: Double)
+  private external fun nativeSetHeading(ptr: Long, headingDeg: Double)
+  private external fun nativeSetAttitude(ptr: Long, pitchDeg: Double, rollDeg: Double)
+  private external fun nativeSetViewCorrection(ptr: Long, qw: Double, qx: Double, qy: Double, qz: Double)
+  private external fun nativeTeleport(
+    ptr: Long, lat: Double, lon: Double, alt: Double,
+    heading: Double, pitch: Double, roll: Double, vfov: Double,
   )
+
   private external fun nativeSetVerticalFovDeg(ptr: Long, deg: Double)
+  private external fun nativeSetRateCaps(
+    ptr: Long, yawDegSec: Double, pitchDegSec: Double, rollDegSec: Double,
+    climbMps: Double, groundMps: Double,
+  )
   private external fun nativeSetMaxSSE(ptr: Long, v: Double)
   private external fun nativeSetMaxSimLoads(ptr: Long, v: Int)
   private external fun nativeSetLoadDescLim(ptr: Long, v: Int)
   private external fun nativeSetMsaa(ptr: Long, v: Int)
   private external fun nativeMarkNeedsRender(ptr: Long)
   private external fun nativeShouldRenderNextFrame(ptr: Long): Boolean
-  private external fun nativeRenderFrame(ptr: Long, dt: Double)
-  private external fun nativeGetCameraLat(ptr: Long): Double
-  private external fun nativeGetCameraLon(ptr: Long): Double
-  private external fun nativeGetCameraAlt(ptr: Long): Double
-  private external fun nativeGetCameraHeading(ptr: Long): Double
-  private external fun nativeGetCameraPitch(ptr: Long): Double
-  private external fun nativeGetCameraRoll(ptr: Long): Double
-  private external fun nativeGetVerticalFovDeg(ptr: Long): Double
+  private external fun nativeRenderFrame(ptr: Long, nowSeconds: Double)
+
+  private external fun nativeGetActualLatitude(ptr: Long): Double
+  private external fun nativeGetActualLongitude(ptr: Long): Double
+  private external fun nativeGetActualAltitude(ptr: Long): Double
+  private external fun nativeGetActualHeading(ptr: Long): Double
+  private external fun nativeGetActualPitch(ptr: Long): Double
+  private external fun nativeGetActualRoll(ptr: Long): Double
+  private external fun nativeGetActualVerticalFovDeg(ptr: Long): Double
+
+  private external fun nativeGetDemandLatitude(ptr: Long): Double
+  private external fun nativeGetDemandLongitude(ptr: Long): Double
+  private external fun nativeGetDemandAltitude(ptr: Long): Double
+  private external fun nativeGetDemandHeading(ptr: Long): Double
+  private external fun nativeGetDemandPitch(ptr: Long): Double
+  private external fun nativeGetDemandRoll(ptr: Long): Double
+  private external fun nativeGetDemandVerticalFovDeg(ptr: Long): Double
+
   private external fun nativeGetViewCorrectionW(ptr: Long): Double
   private external fun nativeGetViewCorrectionX(ptr: Long): Double
   private external fun nativeGetViewCorrectionY(ptr: Long): Double
