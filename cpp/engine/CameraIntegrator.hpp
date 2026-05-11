@@ -124,7 +124,7 @@ private:
   // Advance the running estimate to `now`, clamp velocity to `maxRateAbs`
   // (per second; 0 = uncapped). For angles, the resulting value is also
   // normalised to its canonical range by the caller as needed.
-  static void extrapolate(AlphaBeta& s, TimePoint now, double maxRateAbs);
+  static void extrapolate(AlphaBeta& s, TimePoint now, double maxRateAbs, double demand);
 
   mutable std::mutex mutex_;
 

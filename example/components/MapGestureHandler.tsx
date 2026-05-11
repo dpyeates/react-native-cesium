@@ -11,7 +11,7 @@ import type { CameraState } from 'react-native-cesium';
 // Degrees per pixel per metre of altitude — matches native GestureHandler scale.
 const PAN_SCALE = 1.55e-8;
 const MIN_ALT_ABSOLUTE = 3;
-const MAX_ALT = 100_000_000;
+const MAX_ALT = 100_000;
 
 export type MapGestureHandlerProps = {
   children: ReactNode;
@@ -38,12 +38,24 @@ export function MapGestureHandler({
 
   const panDecayLat = useSharedValue(initialCamera.latitude);
   const panDecayLon = useSharedValue(initialCamera.longitude);
+  // Two separate per-DoF reactions so neither can contaminate the other with a
+  // stale value. With a single combined reaction, setting panDecayLat first
+  // would fire the reaction with the correct lat but a stale panDecayLon
+  // (still at initialCamera or the previous decay end), snapping longitude
+  // back before panDecayLon is updated on the next line.
   useAnimatedReaction(
-    () => ({ lat: panDecayLat.value, lon: panDecayLon.value }),
-    cur => {
+    () => panDecayLat.value,
+    lat => {
       'worklet';
-      const prev = camera.value;
-      camera.value = { ...prev, latitude: cur.lat, longitude: cur.lon };
+      camera.value = { ...camera.value, latitude: lat };
+    },
+    [camera],
+  );
+  useAnimatedReaction(
+    () => panDecayLon.value,
+    lon => {
+      'worklet';
+      camera.value = { ...camera.value, longitude: lon };
     },
     [camera],
   );

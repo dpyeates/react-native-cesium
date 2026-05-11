@@ -15,6 +15,10 @@ namespace {
 // isolation without linking CesiumGeospatial. Matches Ellipsoid::WGS84.
 inline constexpr double kEarthMeanRadiusM = 6371008.7714150595;
 
+// Hard ceiling on altitude (metres MSL). Enforced on both the demand and the
+// running estimate so no code path can push the camera above this value.
+inline constexpr double kMaxAltMeters = 100'000.0;
+
 inline double shortAngleDeltaDeg(double from, double to) {
   return std::fmod(to - from + 540.0, 360.0) - 180.0;
 }
@@ -105,7 +109,8 @@ void CameraIntegrator::updateAlphaBeta(
   s.tLastMeas = tz;
 }
 
-void CameraIntegrator::extrapolate(AlphaBeta& s, TimePoint now, double maxRateAbs) {
+void CameraIntegrator::extrapolate(
+    AlphaBeta& s, TimePoint now, double maxRateAbs, double demand) {
   double dt = std::chrono::duration<double>(now - s.tState).count();
   if (dt <= 0.0) {
     s.tState = now;
@@ -121,9 +126,14 @@ void CameraIntegrator::extrapolate(AlphaBeta& s, TimePoint now, double maxRateAb
   // grace window and the decay τ scale with the EWMA of inter-arrival times
   // so a 60 Hz worklet bleeds in ~50 ms while a 1 Hz GPS glide is left
   // alone between fixes.
+  //
+  // silence and grace are hoisted out of the block so the demand-pull term
+  // below can reuse them without a second chrono subtraction.
+  double silence = -1.0; // negative sentinel: "no measurement seen yet"
+  double grace   = 0.0;
   if (s.tLastMeas.time_since_epoch().count() > 0) {
-    const double silence = std::chrono::duration<double>(now - s.tLastMeas).count();
-    const double grace   = tunables::kVelocitySilenceGraceFactor * s.meanIntervalSec;
+    silence = std::chrono::duration<double>(now - s.tLastMeas).count();
+    grace   = tunables::kVelocitySilenceGraceFactor * s.meanIntervalSec;
     if (silence > grace) {
       const double tau = tunables::kVelocityBleedTauFactor * s.meanIntervalSec;
       if (tau > 1.0e-6) {
@@ -139,6 +149,16 @@ void CameraIntegrator::extrapolate(AlphaBeta& s, TimePoint now, double maxRateAb
   }
   s.value += s.velocity * dt;
   s.tState = now;
+
+  // Demand pull — guarantees convergence to the last demanded value for
+  // one-shot API calls (e.g. setAltitude from a button tap). Active only
+  // when measurements have stopped (silence > grace); continuous gesture or
+  // sensor streams always deliver a new update before the grace window
+  // expires, so this term is never active for them.
+  if (silence > grace && tunables::kDemandPullTauSec > 1.0e-6) {
+    s.value += (1.0 - std::exp(-dt / tunables::kDemandPullTauSec))
+               * (demand - s.value);
+  }
 }
 
 // ── Demand setters ────────────────────────────────────────────────────────
@@ -172,6 +192,7 @@ void CameraIntegrator::setAltitude(double altitudeMeters) {
     return;
   }
 
+  altitudeMeters = std::min(altitudeMeters, kMaxAltMeters);
   updateAlphaBeta(alt_, altitudeMeters, now,
                   tunables::kAlphaAlt, tunables::kBetaAlt, false);
   demand_.altitude = altitudeMeters;
@@ -285,16 +306,17 @@ CameraParams CameraIntegrator::step() {
     latLonCapDegSec = glm::degrees(groundCap / kEarthMeanRadiusM);
   }
 
-  extrapolate(lat_,   now, latLonCapDegSec);
-  extrapolate(lon_,   now, latLonCapDegSec);
-  extrapolate(alt_,   now, climbCap);
-  extrapolate(hdg_,   now, yawCap);
-  extrapolate(pitch_, now, pitchCap);
-  extrapolate(roll_,  now, rollCap);
-  extrapolate(vfov_,  now, 0.0); // no velocity term anyway
+  extrapolate(lat_,   now, latLonCapDegSec, demand_.latitude);
+  extrapolate(lon_,   now, latLonCapDegSec, demand_.longitude);
+  extrapolate(alt_,   now, climbCap,        demand_.altitude);
+  extrapolate(hdg_,   now, yawCap,          demand_.heading);
+  extrapolate(pitch_, now, pitchCap,        demand_.pitch);
+  extrapolate(roll_,  now, rollCap,         demand_.roll);
+  extrapolate(vfov_,  now, 0.0,             demand_.verticalFov);
 
   hdg_.value = wrap360(hdg_.value);
   lat_.value = std::clamp(lat_.value, -90.0, 90.0);
+  alt_.value = std::min(alt_.value, kMaxAltMeters);
   // Longitude is allowed to drift over ±180; consumers usually want the raw
   // continuous value for short-arc maths and the camera transform doesn't
   // care.

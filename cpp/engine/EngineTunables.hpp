@@ -118,6 +118,13 @@ inline constexpr double kVelocityBleedTauFactor     = 2.0;
 // EWMA blend coefficient for the inter-arrival mean. Higher = faster adapt
 // to cadence changes (e.g. user switches from gesture to sparse GPS feed).
 inline constexpr double kIntervalEwmaAlpha          = 0.3;
+// Demand-pull time constant (seconds). When measurements have stopped
+// arriving (silence > grace), the actual value is gently pulled toward
+// the last demand at this rate. This guarantees convergence for one-shot
+// API calls (e.g. setAltitude from a button) without affecting continuous
+// sensor or gesture streams — those always deliver a new measurement before
+// the grace window expires, so this term is never active. 0 = disabled.
+inline constexpr double kDemandPullTauSec           = 0.8;
 
 // Optional outlier rejection (off if 0). When > 0, a single measurement whose
 // residual against the predicted state exceeds the threshold is dropped (and
