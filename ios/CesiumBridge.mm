@@ -41,13 +41,22 @@
   // and recreates the bridge does not pollute the new bridge's first frame.
   double _lastTickSec;
 
+  // Last time tilesLoading was > 0. Used to keep the render loop at full speed
+  // for a grace period after loading finishes so LOD transitions can complete
+  // quickly and updateViewGroup can immediately discover the next refinement
+  // level — preventing the cascade of 5-second idle gaps between load phases.
+  // Sentinel (epoch) means "no loading seen yet".
+  std::chrono::steady_clock::time_point _lastLoadingTime;
+
   NSString* _cacheDir;
 }
 
 - (instancetype)initWithMetalLayer:(CAMetalLayer *)layer
-                             width:(int)width
-                            height:(int)height
-                         cacheDir:(NSString *)cacheDir {
+                              width:(int)width
+                             height:(int)height
+                           cacheDir:(NSString *)cacheDir
+                    ionAccessToken:(NSString *)token
+                         ionAssetId:(int64_t)assetId {
   self = [super init];
   if (self) {
     _viewportWidth     = width;
@@ -72,10 +81,23 @@
             @"ios/cacert.pem (run pod install).");
     }
 
+    // Seed the ion credentials before buildEngine so createTileset() can
+    // immediately start the async tileset.json HTTP round-trip. This request
+    // (~1.7 s network) will then run concurrently with Metal PSO compilation
+    // below rather than serially after it.
+    if (token.length > 0) {
+      _config.ionAccessToken = std::string([token UTF8String]);
+      _config.ionAssetId     = assetId;
+    }
+
     _metalBackend = std::make_unique<reactnativecesium::MetalBackend>();
+
+    // Start the async tileset.json fetch before Metal PSO compilation so both
+    // operations run concurrently. The network round-trip (~1.7 s) overlaps
+    // with pipeline compilation rather than waiting behind it.
+    [self buildEngine];
     _metalBackend->initialize((__bridge void*)layer, width, height);
 
-    [self buildEngine];
     _initialized = YES;
 
     [[NSNotificationCenter defaultCenter]
@@ -306,8 +328,34 @@
 - (BOOL)shouldRenderNextFrame {
   if (!_initialized || _suspended || !_engine) return NO;
   if (_forceRender.load(std::memory_order_acquire))            return YES;
-  if (_frameResult.tilesLoading > 0 || !_frameResult.tilesetActive) return YES;
+  if (!_frameResult.tilesetActive)                             return YES;
+  if (_frameResult.tilesLoading > 0)                          return YES;
   if (_integrator && _integrator->isActive())                  return YES;
+  // ── Post-loading grace period ─────────────────────────────────────────────
+  // Keep the render loop at full speed for 2 seconds after the last non-zero
+  // loading frame. This fixes a cascade of multi-second idle gaps that
+  // otherwise appear between load phases:
+  //
+  //  1. Loading queue drains → shouldRenderNextFrame returns NO
+  //  2. Loop drops to 4 fps (0.25 s idle probe)
+  //  3. deltaTime is clamped to 100 ms → a 0.5 s LOD fade takes 5 idle
+  //     frames × 0.25 s = 1.25 s of wall-clock time instead of 0.5 s
+  //  4. kickDescendantsWhileFadingIn=true means descendants can't be
+  //     *requested* until the parent finishes fading
+  //  5. loadTiles() is only called inside renderFrame, so tile requests are
+  //     throttled to 4 per second during idle
+  //  The net effect: each of the ~5 refinement levels adds a 5-second gap.
+  //
+  // With a 2-second grace period:
+  //  • LOD fades complete at full speed (0.5 s real, not 1.25 s)
+  //  • updateViewGroup discovers the next level immediately after the fade
+  //  • Workers start downloading before we ever slow down
+  //  → The 5-second inter-phase gaps collapse to ~0.5 s
+  if (_lastLoadingTime.time_since_epoch().count() > 0) {
+    const double secSinceLoad = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - _lastLoadingTime).count();
+    if (secSinceLoad < 2.0) return YES;
+  }
   return NO;
 }
 
@@ -344,6 +392,13 @@
     _engine->camera().setParams(actual);
 
     _engine->updateFrame(_viewportWidth, _viewportHeight, _frameResult);
+
+    // Track the last time tiles were actively loading so shouldRenderNextFrame
+    // can suppress the idle transition for a grace period (see that method).
+    if (_frameResult.tilesLoading > 0) {
+      _lastLoadingTime = std::chrono::steady_clock::now();
+    }
+
     // For metrics purposes only — keeps the FPS EMA in something close to the
     // wall-clock cadence. Not used by the integrator.
     double dt = (_lastTickSec > 0.0) ? (nowSeconds - _lastTickSec) : (1.0 / 60.0);

@@ -372,20 +372,22 @@ class HybridCesiumView: HybridCesiumViewSpec {
       .cachesDirectory, .userDomainMask, true
     ).first ?? NSTemporaryDirectory()
 
+    // Pass the ion token at construction time so the engine can start the
+    // tileset.json network round-trip immediately, before Metal PSO compilation
+    // begins (the two operations then overlap rather than run in series).
     bridge = CesiumBridge(
       metalLayer: metalLayer,
       width: Int32(w),
       height: Int32(h),
-      cacheDir: cacheDir
+      cacheDir: cacheDir,
+      ionAccessToken: ionAccessToken,
+      ionAssetId: Int64(ionAssetId)
     )
 
     syncBridgeOptionsFromProps()
 
-    if !ionAccessToken.isEmpty {
-      bridge?.updateIonAccessToken(ionAccessToken, assetId: Int64(ionAssetId))
-    }
-    // Seed from initialCamera, then replay anything the consumer set before
-    // we were ready.
+    // Seed the camera so the very first updateViewGroup call (which fires in
+    // the first renderFrame after init) uses the correct view position.
     let seed = pendingTeleport ?? initialCamera
     bridge?.teleportLatitude(seed.latitude,
                              longitude: seed.longitude,
@@ -395,6 +397,13 @@ class HybridCesiumView: HybridCesiumViewSpec {
                              roll: seed.roll,
                              verticalFovDeg: seed.verticalFovDeg)
     pendingTeleport = nil
+
+    // updateIonAccessToken is a no-op here (token already in config from the
+    // constructor) but is kept for safety in case of hot-reload where the
+    // token changes between bridge teardown and reconstruction.
+    if !ionAccessToken.isEmpty {
+      bridge?.updateIonAccessToken(ionAccessToken, assetId: Int64(ionAssetId))
+    }
 
     if let la = pendingLat, let lo = pendingLon {
       bridge?.setPositionLatitude(la, longitude: lo); pendingLat = nil; pendingLon = nil
@@ -471,9 +480,17 @@ class HybridCesiumView: HybridCesiumViewSpec {
     if hasConfiguredFrameRate && usingLowRefreshRate == idle { return }
     hasConfiguredFrameRate = true
     usingLowRefreshRate = idle
+    // Active range tops out at ProMotion's 120 Hz — on a 60 Hz panel iOS just
+    // clamps to 60 and ignores the upper bound, so this is safe on every
+    // device.  The lower bound (60 Hz) prevents iOS from dynamically dropping
+    // to 30 Hz mid-gesture if the system thinks the scene is "static enough"
+    // (which is what produced the visible camera/terrain judder during
+    // continuous pitch/roll motion — the input was smooth, the render rate
+    // wasn't).  Idle range stays low to preserve power when the camera and
+    // tileset are at rest.
     dl.preferredFrameRateRange = idle
-      ? CAFrameRateRange(minimum: 5, maximum: 15, preferred: 10)
-      : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+      ? CAFrameRateRange(minimum: 5,  maximum: 15,  preferred: 10)
+      : CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
   }
 
   /// Invoked by `DisplayLinkProxy` on every CADisplayLink tick (main thread).

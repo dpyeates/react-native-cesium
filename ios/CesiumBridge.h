@@ -8,10 +8,16 @@ NS_ASSUME_NONNULL_BEGIN
 // in shared C++ next to CesiumEngine.
 @interface CesiumBridge : NSObject
 
+/// Designated initialiser.
+/// Pass `ionAccessToken` and `ionAssetId` here so the engine can start the
+/// async tileset.json network round-trip immediately, before Metal pipeline
+/// compilation begins — letting the two operations overlap in time.
 - (instancetype)initWithMetalLayer:(CAMetalLayer *)layer
-                             width:(int)width
-                            height:(int)height
-                         cacheDir:(NSString *)cacheDir;
+                              width:(int)width
+                             height:(int)height
+                           cacheDir:(NSString *)cacheDir
+                    ionAccessToken:(NSString *)token
+                         ionAssetId:(int64_t)assetId;
 
 - (void)updateIonAccessToken:(NSString *)token assetId:(int64_t)assetId;
 - (void)updateImageryAssetId:(int64_t)assetId;

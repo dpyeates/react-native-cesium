@@ -71,6 +71,11 @@ struct DrawPrimitive {
   // reconstruct the world position as  wp = localPos + rtcCenterEcef,  which
   // avoids the catastrophic cancellation of eyeRelPos + cameraEcef at altitude.
   glm::vec3 rtcCenterEcef{0.0f};
+
+  // LOD transition dither threshold from TileRenderContent::getLodTransitionFadePercentage().
+  // 1.0 = fully visible (no dither); 0.0 = fully hidden.  Both tilesToRenderThisFrame
+  // (fading in, 0→1) and tilesFadingOut (fading out, →0) use this field.
+  float     lodFade = 1.0f;
 };
 
 struct FrameResult {

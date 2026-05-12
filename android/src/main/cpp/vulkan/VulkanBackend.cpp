@@ -50,6 +50,7 @@
 // Pre-compiled SPIR-V headers (generated at build time by glslc + spv_to_header.cmake)
 #include "terrain.vert.spv.h"
 #include "terrain.frag.spv.h"
+#include "terrain_dither.frag.spv.h"
 #include "sky.vert.spv.h"
 #include "sky.frag.spv.h"
 
@@ -109,7 +110,7 @@ struct TerrainFragmentPC {
   float    translationY;         // 4 bytes
   float    scaleX;               // 4 bytes
   float    scaleY;               // 4 bytes
-  float    _pad;                 // 4 bytes
+  float    lodFade;              // 4 bytes  — LOD dither threshold
 };                               // 64 bytes
 
 namespace reactnativecesium {
@@ -1173,9 +1174,6 @@ void VulkanBackend::createSkyPipeline() {
 }
 
 void VulkanBackend::createTerrainPipeline() {
-  VkShaderModule vertModule = createShaderModule(device_, spv_terrain_vert, spv_terrain_vert_size);
-  VkShaderModule fragModule = createShaderModule(device_, spv_terrain_frag, spv_terrain_frag_size);
-
   // Vertex bindings: position (vec3) | uv (vec2) | altitude (float).
   static const VkVertexInputBindingDescription bindings[3] = {
       {0, 3 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX},
@@ -1188,22 +1186,41 @@ void VulkanBackend::createTerrainPipeline() {
       {2, 2, VK_FORMAT_R32_SFLOAT,       0},
   };
 
-  PipelineBuildSpec spec{};
-  spec.vert = vertModule;
-  spec.frag = fragModule;
-  spec.bindingCount   = 3;
-  spec.bindings       = bindings;
-  spec.attributeCount = 3;
-  spec.attributes     = attrs;
-  spec.depthTest      = true;
-  spec.depthWrite     = true;
-  spec.cull           = VK_CULL_MODE_BACK_BIT;
-  spec.samples        = sampleCount_;
-  terrainPipeline_ = buildPipeline(device_, terrainPipelineLayout_, renderPass_,
-                                   pipelineCache_, spec);
+  VkShaderModule vertModule       = createShaderModule(
+      device_, spv_terrain_vert, spv_terrain_vert_size);
+  VkShaderModule fragSolidModule  = createShaderModule(
+      device_, spv_terrain_frag, spv_terrain_frag_size);
+  VkShaderModule fragDitherModule = createShaderModule(
+      device_, spv_terrain_dither_frag, spv_terrain_dither_frag_size);
 
-  vkDestroyShaderModule(device_, vertModule, nullptr);
-  vkDestroyShaderModule(device_, fragModule, nullptr);
+  auto buildOne = [&](VkShaderModule fragModule) {
+    PipelineBuildSpec spec{};
+    spec.vert = vertModule;
+    spec.frag = fragModule;
+    spec.bindingCount   = 3;
+    spec.bindings       = bindings;
+    spec.attributeCount = 3;
+    spec.attributes     = attrs;
+    spec.depthTest      = true;
+    spec.depthWrite     = true;
+    spec.cull           = VK_CULL_MODE_BACK_BIT;
+    spec.samples        = sampleCount_;
+    return buildPipeline(device_, terrainPipelineLayout_, renderPass_,
+                         pipelineCache_, spec);
+  };
+
+  // Solid pipeline: no LOD-fade discard in the fragment shader, so the GPU's
+  // early-Z optimisation runs at full speed.  This is the pipeline used for
+  // the overwhelming majority of draws outside an active LOD transition.
+  terrainSolidPipeline_  = buildOne(fragSolidModule);
+  // Dither pipeline: includes IGN-based discard.  Used only for draws where
+  // DrawPrimitive::lodFade < 1.0f (see CesiumEngine::updateFrame which
+  // partitions draws so the switch happens at most once per frame).
+  terrainDitherPipeline_ = buildOne(fragDitherModule);
+
+  vkDestroyShaderModule(device_, vertModule,       nullptr);
+  vkDestroyShaderModule(device_, fragSolidModule,  nullptr);
+  vkDestroyShaderModule(device_, fragDitherModule, nullptr);
 }
 
 void VulkanBackend::createGraphicsPipelinesAll() {
@@ -1212,9 +1229,12 @@ void VulkanBackend::createGraphicsPipelinesAll() {
 }
 
 void VulkanBackend::destroyGraphicsPipelinesAll() {
-  if (terrainPipeline_) vkDestroyPipeline(device_, terrainPipeline_, nullptr);
-  if (skyPipeline_)     vkDestroyPipeline(device_, skyPipeline_, nullptr);
-  terrainPipeline_ = skyPipeline_ = VK_NULL_HANDLE;
+  if (terrainSolidPipeline_)  vkDestroyPipeline(device_, terrainSolidPipeline_,  nullptr);
+  if (terrainDitherPipeline_) vkDestroyPipeline(device_, terrainDitherPipeline_, nullptr);
+  if (skyPipeline_)           vkDestroyPipeline(device_, skyPipeline_,           nullptr);
+  terrainSolidPipeline_  = VK_NULL_HANDLE;
+  terrainDitherPipeline_ = VK_NULL_HANDLE;
+  skyPipeline_           = VK_NULL_HANDLE;
 }
 
 // ── Memory / buffer helpers ─────────────────────────────────────────────────────
@@ -1486,7 +1506,7 @@ void VulkanBackend::flushPendingUploads() {
     LOGE("flushPendingUploads: upload command buffer is NULL!");
     return;
   }
-  
+
   vkResetCommandBuffer(cmd, 0);
 
   VkCommandBufferBeginInfo bi{};
@@ -1506,7 +1526,7 @@ void VulkanBackend::flushPendingUploads() {
       safeMipLevels = 1;
       u.tex->mipLevels = 1;
     }
-    
+
     VkImageMemoryBarrier b{};
     b.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     b.srcAccessMask       = 0;
@@ -1580,13 +1600,13 @@ void VulkanBackend::flushPendingUploads() {
   si.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   si.commandBufferCount = 1;
   si.pCommandBuffers    = &cmd;
-  
+
   VkResult submitResult = vkQueueSubmit(graphicsQueue_, 1, &si, VK_NULL_HANDLE);
   if (submitResult != VK_SUCCESS) {
     LOGE("flushPendingUploads: vkQueueSubmit failed: %d", submitResult);
     return;
   }
-  
+
   vkQueueWaitIdle(graphicsQueue_);
 
   // Mark each texture as visible to subsequent draws (no longer pending).
@@ -1898,13 +1918,13 @@ void VulkanBackend::recreateSwapchain() {
 
 void VulkanBackend::beginFrame(const FrameParams& /*params*/) {
   if (device_ == VK_NULL_HANDLE) return;
-  
+
   // On Android, defer swapchain creation until the first frame to ensure the
   // surface compositor is fully ready. Creating it too early can cause
   // vkAcquireNextImageKHR to block indefinitely.
   if (swapchain_ == VK_NULL_HANDLE) {
     createSwapchain();
-    
+
     // Create renderFinishedSemaphores now that we know swapchainImages_.size()
     renderFinishedSemaphores_.resize(swapchainImages_.size());
     VkSemaphoreCreateInfo semInfo{};
@@ -1912,7 +1932,7 @@ void VulkanBackend::beginFrame(const FrameParams& /*params*/) {
     for (size_t i = 0; i < renderFinishedSemaphores_.size(); ++i) {
       VK_CHECK(vkCreateSemaphore(device_, &semInfo, nullptr, &renderFinishedSemaphores_[i]));
     }
-    
+
     createRenderPass();
     createDepthResources();
     if (sampleCount_ != VK_SAMPLE_COUNT_1_BIT) createMsaaResources();
@@ -1976,7 +1996,7 @@ void VulkanBackend::beginFrame(const FrameParams& /*params*/) {
   VkResult result = vkAcquireNextImageKHR(device_, swapchain_, 1000000000ULL,
                                           imageAvailableSemaphores_[frameIndex_],
                                           VK_NULL_HANDLE, &imageIndex_);
-  
+
   if (result == VK_TIMEOUT) {
     LOGE("VulkanBackend::beginFrame: vkAcquireNextImageKHR timed out");
     frameBegan_ = false;
@@ -2066,7 +2086,7 @@ void VulkanBackend::drawScene(const FrameResult& frame) {
   }
 
   if (frame.draws.empty() || frame.localPositions.empty() || frame.indices.empty() ||
-      frame.altitudes.empty() || !terrainPipeline_) {
+      frame.altitudes.empty() || !terrainSolidPipeline_ || !terrainDitherPipeline_) {
     return;
   }
 
@@ -2095,7 +2115,11 @@ void VulkanBackend::drawScene(const FrameResult& frame) {
   terrU.cameraEcef[3] = 0.0f;
   memcpy(terrainUboMapped_[fi], &terrU, sizeof(TerrainUBO));
 
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, terrainPipeline_);
+  // Start with the solid pipeline. CesiumEngine has stable_partition-ed draws so
+  // every lodFade==1 draw is first; we only switch to the dither pipeline once,
+  // when the first fading draw is reached.
+  VkPipeline currentPipeline = terrainSolidPipeline_;
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline);
 
   VkBuffer     vertexBuffers[] = {vtxBufs_[fi], uvBufs_[fi], altBufs_[fi]};
   VkDeviceSize offsets[]       = {0, 0, 0};
@@ -2125,6 +2149,18 @@ void VulkanBackend::drawScene(const FrameResult& frame) {
   for (const auto& draw : frame.draws) {
     if (draw.indexCount == 0) continue;
 
+    // ── Pipeline switch for LOD-fade dither ─────────────────────────────────
+    // Solid pipeline (no discard) for fully-visible tiles keeps Adreno/Mali
+    // early-Z enabled at full speed; dither pipeline only used for actively-
+    // fading tiles. Draws are partitioned so this switch fires at most once
+    // per frame.
+    VkPipeline wantedPipeline = (draw.lodFade < 1.0f)
+        ? terrainDitherPipeline_ : terrainSolidPipeline_;
+    if (wantedPipeline != currentPipeline) {
+      currentPipeline = wantedPipeline;
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline);
+    }
+
     const float* mp = glm::value_ptr(draw.mvpMatrix);
     for (int i = 0; i < 16; ++i) pc.v.mvpMatrix[i] = mp[i];
 
@@ -2143,6 +2179,7 @@ void VulkanBackend::drawScene(const FrameResult& frame) {
     pc.f.translationY        = draw.overlayTranslation.y;
     pc.f.scaleX              = draw.overlayScale.x;
     pc.f.scaleY              = draw.overlayScale.y;
+    pc.f.lodFade             = draw.lodFade;
     vkCmdPushConstants(cmd, terrainPipelineLayout_,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(CombinedPC), &pc);

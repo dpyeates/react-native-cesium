@@ -47,9 +47,15 @@ int32_t CesiumEngine::resolveTaskThreadCount(int32_t requested) {
   unsigned int hw = std::thread::hardware_concurrency();
   if (hw == 0) return 4;
   // Reserve one core for the UI / display thread; clamp into a sensible band.
+  // The upper bound was 8 historically but modern phones / tablets routinely
+  // ship 8-10 cores (iPhone 15 Pro, iPad M2/M4, Pixel 8 Pro, Galaxy S24
+  // Ultra) and tile decoding (Draco, KTX2, glTF parse) is embarrassingly
+  // parallel — capping at 8 left half the CPU idle during cold-start tile
+  // burst.  16 covers everything up to a Mac M4 Pro and is harmless on
+  // smaller chips because we simply create empty workers.
   int32_t target = static_cast<int32_t>(hw) - 1;
-  if (target < 2) target = 2;
-  if (target > 8) target = 8;
+  if (target < 2)  target = 2;
+  if (target > 16) target = 16;
   return target;
 }
 
@@ -276,6 +282,10 @@ void CesiumEngine::createTileset() {
   opts.culledScreenSpaceError = std::max(1.0, config_.culledScreenSpaceError);
   opts.enableLodTransitionPeriod = config_.enableLodTransitionPeriod;
   opts.lodTransitionLength = std::max(0.0, config_.lodTransitionLength);
+  // Rate-limit per-frame main-thread tile finalisation so the render thread
+  // stays responsive during heavy startup bursts (see EngineConfig docs).
+  opts.mainThreadLoadingTimeLimit =
+      std::max(0.0, config_.mainThreadLoadingTimeLimitMs);
 
   tileset_ = std::make_unique<Cesium3DTilesSelection::Tileset>(
       externals, config_.ionAssetId, config_.ionAccessToken, opts);
@@ -359,6 +369,11 @@ bool CesiumEngine::applyRuntimeConfig(const EngineConfig& cfg) {
     opts.lodTransitionLength = newLodLen;
     changed = true;
   }
+  const double newMainLimit = std::max(0.0, cfg.mainThreadLoadingTimeLimitMs);
+  if (opts.mainThreadLoadingTimeLimit != newMainLimit) {
+    opts.mainThreadLoadingTimeLimit = newMainLimit;
+    changed = true;
+  }
   return changed;
 }
 
@@ -433,9 +448,22 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
 
   asyncSystem_.dispatchMainThreadTasks();
 
+  // Wall-clock deltaTime since previous frame. Cesium Native requires this to
+  // advance LOD transition fade percentages (without it, fade stays at 0 and
+  // newly-selected tiles never become visible). Clamped to a max of 100ms so a
+  // long pause / app foreground transition doesn't instantly complete fades.
+  const auto now = std::chrono::steady_clock::now();
+  float deltaTime = 0.0f;
+  if (hasLastFrameTime_) {
+    const auto diff = std::chrono::duration<float>(now - lastFrameTime_).count();
+    deltaTime = std::min(diff, 0.1f);
+  }
+  lastFrameTime_    = now;
+  hasLastFrameTime_ = true;
+
   const auto viewState     = camera_.computeViewState(w, h);
   const auto& updateResult =
-      tileset_->updateViewGroup(tileset_->getDefaultViewGroup(), {viewState});
+      tileset_->updateViewGroup(tileset_->getDefaultViewGroup(), {viewState}, deltaTime);
   tileset_->loadTiles();
 
   // Only emit the fallback ellipsoid when no real terrain is being rendered
@@ -570,14 +598,140 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
       draw.wmScale              = res->wmScale;
       draw.mvpMatrix            = perTileMVP;
       draw.rtcCenterEcef        = glm::vec3(prim.rtcCenter);
+      // ── LOD fade strategy: incoming tiles are SOLID, outgoing tiles dither ──
+      // We deliberately ignore Cesium Native's "fade-in" percentage on the
+      // tilesToRenderThisFrame list and always render newly-selected tiles at
+      // full opacity.  The reason is visibility correctness: if the incoming
+      // child were also dithering, both child (fading in) and parent (fading
+      // out, see loop below) would simultaneously have holes — and behind the
+      // holes is the sky.  By rendering the incoming tile fully solid we
+      // guarantee a complete opaque "floor" for every screen pixel covered by
+      // terrain, and the outgoing tile dithers OUT on top of it.  The original
+      // ring artefact is still masked because the outgoing tile is the
+      // coarser/older surface fading away (its disappearance is what used to
+      // be visible as a hard ring).
+      draw.lodFade              = 1.0f;
       result.draws.push_back(draw);
     }
   }
+
+  // ── Fading-out tiles (LOD transition) ──────────────────────────────────────
+  // The outgoing (de-selected) tiles dither out on top of the already-solid
+  // incoming tiles drawn in the loop above.  Because the layer behind every
+  // dithered pixel is the new solid tile, the dither holes never reveal the
+  // sky — eliminating the bleed-through artefacts visible with the previous
+  // "both layers fade simultaneously" approach.
+  //
+  // Cesium Native fade semantics (Tileset.cpp _updateLodTransitions):
+  //   "We always fade tiles from 0.0 --> 1.0. Whether the tile is fading in or
+  //    out is determined by whether the tile is in the tilesToRenderThisFrame
+  //    or tilesFadingOut list."
+  //
+  // For tilesFadingOut, raw fade goes 0→1 but means "just stopped being
+  // selected → fully gone".  Our shader treats lodFade as visibility
+  // (1=visible, 0=hide), so we invert: visibility = 1 - rawFade.
+  // Terrain-floor tracking is skipped (these tiles are being replaced).
+  for (const auto& tile : updateResult.tilesFadingOut) {
+    if (!tile) continue;
+    const auto* renderContent = tile->getContent().getRenderContent();
+    if (!renderContent) continue;
+    const float fade = 1.0f - renderContent->getLodTransitionFadePercentage();
+    if (fade <= 0.0f) continue;  // fully faded out — "hide right away" per Cesium Native docs
+
+    const auto* res = static_cast<const TileGPUResources*>(
+        renderContent->getRenderResources());
+    if (!res) continue;
+    lifecycle_.stampTileUsed(const_cast<TileGPUResources*>(res));
+
+    glm::vec4 wmTileBounds(0.0f);
+    const auto& bv = tile->getBoundingVolume();
+    const CesiumGeospatial::BoundingRegion* bRegion =
+        Cesium3DTilesSelection::getBoundingRegionFromBoundingVolume(bv);
+    if (bRegion) {
+      const auto& rect = bRegion->getRectangle();
+      wmTileBounds = glm::vec4(
+          static_cast<float>(rect.getWest()),
+          static_cast<float>(rect.getSouth()),
+          static_cast<float>(rect.getEast()),
+          static_cast<float>(rect.getNorth()));
+    }
+
+    for (const auto& prim : res->primitives) {
+      if (prim.indices.empty() || prim.localPositions.empty()) continue;
+
+      const size_t   baseVertex   = result.localPositions.size() / 3;
+      const uint32_t indexByteOff =
+          static_cast<uint32_t>(result.indices.size() * sizeof(uint32_t));
+      const size_t   vertexCount  = prim.localPositions.size();
+      const bool     hasPrimUVs   =
+          !prim.uvs.empty() && prim.uvs.size() == vertexCount;
+
+      result.localPositions.resize(result.localPositions.size() + vertexCount * 3);
+      result.altitudes.resize(result.altitudes.size() + vertexCount);
+      result.uvs.resize(result.uvs.size() + vertexCount * 2);
+
+      float* posOut = result.localPositions.data() + baseVertex * 3;
+      float* altOut = result.altitudes.data()      + baseVertex;
+      float* uvOut  = result.uvs.data()            + baseVertex * 2;
+
+      for (size_t vi = 0; vi < vertexCount; ++vi) {
+        const glm::vec3& lp = prim.localPositions[vi];
+        *posOut++ = lp.x;
+        *posOut++ = lp.y;
+        *posOut++ = lp.z;
+        *altOut++ = prim.altitudes.empty() ? 0.0f : prim.altitudes[vi];
+        if (hasPrimUVs) {
+          *uvOut++ = prim.uvs[vi].x;
+          *uvOut++ = prim.uvs[vi].y;
+        } else {
+          *uvOut++ = 0.5f;
+          *uvOut++ = 0.5f;
+        }
+      }
+
+      for (uint32_t idx : prim.indices) {
+        result.indices.push_back(static_cast<uint32_t>(baseVertex) + idx);
+      }
+
+      const glm::dvec3 rtcCamRel =
+          prim.rtcCenter - glm::dvec3(cameraPos);
+      const glm::dmat4 translateD =
+          glm::translate(glm::dmat4(1.0), rtcCamRel);
+      const glm::mat4 perTileMVP =
+          glm::mat4(vpDouble * translateD);
+
+      DrawPrimitive draw;
+      draw.indexByteOffset      = indexByteOff;
+      draw.indexCount           = static_cast<uint32_t>(prim.indices.size());
+      draw.hasUVs               = hasPrimUVs;
+      draw.overlayTexture       = res->overlayTexture;
+      draw.overlayTranslation   = res->overlayTranslation;
+      draw.overlayScale         = res->overlayScale;
+      draw.waterMaskTexture     = res->waterMaskTexture;
+      draw.isOnlyWater          = res->isOnlyWater;
+      draw.wmTileBounds         = wmTileBounds;
+      draw.wmTranslation        = res->wmTranslation;
+      draw.wmScale              = res->wmScale;
+      draw.mvpMatrix            = perTileMVP;
+      draw.rtcCenterEcef        = glm::vec3(prim.rtcCenter);
+      draw.lodFade              = fade;
+      result.draws.push_back(draw);
+    }
+  }
+
+  // ── Partition draws so all solid (lodFade==1) tiles render first ────────────
+  // Backends use this to bind the solid pipeline first (early-Z enabled on
+  // TBDR / Adreno / Mali) and switch to the dither pipeline at most once per
+  // frame when the first fading tile is reached. Stable to keep tile order
+  // deterministic so identical scenes produce identical command buffers.
+  std::stable_partition(result.draws.begin(), result.draws.end(),
+      [](const DrawPrimitive& d) { return d.lodFade >= 1.0f; });
 
   result.tilesRendered = static_cast<int>(updateResult.tilesToRenderThisFrame.size());
   result.tilesLoading  = updateResult.workerThreadTileLoadQueueLength +
                          updateResult.mainThreadTileLoadQueueLength;
   result.tilesVisited  = static_cast<int>(updateResult.tilesVisited);
+
   const auto params    = camera_.getParams();
   result.cameraLat     = params.latitude;
   result.cameraLon     = params.longitude;

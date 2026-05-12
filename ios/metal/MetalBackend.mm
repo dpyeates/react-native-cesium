@@ -62,7 +62,7 @@ struct OverlayParamsCPP {
   float    wmTransX;             // offset 48
   float    wmTransY;             // offset 52
   float    wmScale;              // offset 56
-  float    _pad1;                // offset 60
+  float    lodFade;              // offset 60  — LOD dither threshold
   // RTC centre in absolute ECEF (float3).  Fragment shader reconstructs world
   // position as:  wp = in.localPos + rtcCentre  (see shader).
   float    rtcCenterX;           // offset 64
@@ -125,7 +125,7 @@ struct OverlayParams {
   float wmWest, wmSouth, wmEast, wmNorth;
   float wmTransX, wmTransY;
   float wmScale;
-  float _pad1;
+  float lodFade;  // LOD dither threshold (was _pad1)
   // RTC centre in ECEF (float).  wp = in.localPos + rtcCentre gives a world
   // position with ~0.75 m ULP (vs ~4 m for eyeRelPos + cameraEcef at altitude).
   float rtcCenterX, rtcCenterY, rtcCenterZ;
@@ -157,6 +157,20 @@ fragment float4 terrainFragment(
     texture2d<float>         overlayTex   [[texture(0)]],
     texture2d<float>         waterMaskTex [[texture(1)]])
 {
+#ifdef TERRAIN_DITHER
+  // ── LOD transition dither (IGN / Jorge Jimenez) ──────────────────────────
+  // Compiled only into the dither pipeline so the solid pipeline keeps Apple
+  // TBDR Hidden Surface Removal enabled at full speed.  Interleaved Gradient
+  // Noise produces a fine-grained per-pixel threshold approximating blue noise
+  // without a texture lookup; the pattern is far less perceptible than Bayer.
+  // lodFade=1 → all pass; lodFade=0 → all discard.
+  {
+    float ign = fract(52.9829189f *
+        fract(0.06711056f * in.position.x + 0.00583715f * in.position.y));
+    if (ov.lodFade <= ign) { discard_fragment(); }
+  }
+#endif
+
   constexpr sampler s(filter::linear, address::clamp_to_edge);
 
   // ── World position (RTC reconstruction) ──────────────────────────────────
@@ -190,14 +204,19 @@ fragment float4 terrainFragment(
       ? 1.0f
       : waterMaskTex.sample(s, wmUV).r;
 
-  float3 lit;
-
   if (ov.hasOverlay != 0u) {
     float2 texUV = in.uv * float2(ov.scale[0], ov.scale[1])
                  + float2(ov.translation[0], ov.translation[1]);
     texUV.y = 1.0f - texUV.y;
-    lit = overlayTex.sample(s, texUV).rgb;
-  } else {
+    // Return the overlay RGBA directly — preserves any transparency at tile
+    // edges and avoids incorrectly stamping the coastline outline on top of
+    // satellite imagery.  The dither discard above fires before this return,
+    // so LOD fading still works correctly on overlay tiles.
+    return overlayTex.sample(s, texUV);
+  }
+
+  float3 lit;
+  {
     // ── Lighting ──────────────────────────────────────────────────────────
     // Normals from screen-space derivatives of tile-local position.
     // (Using localPos rather than eyeRelPos makes no difference for the
@@ -237,21 +256,28 @@ fragment float4 terrainFragment(
 
     // 1 km lat/lon grid — fades when sub-pixel to suppress Moiré.
     float gridLat = 1000.f / 6371000.f;
-    float cosLat  = max(cos(lat), 0.001f);
+    // cosLat from pxy (already computed above for the Bowring iteration) —
+    // avoids a second cos() transcendental.  pxy/a_e is the geocentric cosine;
+    // the ~0.2 % geodetic difference is imperceptible at grid-line scale.
+    float cosLat  = max(pxy / 6378137.f, 0.001f);
     float gridLon = gridLat / cosLat;
     float wLat = fwidth(lat) * 1.5f, wLon = fwidth(lon) * 1.5f;
     float gridVis = clamp(min(gridLat / max(wLat, 1e-9f),
                               gridLon / max(wLon, 1e-9f)), 0.f, 1.f);
+    // MSL fmod() uses truncation (not floor), which returns negative values for
+    // negative latitudes (southern hemisphere) — use the floor formula.
     float latCell = lat - gridLat * floor(lat / gridLat);
     float lonCell = lon - gridLon * floor(lon / gridLon);
     float dLat = min(latCell, gridLat - latCell);
     float dLon = min(lonCell, gridLon - lonCell);
-    float gridA = max(1.f - smoothstep(0.f, wLat, dLat),
-                      1.f - smoothstep(0.f, wLon, dLon)) * gridVis;
+    // Linear ramp instead of smoothstep cubic — visually identical for a
+    // 1.5 px anti-aliased line, saves two multiplies per component.
+    float gridA = max(clamp(1.f - dLat / max(wLat, 1e-9f), 0.f, 1.f),
+                      clamp(1.f - dLon / max(wLon, 1e-9f), 0.f, 1.f)) * gridVis;
     lit = mix(lit, float3(0.15f, 0.15f, 0.15f), gridA * 0.6f);
   }
 
-  // Coastline outline from water mask (magenta for easy diagnostics).
+  // Coastline outline from water mask.
   if (ov.isEllipsoidFallback == 0u) {
     float dWater  = fwidth(waterVal);
     float coastPx = abs(waterVal - 0.5f) / max(dWater * 0.5f, 0.01f);
@@ -373,7 +399,8 @@ namespace reactnativecesium {
 
 MetalBackend::MetalBackend()
     : device_(nullptr), commandQueue_(nullptr), metalLayer_(nullptr),
-      terrainPipeline_(nullptr), skyPipeline_(nullptr),
+      terrainSolidPipeline_(nullptr), terrainDitherPipeline_(nullptr),
+      skyPipeline_(nullptr),
       terrainDepthState_(nullptr), skyDepthState_(nullptr),
       depthTexture_(nullptr), fallbackTexture_(nullptr),
       fallbackWaterMaskTexture_(nullptr),
@@ -418,40 +445,68 @@ void MetalBackend::buildRenderPipelines() {
   CAMetalLayer* layer = (__bridge CAMetalLayer*)metalLayer_;
   const MTLPixelFormat colorFmt = layer.pixelFormat;
 
-  if (terrainPipeline_) {
-    CFRelease(terrainPipeline_);
-    terrainPipeline_ = nullptr;
+  if (terrainSolidPipeline_) {
+    CFRelease(terrainSolidPipeline_);
+    terrainSolidPipeline_ = nullptr;
+  }
+  if (terrainDitherPipeline_) {
+    CFRelease(terrainDitherPipeline_);
+    terrainDitherPipeline_ = nullptr;
   }
   if (skyPipeline_) {
     CFRelease(skyPipeline_);
     skyPipeline_ = nullptr;
   }
 
-  // Use a separate NSError* per compile + a strict result check. Sharing a
-  // single `err` across multiple operations conflated unrelated failures
-  // (P2-error-handling).
-  NSError* terrainLibErr = nil;
-  id<MTLLibrary> tLib = [dev newLibraryWithSource:kTerrainShaderSrc
-                                          options:nil error:&terrainLibErr];
-  if (!tLib) {
-    NSLog(@"[MetalBackend] terrain shader compilation FAILED: %@", terrainLibErr);
-    return;
-  }
+  // Build two terrain pipelines from a single MSL source:
+  //   • Solid:  compiled without TERRAIN_DITHER → no discard_fragment() in the
+  //             shader, so Apple TBDR Hidden Surface Removal stays enabled.
+  //             Used for every tile whose LOD-fade percentage is 1.0 (i.e. the
+  //             overwhelming majority outside an active LOD transition).
+  //   • Dither: compiled with TERRAIN_DITHER=1 → includes the IGN-based dither
+  //             discard.  Only used for tiles where DrawPrimitive::lodFade<1.
+  //
+  // Engineering trade-off documented in CesiumEngine::updateFrame: the draws
+  // are stable_partition-ed so all solid tiles come first; a single pipeline
+  // switch per frame is then enough to render the fading tail.
+  auto buildTerrainPipeline =
+      ^id<MTLRenderPipelineState>(NSDictionary<NSString*, NSObject*>* macros,
+                                  NSString* label) {
+    MTLCompileOptions* opts = [MTLCompileOptions new];
+    if (macros) opts.preprocessorMacros = macros;
+    NSError* libErr = nil;
+    id<MTLLibrary> lib = [dev newLibraryWithSource:kTerrainShaderSrc
+                                            options:opts error:&libErr];
+    if (!lib) {
+      NSLog(@"[MetalBackend] terrain %@ shader compilation FAILED: %@",
+            label, libErr);
+      return nil;
+    }
+    MTLRenderPipelineDescriptor* desc = [MTLRenderPipelineDescriptor new];
+    desc.label             = [@"terrain-" stringByAppendingString:label];
+    desc.vertexFunction    = [lib newFunctionWithName:@"terrainVertex"];
+    desc.fragmentFunction  = [lib newFunctionWithName:@"terrainFragment"];
+    desc.colorAttachments[0].pixelFormat = colorFmt;
+    desc.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
+    desc.rasterSampleCount               = (NSUInteger)std::max(1, sampleCount_);
+    NSError* pipeErr = nil;
+    id<MTLRenderPipelineState> pipe =
+        [dev newRenderPipelineStateWithDescriptor:desc error:&pipeErr];
+    if (!pipe) {
+      NSLog(@"[MetalBackend] terrain %@ pipeline build FAILED: %@",
+            label, pipeErr);
+    }
+    return pipe;
+  };
 
-  MTLRenderPipelineDescriptor* tDesc = [MTLRenderPipelineDescriptor new];
-  tDesc.vertexFunction   = [tLib newFunctionWithName:@"terrainVertex"];
-  tDesc.fragmentFunction = [tLib newFunctionWithName:@"terrainFragment"];
-  tDesc.colorAttachments[0].pixelFormat = colorFmt;
-  tDesc.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
-  tDesc.rasterSampleCount               = (NSUInteger)std::max(1, sampleCount_);
-  NSError* terrainPipelineErr = nil;
-  id<MTLRenderPipelineState> terrainPipeline =
-      [dev newRenderPipelineStateWithDescriptor:tDesc error:&terrainPipelineErr];
-  if (!terrainPipeline) {
-    NSLog(@"[MetalBackend] terrain pipeline build FAILED: %@", terrainPipelineErr);
-    return;
-  }
-  terrainPipeline_ = (__bridge_retained void*)terrainPipeline;
+  id<MTLRenderPipelineState> solidPipeline = buildTerrainPipeline(nil, @"solid");
+  if (!solidPipeline) return;
+  terrainSolidPipeline_ = (__bridge_retained void*)solidPipeline;
+
+  id<MTLRenderPipelineState> ditherPipeline = buildTerrainPipeline(
+      @{ @"TERRAIN_DITHER": @"1" }, @"dither");
+  if (!ditherPipeline) return;
+  terrainDitherPipeline_ = (__bridge_retained void*)ditherPipeline;
 
   NSError* skyLibErr = nil;
   id<MTLLibrary> sLib = [dev newLibraryWithSource:kSkyShaderSrc
@@ -567,7 +622,8 @@ void MetalBackend::shutdown() {
 
   if (device_)                   { CFRelease(device_);                   device_                  = nullptr; }
   if (commandQueue_)             { CFRelease(commandQueue_);             commandQueue_            = nullptr; }
-  if (terrainPipeline_)          { CFRelease(terrainPipeline_);          terrainPipeline_         = nullptr; }
+  if (terrainSolidPipeline_)     { CFRelease(terrainSolidPipeline_);     terrainSolidPipeline_    = nullptr; }
+  if (terrainDitherPipeline_)    { CFRelease(terrainDitherPipeline_);    terrainDitherPipeline_   = nullptr; }
   if (skyPipeline_)              { CFRelease(skyPipeline_);              skyPipeline_             = nullptr; }
   if (terrainDepthState_)        { CFRelease(terrainDepthState_);        terrainDepthState_       = nullptr; }
   if (skyDepthState_)            { CFRelease(skyDepthState_);            skyDepthState_           = nullptr; }
@@ -764,7 +820,7 @@ void MetalBackend::drawScene(const FrameResult& frame) {
 
   // ── Terrain pass ──────────────────────────────────────────────────────────
   if (frame.draws.empty() || frame.localPositions.empty() || frame.indices.empty() ||
-      !terrainPipeline_ || !terrainDepthState_) {
+      !terrainSolidPipeline_ || !terrainDitherPipeline_ || !terrainDepthState_) {
     return;
   }
 
@@ -787,7 +843,15 @@ void MetalBackend::drawScene(const FrameResult& frame) {
 
   if (!vtxBuf || !idxBuf || !altBuf) return;
 
-  [enc setRenderPipelineState:(__bridge id<MTLRenderPipelineState>)terrainPipeline_];
+  id<MTLRenderPipelineState> solidPS  =
+      (__bridge id<MTLRenderPipelineState>)terrainSolidPipeline_;
+  id<MTLRenderPipelineState> ditherPS =
+      (__bridge id<MTLRenderPipelineState>)terrainDitherPipeline_;
+  // Start with the solid pipeline. CesiumEngine has stable_partition-ed draws so
+  // every lodFade==1 draw is first; we only switch to the dither pipeline once,
+  // when the first fading draw is reached.
+  id<MTLRenderPipelineState> currentPS = solidPS;
+  [enc setRenderPipelineState:currentPS];
   [enc setDepthStencilState:(__bridge id<MTLDepthStencilState>)terrainDepthState_];
   [enc setFrontFacingWinding:MTLWindingCounterClockwise];
   [enc setCullMode:MTLCullModeBack];
@@ -806,6 +870,16 @@ void MetalBackend::drawScene(const FrameResult& frame) {
 
   for (const auto& draw : frame.draws) {
     if (draw.indexCount == 0) continue;
+
+    // ── Pipeline switch for LOD-fade dither ─────────────────────────────────
+    // Solid pipeline (no discard) for fully-visible tiles preserves Apple TBDR
+    // Hidden Surface Removal; dither pipeline only used for actively-fading
+    // tiles. Draws are partitioned so this switch fires at most once per frame.
+    id<MTLRenderPipelineState> wantedPS = (draw.lodFade < 1.0f) ? ditherPS : solidPS;
+    if (wantedPS != currentPS) {
+      currentPS = wantedPS;
+      [enc setRenderPipelineState:currentPS];
+    }
 
     // ── Per-draw vertex uniforms: the tile's RTC MVP matrix ───────────────
     PerDrawVertexUniformsCPP vdu{};
@@ -830,6 +904,7 @@ void MetalBackend::drawScene(const FrameResult& frame) {
     ov.wmTransX            = draw.wmTranslation.x;
     ov.wmTransY            = draw.wmTranslation.y;
     ov.wmScale             = draw.wmScale;
+    ov.lodFade             = draw.lodFade;
     // RTC: tile centre and camera-in-tile-space for fragment world-position
     // reconstruction and view-direction lighting.
     ov.rtcCenterX          = draw.rtcCenterEcef.x;

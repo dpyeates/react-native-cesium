@@ -43,8 +43,13 @@ private:
   void* device_;               // id<MTLDevice>
   void* commandQueue_;         // id<MTLCommandQueue>
   void* metalLayer_;           // CAMetalLayer* (weak — owned by the view)
-  void* terrainPipeline_;      // id<MTLRenderPipelineState>
-  void* skyPipeline_;          // id<MTLRenderPipelineState>
+  // Two terrain pipelines built from the same MSL source.  The solid pipeline
+  // omits the LOD-fade discard so Apple TBDR Hidden Surface Removal stays
+  // enabled at full speed for the 99% of tiles not currently transitioning.
+  // The dither pipeline is used only for draws where DrawPrimitive::lodFade<1.
+  void* terrainSolidPipeline_;  // id<MTLRenderPipelineState> (no discard)
+  void* terrainDitherPipeline_; // id<MTLRenderPipelineState> (LOD-fade dither)
+  void* skyPipeline_;           // id<MTLRenderPipelineState>
   void* terrainDepthState_;    // reversed-Z GREATER, write=YES
   void* skyDepthState_;        // Always, write=NO
   void* depthTexture_;              // id<MTLTexture>

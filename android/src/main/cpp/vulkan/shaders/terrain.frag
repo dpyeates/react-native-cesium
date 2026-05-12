@@ -27,7 +27,7 @@ layout(push_constant) uniform PC {
   float translationY;       // byte  112
   float scaleX;             // byte  116
   float scaleY;             // byte  120
-  float _pad;               // byte  124
+  float lodFade;            // byte  124
 } pc;
 
 layout(set = 1, binding = 0) uniform sampler2D overlayTex;
@@ -56,6 +56,20 @@ vec3 hypsometricColor(float alt, float steep) {
 }
 
 void main() {
+#ifdef TERRAIN_DITHER
+  // ── LOD transition dither (IGN / Jorge Jimenez) ─────────────────────────────
+  // Compiled only into the dither pipeline so the solid pipeline keeps the GPU's
+  // early-Z optimisation enabled at full speed.  Interleaved Gradient Noise
+  // produces a per-pixel threshold approximating blue noise without a texture
+  // lookup; the pattern is far less perceptible than Bayer 4×4.
+  // lodFade=1 → all pass; lodFade=0 → all discard.
+  {
+    float ign = fract(52.9829189 *
+        fract(0.06711056 * gl_FragCoord.x + 0.00583715 * gl_FragCoord.y));
+    if (pc.lodFade <= ign) { discard; }
+  }
+#endif
+
   // ── World position (RTC reconstruction) ────────────────────────────────────
   // wp = tile-local pos + RTC centre (both float32 at ~6.4 Mm scale).
   // ~0.75 m ULP — far better than eyeRelPos + cameraEcef at altitude.
@@ -86,10 +100,16 @@ void main() {
     vec2 texUV = fragUV * vec2(pc.scaleX, pc.scaleY)
                + vec2(pc.translationX, pc.translationY);
     texUV.y = 1.0 - texUV.y;
+    // Return the overlay RGBA directly — preserves any transparency at tile
+    // edges and avoids incorrectly stamping the coastline outline on top of
+    // satellite imagery.  The dither discard above fires before this return,
+    // so LOD fading still works correctly on overlay tiles.
     outColor = texture(overlayTex, texUV);
     return;
   }
 
+  vec3 lit;
+  {
   // ── Hypsometric path ──────────────────────────────────────────────────────
   vec3  dpdx_v = dFdx(localPos), dpdy_v = dFdy(localPos);
   vec3  rawN   = cross(dpdx_v, dpdy_v);
@@ -115,24 +135,32 @@ void main() {
   vec3  oceanBlue = vec3(0.04, 0.26, 0.52);
   float landAlt   = (pc.hasWaterMask != 0u) ? max(rawAlt, 0.0) : rawAlt;
   vec3  landLit   = hypsometricColor(landAlt, steep) * (amb + diff * 0.72 + rim);
-  vec3  lit       = mix(landLit, oceanBlue, waterVal);
+  lit             = mix(landLit, oceanBlue, waterVal);
 
   // 1 km lat/lon grid — fades when sub-pixel to suppress Moiré.
   const float gridLat = 1000.0 / 6371000.0;
-  float cosLat  = max(cos(lat), 0.001);
+  // cosLat from pxy (already computed above for the Bowring iteration) —
+  // avoids a second cos() transcendental.  pxy/a_e is the geocentric cosine;
+  // the ~0.2 % geodetic difference is imperceptible at grid-line scale.
+  float cosLat  = max(pxy / 6378137.0, 0.001);
   float gridLon = gridLat / cosLat;
   float wLat    = fwidth(lat) * 1.5, wLon = fwidth(lon) * 1.5;
   float gridVis = clamp(min(gridLat / max(wLat, 1e-9),
                             gridLon / max(wLon, 1e-9)), 0.0, 1.0);
-  float latCell = lat - gridLat * floor(lat / gridLat);
-  float lonCell = lon - gridLon * floor(lon / gridLon);
+  // GLSL mod() is floor-based (always non-negative) — equivalent to the
+  // original floor dance but one instruction cleaner.
+  float latCell = mod(lat, gridLat);
+  float lonCell = mod(lon, gridLon);
   float dLat    = min(latCell, gridLat - latCell);
   float dLon    = min(lonCell, gridLon - lonCell);
-  float gridA   = max(1.0 - smoothstep(0.0, wLat, dLat),
-                      1.0 - smoothstep(0.0, wLon, dLon)) * gridVis;
+  // Linear ramp instead of smoothstep cubic — visually identical for a
+  // 1.5 px anti-aliased line, saves two multiplies per component.
+  float gridA   = max(clamp(1.0 - dLat / max(wLat, 1e-9), 0.0, 1.0),
+                      clamp(1.0 - dLon / max(wLon, 1e-9), 0.0, 1.0)) * gridVis;
   lit = mix(lit, vec3(0.15, 0.15, 0.15), gridA * 0.6);
+  } // end hypsometric block
 
-  // Coastline outline from water mask.
+  // Coastline outline from water mask (hypsometric path only — overlay returns above).
   if (pc.isEllipsoidFallback == 0u) {
     float dWater  = fwidth(waterVal);
     float coastPx = abs(waterVal - 0.5) / max(dWater * 0.5, 0.01);

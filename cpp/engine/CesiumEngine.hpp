@@ -11,6 +11,7 @@
 #include <CesiumAsync/IAssetAccessor.h>
 #include <CesiumUtility/IntrusivePointer.h>
 
+#include <chrono>
 #include <memory>
 #include <string>
 
@@ -54,9 +55,18 @@ struct EngineConfig {
   bool preloadSiblings  = true;
 
   // Refuse to render holes in the terrain (Cesium will keep ancestor tiles
-  // visible until all children load). Relax during fast pans to lower
-  // upload pressure.
-  bool forbidHoles = true;
+  // visible until all children load).  Cesium Native's default is `false`.
+  //
+  // We default to `false` (matching Cesium Native) because `true` serialises
+  // the load tree on the deepest-child critical path: a parent at LOD N
+  // cannot be rendered until every descendant down to the selected LOD has
+  // arrived.  For a typical Alps view that's 5-6 levels deep × ~4 tiles per
+  // level fan-out = a ~30-60 s critical path even with cache hits.  Setting
+  // this to `false` lets the renderer show the best tile it has *now* and
+  // refine progressively — the same UX as CesiumJS / Google Earth.
+  // Brief low-LOD pop-ins during fast pans are an acceptable trade for
+  // first-frame correctness in seconds rather than tens of seconds.
+  bool forbidHoles = false;
 
   // Water-mask textures (carries coastline shading data). Cheap to disable on
   // memory-constrained devices.
@@ -71,12 +81,25 @@ struct EngineConfig {
   // Seconds an unused tile remains in memory before being evicted.
   double tileCacheUnloadTimeInSeconds = 5.0;
 
+  // Soft cap (ms) on per-frame main-thread tile finalisation work.  Cesium
+  // Native's default of 0.0 means "complete every pending main-thread load
+  // every tick", which on a heavy startup burst can stall the render thread
+  // for hundreds of ms at a time — the user sees the scene "lock up" while
+  // tiles upload.  20 ms keeps the render thread responsive at 30 Hz minimum
+  // (16.67 ms = one frame at 60 Hz; we sacrifice the worst-case frame during
+  // startup bursts but never go below 30 Hz interactivity).  Lower values
+  // (5–10 ms) make individual frames smoother but visibly extend total load
+  // time because finalisation is throughput-bound: ~5 ms per tile, so a
+  // 5 ms cap → only 1 tile finalised per frame → ~60 tiles/sec ceiling
+  // regardless of how many CPUs are decoding in parallel.
+  double mainThreadLoadingTimeLimitMs = 20.0;
+
   // ── Disk cache (SqliteCache) ─────────────────────────────────────────
   int32_t sqliteCacheMaxRows = tunables::kDefaultSqliteCacheMaxRows;
 
   // ── Worker pool ──────────────────────────────────────────────────────
   // 0 means "auto-detect" via std::thread::hardware_concurrency() clamped to
-  // [2, 8]. Override only for benchmarking / regression testing.
+  // [2, 16]. Override only for benchmarking / regression testing.
   int32_t taskProcessorThreads = 0;
 
   // ── Camera constraints ───────────────────────────────────────────────
@@ -164,6 +187,12 @@ private:
   // Ellipsoid height of the terrain surface at the camera nadir, updated each
   // frame. Initialised to 0 (sea level) until a terrain tile is first loaded.
   float terrainFloorEllipsoidM_ = 0.0f;
+
+  // Wall-clock timestamp of the previous updateFrame call. Used to compute
+  // deltaTime for Tileset::updateViewGroup, which drives LOD transition fading.
+  // Zero-initialised "not yet set" state — first frame passes 0 deltaTime.
+  std::chrono::steady_clock::time_point lastFrameTime_{};
+  bool                                  hasLastFrameTime_ = false;
 
   // Pre-computed fallback ellipsoid geometry (ECEF, absolute).
   std::vector<glm::dvec3> ellipsoidPositions_;

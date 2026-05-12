@@ -29,6 +29,10 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
   private var idleProbeAccumulator = 0.0
   private var renderLoopActive = false
   private val renderInFlight = AtomicBoolean(false)
+  // Last System.nanoTime() when tilesLoading was > 0. Used to keep the render
+  // loop at full speed for a grace period after loading finishes — prevents the
+  // cascade of idle gaps between LOD refinement phases. 0 = not yet seen.
+  private var lastLoadingTimeNs: Long = 0L
 
   /// Set in `surfaceDestroyed` before any teardown work begins. Render-thread
   /// callbacks and choreographer frame ticks check this flag and bail out so
@@ -199,11 +203,20 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
       return
     }
 
-    val shouldRender = b.shouldRenderNextFrame()
+    // Post-loading grace period: keep the loop at full speed for 2 seconds
+    // after the last non-zero loading frame so LOD transitions complete quickly
+    // and the next refinement level is discovered without a multi-second idle gap.
+    val nowNs = System.nanoTime()
+    val inGracePeriod = lastLoadingTimeNs > 0L &&
+        (nowNs - lastLoadingTimeNs) < 2_000_000_000L
+
+    val shouldRender = b.shouldRenderNextFrame() || inGracePeriod
     val nextImmediate: Boolean
     if (shouldRender) {
       idleProbeAccumulator = 0.0
       b.renderFrame(nowSeconds)
+      // Stamp after renderFrame so the freshly-updated tile counts are used.
+      if (b.getMetricsTilesLoading() > 0) lastLoadingTimeNs = nowNs
       nextImmediate = true
     } else {
       // Approximate dt for the idle probe; not used for motion.

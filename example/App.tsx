@@ -39,6 +39,9 @@ function AppContent() {
   const [imageryAssetId, setImageryAssetId] = useState(1);
   const [credits, setCredits] = useState('');
   const [creditsExpanded, setCreditsExpanded] = useState(false);
+  const [tilesLoading, setTilesLoading] = useState(0);
+  const [tilesRendered, setTilesRendered] = useState(0);
+  const [fps, setFps] = useState(0);
 
   const { camera, hudCamera, setCesiumView, handleJoystickRates } =
     useCameraController(INITIAL_CAMERA);
@@ -47,6 +50,9 @@ function AppContent() {
 
   const handleMetrics = useCallback((m: CesiumMetrics) => {
     setCredits((prev) => (prev === m.creditsPlainText ? prev : m.creditsPlainText));
+    setTilesLoading(Math.round(m.tilesLoading));
+    setTilesRendered(Math.round(m.tilesRendered));
+    setFps(Math.round(m.fps));
   }, []);
 
   const metricsCallback = useMemo(
@@ -70,8 +76,10 @@ function AppContent() {
           initialCamera={INITIAL_CAMERA}
           pauseRendering={false}
           maximumScreenSpaceError={16}
-          maximumSimultaneousTileLoads={8}
+          maximumSimultaneousTileLoads={16}
           loadingDescendantLimit={20}
+          enableLodTransitionPeriod={true}
+          lodTransitionLength={0.5}
           msaaSampleCount={1}
           ionImageryAssetId={imageryAssetId}
           minAltitudeAboveTerrain={5}
@@ -100,6 +108,9 @@ function AppContent() {
           </Text>
           <Text style={styles.cameraHudText}>
             Heading {hudCamera.heading.toFixed(1)}°
+          </Text>
+          <Text style={styles.cameraHudText}>
+            Tiles {tilesRendered} rendered · {tilesLoading} loading · {fps} fps
           </Text>
         </View>
       )}

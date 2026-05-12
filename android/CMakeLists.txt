@@ -24,24 +24,39 @@ set(SHADER_DIR "${CMAKE_SOURCE_DIR}/src/main/cpp/vulkan/shaders")
 set(SPIRV_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${SPIRV_OUTPUT_DIR}")
 
-set(SHADER_SOURCES
-  "${SHADER_DIR}/terrain.vert"
-  "${SHADER_DIR}/terrain.frag"
-  "${SHADER_DIR}/sky.vert"
-  "${SHADER_DIR}/sky.frag"
+# Each entry: "SOURCE|OUTPUT_BASENAME|GLSLC_DEFINES"
+# terrain.frag is built TWICE — once plain (solid pipeline, no discard so
+# early-Z stays enabled) and once with TERRAIN_DITHER=1 (dither pipeline used
+# only for tiles actively crossing an LOD transition).  See VulkanBackend
+# createTerrain{Solid,Dither}Pipeline for how the two SPV blobs are consumed.
+set(SHADER_BUILDS
+  "${SHADER_DIR}/terrain.vert|terrain.vert|"
+  "${SHADER_DIR}/terrain.frag|terrain.frag|"
+  "${SHADER_DIR}/terrain.frag|terrain_dither.frag|TERRAIN_DITHER=1"
+  "${SHADER_DIR}/sky.vert|sky.vert|"
+  "${SHADER_DIR}/sky.frag|sky.frag|"
 )
 
-foreach(SHADER ${SHADER_SOURCES})
-  get_filename_component(SHADER_NAME ${SHADER} NAME)
+foreach(BUILD ${SHADER_BUILDS})
+  string(REPLACE "|" ";" PARTS "${BUILD}")
+  list(GET PARTS 0 SHADER)
+  list(GET PARTS 1 SHADER_NAME)
+  list(GET PARTS 2 SHADER_DEFINES)
+
   set(SPV_FILE "${SPIRV_OUTPUT_DIR}/${SHADER_NAME}.spv")
   set(SPV_HEADER "${SPIRV_OUTPUT_DIR}/${SHADER_NAME}.spv.h")
   string(REGEX REPLACE "[^a-zA-Z0-9]" "_" ARRAY_NAME "spv_${SHADER_NAME}")
 
+  set(GLSLC_ARGS -O)
+  if (SHADER_DEFINES)
+    set(GLSLC_ARGS ${GLSLC_ARGS} "-D${SHADER_DEFINES}")
+  endif()
+
   add_custom_command(
     OUTPUT "${SPV_FILE}"
-    COMMAND "${GLSLC}" -O -o "${SPV_FILE}" "${SHADER}"
+    COMMAND "${GLSLC}" ${GLSLC_ARGS} -o "${SPV_FILE}" "${SHADER}"
     DEPENDS "${SHADER}"
-    COMMENT "Compiling ${SHADER_NAME} -> SPIR-V"
+    COMMENT "Compiling ${SHADER_NAME} -> SPIR-V (defines: ${SHADER_DEFINES})"
   )
 
   # Generate a C header embedding the SPIR-V as a uint32_t array

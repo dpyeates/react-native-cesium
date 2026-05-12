@@ -198,7 +198,12 @@ private:
   VkDescriptorSetLayout skyDescSetLayout_     = VK_NULL_HANDLE;
   VkPipelineLayout      terrainPipelineLayout_ = VK_NULL_HANDLE;
   VkPipelineLayout      skyPipelineLayout_     = VK_NULL_HANDLE;
-  VkPipeline            terrainPipeline_       = VK_NULL_HANDLE;
+  // Two terrain pipelines built from the same GLSL source (compiled twice via
+  // -DTERRAIN_DITHER=1 in android/CMakeLists.txt).  The solid pipeline omits
+  // the LOD-fade discard so early-Z stays enabled at full speed on Adreno/Mali;
+  // the dither pipeline is used only for draws where DrawPrimitive::lodFade<1.
+  VkPipeline            terrainSolidPipeline_  = VK_NULL_HANDLE;
+  VkPipeline            terrainDitherPipeline_ = VK_NULL_HANDLE;
   VkPipeline            skyPipeline_           = VK_NULL_HANDLE;
 
   VkDescriptorPool descriptorPool_     = VK_NULL_HANDLE;
