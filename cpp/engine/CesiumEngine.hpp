@@ -197,6 +197,46 @@ private:
   // Pre-computed fallback ellipsoid geometry (ECEF, absolute).
   std::vector<glm::dvec3> ellipsoidPositions_;
   std::vector<uint32_t>   ellipsoidIndices_;
+
+  // ── frame-signature cache ─────────────────────────────────────────
+  // Signature is hashed over the tilesToRenderThisFrame primitive pointers
+  // and counts. When the same signature appears for kMaxFramesInFlight
+  // consecutive frames *and* no LOD fades are active, we know every backend
+  // slot's persistent geometry buffer already holds the right bytes, so we
+  // can skip rebuilding the merged CPU arrays entirely. On the fast path we
+  // still emit one DrawPrimitive per visible primitive (re-reading overlay /
+  // water-mask state from TileGPUResources and recomputing per-tile MVP for
+  // camera motion), but the heavy per-vertex memcpys are gone.
+  struct CachedDraw {
+    const TileGPUResources* res;
+    glm::dvec3              rtcCenter;
+    uint32_t                indexByteOffset;
+    uint32_t                indexCount;
+    bool                    hasUVs;
+    glm::vec4               wmTileBounds;
+  };
+  std::vector<CachedDraw> cachedDraws_;
+  uint64_t                lastDrawSignature_    = 0;
+  // Consecutive frames where geometrySignature has been the same non-zero
+  // value. Once this reaches kMaxFramesInFlight every persistent buffer slot
+  // is guaranteed to contain the right bytes — fast path becomes legal.
+  int                     stableSigFrames_      = 0;
+
+  // ── terrain-floor scan cache ──────────────────────────────────────
+  // The minAltitudeAboveTerrain clamp scans every vertex of every tile whose
+  // bounding region contains the camera lon/lat and picks the altitude of
+  // the vertex with the smallest 3D distance to the camera. That's an O(NV)
+  // scan over the visible primitives — dominant CPU cost when the camera
+  // sits over a dense LOD chain. Result depends only on the camera lon/lat
+  // and the set of visible primitives, so we cache it keyed on
+  // (camLon, camLat, geometrySignature). Threshold of ~1e-6 degrees (~10 cm)
+  // is far below the inter-vertex spacing of the densest tiles served by
+  // Cesium Ion world terrain, so the cached nearest vertex stays correct.
+  bool     floorCacheValid_      = false;
+  double   floorCacheCamLonDeg_  = 0.0;
+  double   floorCacheCamLatDeg_  = 0.0;
+  uint64_t floorCacheSignature_  = 0;
+  float    floorCacheValue_      = 0.0f;
 };
 
 } // namespace reactnativecesium

@@ -106,6 +106,14 @@ struct FrameResult {
   bool                     tilesetActive      = false;
   double                   verticalFovDeg     = 60.0;
   std::vector<std::string> creditHtmlLines;
+
+  // hash over the bytes that get merged into localPositions / altitudes /
+  // uvs / indices. Backends compare this against their per-slot cache and
+  // skip the host→GPU memcpy when it matches (the buffers already hold the
+  // exact same bytes). 0 means "force upload" — set by the engine whenever
+  // anything that affects the merged arrays may have changed (active LOD
+  // fade, tileset rebuild, overlay swap, ellipsoid fallback path, etc).
+  uint64_t geometrySignature = 0;
 };
 
 // ── Frame setup ─────────────────────────────────────────────────────────────

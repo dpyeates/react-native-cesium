@@ -104,8 +104,14 @@ private:
   bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                     VkMemoryPropertyFlags props, VkBuffer& buffer,
                     VkDeviceMemory& memory);
-  void ensureBuffer(VkBuffer& buffer, VkDeviceMemory& memory, size_t& capacity,
-                    size_t needed, const void* data, VkBufferUsageFlags usage);
+  // Grow `buffer`/`memory` if needed and copy `data` (size = needed bytes)
+  // into it via the persistently mapped pointer (`mapped`). On reallocation
+  // the previous mapping is unmapped and `mapped` is rewritten with the new
+  // map; otherwise the existing map is reused, saving a map/unmap pair per
+  // frame for each of the four merged terrain buffers.
+  void ensureBuffer(VkBuffer& buffer, VkDeviceMemory& memory, void*& mapped,
+                    size_t& capacity, size_t needed, const void* data,
+                    VkBufferUsageFlags usage);
 
   // ── Deferred upload pipeline ─────────────────────────────────────────────
   // Each call to createRasterTexture / createWaterMaskTexture allocates a slice
@@ -239,22 +245,38 @@ private:
   uint32_t imageIndex_  = 0;
   bool     frameBegan_  = false;
 
-  // Triple-buffered persistent vertex/index/UV/altitude buffers
-  VkBuffer       vtxBufs_[kMaxFramesInFlight] = {};
-  VkDeviceMemory vtxMems_[kMaxFramesInFlight] = {};
-  size_t         vtxCaps_[kMaxFramesInFlight] = {};
+  // Triple-buffered persistent vertex/index/UV/altitude buffers.
+  // The mapped pointers are kept alive for the lifetime of the buffer (only
+  // unmapped when the underlying memory is freed on reallocation/shutdown),
+  // mirroring how skyUboMapped_ / terrainUboMapped_ are handled — this saves
+  // four map/unmap pairs per frame.
+  VkBuffer       vtxBufs_[kMaxFramesInFlight]   = {};
+  VkDeviceMemory vtxMems_[kMaxFramesInFlight]   = {};
+  void*          vtxMapped_[kMaxFramesInFlight] = {};
+  size_t         vtxCaps_[kMaxFramesInFlight]   = {};
 
-  VkBuffer       idxBufs_[kMaxFramesInFlight] = {};
-  VkDeviceMemory idxMems_[kMaxFramesInFlight] = {};
-  size_t         idxCaps_[kMaxFramesInFlight] = {};
+  VkBuffer       idxBufs_[kMaxFramesInFlight]   = {};
+  VkDeviceMemory idxMems_[kMaxFramesInFlight]   = {};
+  void*          idxMapped_[kMaxFramesInFlight] = {};
+  size_t         idxCaps_[kMaxFramesInFlight]   = {};
 
-  VkBuffer       uvBufs_[kMaxFramesInFlight]  = {};
-  VkDeviceMemory uvMems_[kMaxFramesInFlight]  = {};
-  size_t         uvCaps_[kMaxFramesInFlight]  = {};
+  VkBuffer       uvBufs_[kMaxFramesInFlight]    = {};
+  VkDeviceMemory uvMems_[kMaxFramesInFlight]    = {};
+  void*          uvMapped_[kMaxFramesInFlight]  = {};
+  size_t         uvCaps_[kMaxFramesInFlight]    = {};
 
-  VkBuffer       altBufs_[kMaxFramesInFlight] = {};  // float altitude per vertex
-  VkDeviceMemory altMems_[kMaxFramesInFlight] = {};
-  size_t         altCaps_[kMaxFramesInFlight] = {};
+  VkBuffer       altBufs_[kMaxFramesInFlight]   = {};  // float altitude per vertex
+  VkDeviceMemory altMems_[kMaxFramesInFlight]   = {};
+  void*          altMapped_[kMaxFramesInFlight] = {};
+  size_t         altCaps_[kMaxFramesInFlight]   = {};
+
+  // ── per-slot geometry signature cache ────────────────────────────────
+  // When FrameResult::geometrySignature matches the value last written into
+  // this slot, the four merged buffers above already contain exactly the
+  // bytes the engine would have produced this frame and the host memcpys can
+  // be skipped. 0 means "this slot is stale" — backends should always
+  // memcpy when geomSlotSig_[fi] is 0 or differs from the incoming sig.
+  uint64_t geomSlotSig_[kMaxFramesInFlight] = {};
 
   // Per-frame UBO: just cameraEcef (fragment stage, used for lighting vd).
   // MVP is now per-draw via push constants.
@@ -275,10 +297,24 @@ private:
   // beginFrame when the matching upload fence is signalled).
   static constexpr VkDeviceSize kStagingSize = 64ULL * 1024ULL * 1024ULL;
   static constexpr VkDeviceSize kStagingAlignment = 256;
+  // Per-batch (per beginFrame flush) allocation budget. With async upload
+  // submission, the ring head must never wrap past slices still being read by
+  // the GPU. Capping a single batch to kStagingSize / kMaxFramesInFlight
+  // guarantees that by the time the head wraps back, the slot that wrote
+  // those bytes has already had its uploadFences_ signalled (we wait on it
+  // in beginFrame before clearing uploadsInFlight_). When a single batch
+  // would exceed the budget the call site falls back to the synchronous
+  // per-tile upload path that already exists for the pre-init case.
+  static constexpr VkDeviceSize kStagingPerFrameBudget =
+      kStagingSize / kMaxFramesInFlight;
   VkBuffer       stagingBuffer_ = VK_NULL_HANDLE;
   VkDeviceMemory stagingMemory_ = VK_NULL_HANDLE;
   uint8_t*       stagingMapped_ = nullptr;
   VkDeviceSize   stagingHead_   = 0;
+  // Bytes allocated from the staging ring since the last flush. Reset to 0
+  // inside flushPendingUploads() once those bytes have been moved into
+  // uploadsInFlight_[frameIndex_].
+  VkDeviceSize   stagingBytesThisBatch_ = 0;
   VkFence        uploadFences_[kMaxFramesInFlight] = {};
   std::vector<PendingUpload> pendingUploadsCurrent_;     // queued, not yet submitted
   std::vector<PendingUpload> uploadsInFlight_[kMaxFramesInFlight]; // submitted

@@ -82,6 +82,21 @@ private:
   size_t idxCaps_[kMaxFramesInFlight];
   size_t uvCaps_[kMaxFramesInFlight];
   size_t altCaps_[kMaxFramesInFlight];
+
+  // per-draw uniforms ring. One MTLBuffer per frame slot, filled with
+  // [draw0 VS uniforms][draw0 FS uniforms][draw1 VS][draw1 FS]… each padded
+  // to kUniformAlign so setVertexBufferOffset / setFragmentBufferOffset can
+  // index into it without re-binding the buffer each draw. Replaces the
+  // per-draw setVertexBytes/setFragmentBytes calls that show up as encoder
+  // overhead on the GPU frame capture.
+  static constexpr size_t kUniformAlign = 256;
+  void*  uniformsBufs_[kMaxFramesInFlight]; // id<MTLBuffer>
+  size_t uniformsCaps_[kMaxFramesInFlight];
+
+  // per-slot geometry signature cache. Same semantics as the Vulkan
+  // backend's geomSlotSig_: when FrameResult::geometrySignature matches the
+  // value last written to this slot we skip the merged-geometry memcpy.
+  uint64_t geomSlotSig_[kMaxFramesInFlight] = {};
 };
 
 } // namespace reactnativecesium

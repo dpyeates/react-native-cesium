@@ -5,12 +5,6 @@
 
 #include "CesiumEngine.hpp"
 
-#ifdef __ANDROID__
-#include <android/log.h>
-#define ENGINE_LOGI(...) __android_log_print(ANDROID_LOG_INFO, "CesiumEngine", __VA_ARGS__)
-#else
-#define ENGINE_LOGI(...)
-#endif
 
 #include <Cesium3DTilesContent/registerAllTileContentTypes.h>
 #include <Cesium3DTilesSelection/BoundingVolume.h>
@@ -38,7 +32,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <thread>
+
 
 namespace reactnativecesium {
 
@@ -394,6 +390,18 @@ void CesiumEngine::applyImageryOverlay(int64_t targetAssetId) {
     tileset_->getOverlays().add(ov);
     currentOverlay_ = ov;
   }
+
+  // an overlay swap mutates res->overlayTexture pointers on already-loaded
+  // tiles. The fast path re-reads the texture from `res` each frame so output
+  // pixels stay correct, but burn one stale frame to be safe: drop the cache
+  // and force the engine to take the slow path again until N stable frames
+  // confirm the new state.
+  lastDrawSignature_   = 0;
+  stableSigFrames_     = 0;
+  cachedDraws_.clear();
+  // floor cache is keyed on signature — drop it too so the next frame
+  // re-scans before establishing a new entry.
+  floorCacheValid_     = false;
 }
 
 void CesiumEngine::destroyTileset() {
@@ -403,6 +411,14 @@ void CesiumEngine::destroyTileset() {
   if (taskProcessor_) {
     taskProcessor_->waitUntilIdle();
   }
+  // every TileGPUResources* baked into cachedDraws_ has just been freed.
+  // Clearing the cache guarantees no dangling pointer survives into the next
+  // updateFrame and forces a clean slow-path rebuild.
+  lastDrawSignature_   = 0;
+  stableSigFrames_     = 0;
+  cachedDraws_.clear();
+  // P5: the cached value was keyed on TileGPUResources we just freed.
+  floorCacheValid_     = false;
 }
 
 void CesiumEngine::setImageryAssetId(int64_t assetId) {
@@ -411,6 +427,19 @@ void CesiumEngine::setImageryAssetId(int64_t assetId) {
   applyImageryOverlay(config_.ionImageryAssetId);
 }
 
+namespace {
+// FNV-1a 64-bit hash mix. Used to compute the geometry signature from the
+// ordered list of (TileGPUResources*, primitive*, primitive.indices.size())
+// triples for tilesToRenderThisFrame. Two frames whose visible primitives
+// hash to the same value are guaranteed (modulo astronomically unlikely
+// 64-bit collision) to produce identical merged vertex / index / UV buffers.
+inline uint64_t fnv1a64Mix(uint64_t h, uint64_t v) {
+  h ^= v;
+  h *= 0x100000001b3ULL;
+  return h;
+}
+} // namespace
+
 void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   result.localPositions.clear();
   result.altitudes.clear();
@@ -418,6 +447,7 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   result.indices.clear();
   result.draws.clear();
   result.creditHtmlLines.clear();
+  result.geometrySignature = 0;
 
   result.ionTokenConfigured = !config_.ionAccessToken.empty();
   result.tilesetActive      = (tileset_ != nullptr);
@@ -437,6 +467,9 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
 
   if (!tileset_) {
     appendEllipsoidDraws(result);
+    lastDrawSignature_ = 0;
+    stableSigFrames_   = 0;
+    cachedDraws_.clear();
     lifecycle_.advanceFrame();
     return;
   }
@@ -472,6 +505,12 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   const bool noVisibleTerrain = updateResult.tilesToRenderThisFrame.empty();
   if (noVisibleTerrain) {
     appendEllipsoidDraws(result);
+    // Ellipsoid fallback emits its own geometry; any cached terrain state is
+    // stale until real tiles arrive. Reset so fast path can't fire on the
+    // very next frame after a tile re-appears.
+    lastDrawSignature_ = 0;
+    stableSigFrames_   = 0;
+    cachedDraws_.clear();
   }
 
   if (creditSystem_) {
@@ -485,6 +524,81 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
     }
   }
 
+  // ── geometry signature ────────────────────────────────────────────
+  // Fingerprint the ordered visible primitive list. When the same fingerprint
+  // shows up for kMaxFramesInFlight consecutive frames *and* there are no
+  // LOD-fade draws, every backend slot's persistent buffer already holds the
+  // right bytes — the fast path can then skip the entire merge loop and the
+  // memcpys it produces.
+  uint64_t signature = 0xcbf29ce484222325ULL; // FNV-1a 64-bit offset basis
+  if (!noVisibleTerrain) {
+    for (const auto& tile : updateResult.tilesToRenderThisFrame) {
+      if (!tile) continue;
+      const auto* rc = tile->getContent().getRenderContent();
+      if (!rc) continue;
+      const auto* res = static_cast<const TileGPUResources*>(rc->getRenderResources());
+      if (!res) continue;
+      signature = fnv1a64Mix(signature, reinterpret_cast<uint64_t>(res));
+      signature = fnv1a64Mix(signature,
+                              static_cast<uint64_t>(res->primitives.size()));
+      for (const auto& prim : res->primitives) {
+        signature = fnv1a64Mix(signature, reinterpret_cast<uint64_t>(&prim));
+        signature = fnv1a64Mix(signature,
+                                static_cast<uint64_t>(prim.indices.size()));
+      }
+    }
+    // Reserve 0 as the "force upload" sentinel; we should never emit 0 as a
+    // valid signature.
+    if (signature == 0ULL) signature = 1ULL;
+  } else {
+    signature = 0ULL;
+  }
+
+  // ── scan tilesFadingOut for any in-flight fades ──────────────────────
+  // Fast path is illegal whenever a single fading-out draw would be emitted
+  // (lodFade < 1 means the per-tile dither cutoff changes every frame and the
+  // emitted set of draws may grow/shrink mid-transition).
+  bool anyFadeDraws = false;
+  for (const auto& tile : updateResult.tilesFadingOut) {
+    if (!tile) continue;
+    const auto* rc = tile->getContent().getRenderContent();
+    if (!rc) continue;
+    if (1.0f - rc->getLodTransitionFadePercentage() > 0.0f) {
+      anyFadeDraws = true;
+      break;
+    }
+  }
+
+  // ── update stability counter ─────────────────────────────────────────
+  // IMPORTANT: reset to 0, NOT 1. Setting it to 1 was an off-by-one that
+  // let the fast path fire while one slot still held the previous signature:
+  //   fi=A (reset to 1): slow path → geomSlotSig_[A]=sig
+  //   fi=B (counter=2) : slow path → geomSlotSig_[B]=sig
+  //   fi=C (counter=3≥3): fast path → geomSlotSig_[C] STILL stale → blank!
+  // With reset=0 the fast path is deferred until ALL kMaxFramesInFlight
+  // slots have been written with the current signature.
+  if (!noVisibleTerrain && signature != 0ULL) {
+    if (signature == lastDrawSignature_) {
+      ++stableSigFrames_;
+    } else {
+      stableSigFrames_   = 0;
+      lastDrawSignature_ = signature;
+      cachedDraws_.clear();
+    }
+  }
+
+  // NOTE: must be STRICTLY GREATER (>) than kMaxFramesInFlight, not >=.
+  // With >= kMaxFramesInFlight the fast path fires on the Nth stable frame,
+  // which is exactly the frame where the Nth backend slot *would* have been
+  // written in the slow path. At that point the slot still holds the previous
+  // (or zero) signature and the backend returns a blank frame.
+  // With > kMaxFramesInFlight the Nth slow-path frame writes the last slot,
+  // and the fast path activates on frame N+1 when all slots are primed.
+  const bool canFastPath = !noVisibleTerrain && !anyFadeDraws &&
+                           signature != 0ULL &&
+                           stableSigFrames_ > tunables::kMaxFramesInFlight &&
+                           !cachedDraws_.empty();
+
   // ── Terrain floor tracking (for minAltitudeAboveTerrain clamp) ───────────
   // Computed once before the tile loop and updated per-tile inside it.
   // Only active when the feature is enabled to avoid any overhead otherwise.
@@ -494,6 +608,125 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   const double camLonRad = glm::radians(camParams.longitude);
   float  bestTerrainFloor = terrainFloorEllipsoidM_; // carry previous value if no tile matches
   double bestTerrainDist  = std::numeric_limits<double>::max();
+
+  // ── floor-scan cache lookup ─────────────────────────────────────────
+  // Skip the per-vertex scan when the camera has moved less than ~10 cm in
+  // both lat and lon AND the visible primitive set is unchanged (same
+  // geometry signature). The cached value is only trusted for non-zero
+  // signatures — sig==0 means a fade or rebuild is in flight, in which case
+  // we always re-scan and refresh the cache afterwards.
+  bool floorScanFromCache = false;
+  if (trackTerrainFloor && floorCacheValid_ && signature != 0ULL &&
+      signature == floorCacheSignature_) {
+    const double dLon = std::abs(camParams.longitude - floorCacheCamLonDeg_);
+    const double dLat = std::abs(camParams.latitude  - floorCacheCamLatDeg_);
+    if (dLon < 1e-6 && dLat < 1e-6) {
+      bestTerrainFloor   = floorCacheValue_;
+      floorScanFromCache = true;
+    }
+  }
+  // When tracking is off, suppress the per-tile scan branches (legacy
+  // behaviour already gated on trackTerrainFloor; this just keeps the cache
+  // semantics aligned).
+  const bool runFloorScan = trackTerrainFloor && !floorScanFromCache;
+
+  // ── fast path ────────────────────────────────────────────────────────
+  // The visible primitive list has been identical for kMaxFramesInFlight
+  // frames in a row, so every backend slot is guaranteed to hold a copy of
+  // the merged buffers. Skip the merge entirely: re-emit one DrawPrimitive
+  // per cached entry with a fresh per-tile MVP and the latest overlay /
+  // water-mask state read straight from TileGPUResources. The leftover
+  // result.localPositions / altitudes / uvs / indices stay empty — backends
+  // detect this via result.geometrySignature and use their cached slot data.
+  if (canFastPath) {
+    result.draws.reserve(cachedDraws_.size());
+    const TileGPUResources* lastScanRes = nullptr;
+    for (const auto& c : cachedDraws_) {
+      lifecycle_.stampTileUsed(const_cast<TileGPUResources*>(c.res));
+
+      // Floor scan (run once per res so multi-primitive tiles aren't scanned
+      // twice). Skipped when the P5 cache hit above produced a usable value.
+      if (runFloorScan && c.res != lastScanRes) {
+        lastScanRes = c.res;
+        const bool inside =
+            (c.wmTileBounds.x <= static_cast<float>(camLonRad) &&
+             static_cast<float>(camLonRad) <= c.wmTileBounds.z) &&
+            (c.wmTileBounds.y <= static_cast<float>(camLatRad) &&
+             static_cast<float>(camLatRad) <= c.wmTileBounds.w);
+        if (inside) {
+          for (const auto& prim : c.res->primitives) {
+            if (prim.altitudes.empty() || prim.localPositions.empty()) continue;
+            const size_t vc = prim.localPositions.size();
+            for (size_t vi = 0; vi < vc; ++vi) {
+              const glm::dvec3 vECEF =
+                  glm::dvec3(prim.localPositions[vi]) + prim.rtcCenter;
+              const double dist = glm::length(vECEF - cameraPos);
+              if (dist < bestTerrainDist) {
+                bestTerrainDist  = dist;
+                bestTerrainFloor = prim.altitudes[vi];
+              }
+            }
+          }
+        }
+      }
+
+      const glm::dvec3 rtcCamRel = c.rtcCenter - glm::dvec3(cameraPos);
+      const glm::dmat4 translateD = glm::translate(glm::dmat4(1.0), rtcCamRel);
+
+      DrawPrimitive draw;
+      draw.indexByteOffset    = c.indexByteOffset;
+      draw.indexCount         = c.indexCount;
+      draw.hasUVs             = c.hasUVs;
+      draw.overlayTexture     = c.res->overlayTexture;
+      draw.overlayTranslation = c.res->overlayTranslation;
+      draw.overlayScale       = c.res->overlayScale;
+      draw.waterMaskTexture   = c.res->waterMaskTexture;
+      draw.isOnlyWater        = c.res->isOnlyWater;
+      draw.wmTileBounds       = c.wmTileBounds;
+      draw.wmTranslation      = c.res->wmTranslation;
+      draw.wmScale            = c.res->wmScale;
+      draw.mvpMatrix          = glm::mat4(vpDouble * translateD);
+      draw.rtcCenterEcef      = glm::vec3(c.rtcCenter);
+      draw.lodFade            = 1.0f;
+      result.draws.push_back(draw);
+    }
+
+    result.geometrySignature = signature;
+
+    result.tilesRendered = static_cast<int>(updateResult.tilesToRenderThisFrame.size());
+    result.tilesLoading  = updateResult.workerThreadTileLoadQueueLength +
+                           updateResult.mainThreadTileLoadQueueLength;
+    result.tilesVisited  = static_cast<int>(updateResult.tilesVisited);
+
+    const auto paramsFP = camera_.getParams();
+    result.cameraLat = paramsFP.latitude;
+    result.cameraLon = paramsFP.longitude;
+    result.cameraAlt = paramsFP.altitude;
+
+    if (trackTerrainFloor) {
+      terrainFloorEllipsoidM_ = bestTerrainFloor;
+      // P5: refresh the floor cache on a fresh scan; skip when we hit the
+      // cache (the stored value already reflects this signature).
+      if (runFloorScan && signature != 0ULL) {
+        floorCacheValid_     = true;
+        floorCacheSignature_ = signature;
+        floorCacheCamLonDeg_ = camParams.longitude;
+        floorCacheCamLatDeg_ = camParams.latitude;
+        floorCacheValue_     = bestTerrainFloor;
+      }
+    }
+
+    lifecycle_.advanceFrame();
+    return;
+  }
+
+  // ── Slow path: rebuild cachedDraws_ inline ───────────────────────────────
+  // Wipe so the loop below can append. After the loop, if there were no
+  // fade-out draws we keep it for the fast path; otherwise we clear and
+  // reset the stability counter (the cache is only valid for stable
+  // no-fade frames).
+  cachedDraws_.clear();
+  if (!noVisibleTerrain) cachedDraws_.reserve(updateResult.tilesToRenderThisFrame.size());
 
   for (const auto& tile : updateResult.tilesToRenderThisFrame) {
     if (!tile) continue;
@@ -520,7 +753,9 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
           static_cast<float>(rect.getNorth()));
 
       // ── Terrain floor: find nearest vertex to camera nadir ────────────
-      if (trackTerrainFloor &&
+      // Suppressed when the cache returned a usable value for the
+      // current (signature, camLon, camLat) tuple.
+      if (runFloorScan &&
           rect.contains(CesiumGeospatial::Cartographic(camLonRad, camLatRad, 0.0))) {
         for (const auto& prim : res->primitives) {
           if (prim.altitudes.empty() || prim.localPositions.empty()) continue;
@@ -548,32 +783,47 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
       const bool     hasPrimUVs    =
           !prim.uvs.empty() && prim.uvs.size() == vertexCount;
 
-      // ── RTC: copy tile-local positions & altitudes ────────────────────────
-      result.localPositions.resize(result.localPositions.size() + vertexCount * 3);
-      result.altitudes.resize(result.altitudes.size() + vertexCount);
-      result.uvs.resize(result.uvs.size() + vertexCount * 2);
+      // ── RTC: bulk-copy tile-local positions, altitudes, UVs ─────────────────
+      // Use insert(end(), ptr, ptr+n) rather than resize()+memcpy: libc++
+      // dispatches insert for trivially-copyable float ranges to memmove
+      // (NEON-accelerated even at -O0), skipping the per-element zero-init
+      // loop that resize() performs before we'd overwrite the same bytes
+      // with memcpy. This halves the memory writes and eliminates the
+      // un-vectorised zero-init bottleneck in Debug builds.
+      static_assert(sizeof(glm::vec3) == 3 * sizeof(float), "glm::vec3 must be packed");
+      static_assert(sizeof(glm::vec2) == 2 * sizeof(float), "glm::vec2 must be packed");
 
-      float* posOut = result.localPositions.data() + baseVertex * 3;
-      float* altOut = result.altitudes.data()      + baseVertex;
-      float* uvOut  = result.uvs.data()            + baseVertex * 2;
-
-      for (size_t vi = 0; vi < vertexCount; ++vi) {
-        const glm::vec3& lp = prim.localPositions[vi];
-        *posOut++ = lp.x;
-        *posOut++ = lp.y;
-        *posOut++ = lp.z;
-        *altOut++ = prim.altitudes.empty() ? 0.0f : prim.altitudes[vi];
-        if (hasPrimUVs) {
-          *uvOut++ = prim.uvs[vi].x;
-          *uvOut++ = prim.uvs[vi].y;
-        } else {
-          *uvOut++ = 0.5f;
-          *uvOut++ = 0.5f;
-        }
+      {
+        const float* posData = reinterpret_cast<const float*>(prim.localPositions.data());
+        result.localPositions.insert(result.localPositions.end(),
+                                     posData, posData + vertexCount * 3);
       }
 
-      for (uint32_t idx : prim.indices) {
-        result.indices.push_back(static_cast<uint32_t>(baseVertex) + idx);
+      if (!prim.altitudes.empty()) {
+        result.altitudes.insert(result.altitudes.end(),
+                                prim.altitudes.data(),
+                                prim.altitudes.data() + vertexCount);
+      } else {
+        result.altitudes.resize(result.altitudes.size() + vertexCount, 0.0f);
+      }
+
+      if (hasPrimUVs) {
+        const float* uvData = reinterpret_cast<const float*>(prim.uvs.data());
+        result.uvs.insert(result.uvs.end(), uvData, uvData + vertexCount * 2);
+      } else {
+        result.uvs.resize(result.uvs.size() + vertexCount * 2, 0.5f);
+      }
+
+      // Indices: add base-vertex offset then insert. Use a temporary vector
+      // so the transform writes directly into pre-sized storage.
+      {
+        const size_t   nIdx    = prim.indices.size();
+        const size_t   idxBase = result.indices.size();
+        result.indices.resize(idxBase + nIdx);
+        const uint32_t bv32    = static_cast<uint32_t>(baseVertex);
+        const uint32_t* __restrict srcIdx = prim.indices.data();
+              uint32_t* __restrict dstIdx = result.indices.data() + idxBase;
+        for (size_t ii = 0; ii < nIdx; ++ii) { dstIdx[ii] = srcIdx[ii] + bv32; }
       }
 
       // ── RTC: per-tile MVP matrix (double → float) ─────────────────────────
@@ -612,6 +862,18 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
       // be visible as a hard ring).
       draw.lodFade              = 1.0f;
       result.draws.push_back(draw);
+
+      // capture the per-primitive bits the fast path needs to re-emit
+      // this draw next frame (camera-dependent MVP is recomputed; everything
+      // else is stable as long as the signature is unchanged).
+      CachedDraw cd;
+      cd.res             = res;
+      cd.rtcCenter       = prim.rtcCenter;
+      cd.indexByteOffset = indexByteOff;
+      cd.indexCount      = static_cast<uint32_t>(prim.indices.size());
+      cd.hasUVs          = hasPrimUVs;
+      cd.wmTileBounds    = wmTileBounds;
+      cachedDraws_.push_back(cd);
     }
   }
 
@@ -666,31 +928,35 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
       const bool     hasPrimUVs   =
           !prim.uvs.empty() && prim.uvs.size() == vertexCount;
 
-      result.localPositions.resize(result.localPositions.size() + vertexCount * 3);
-      result.altitudes.resize(result.altitudes.size() + vertexCount);
-      result.uvs.resize(result.uvs.size() + vertexCount * 2);
-
-      float* posOut = result.localPositions.data() + baseVertex * 3;
-      float* altOut = result.altitudes.data()      + baseVertex;
-      float* uvOut  = result.uvs.data()            + baseVertex * 2;
-
-      for (size_t vi = 0; vi < vertexCount; ++vi) {
-        const glm::vec3& lp = prim.localPositions[vi];
-        *posOut++ = lp.x;
-        *posOut++ = lp.y;
-        *posOut++ = lp.z;
-        *altOut++ = prim.altitudes.empty() ? 0.0f : prim.altitudes[vi];
-        if (hasPrimUVs) {
-          *uvOut++ = prim.uvs[vi].x;
-          *uvOut++ = prim.uvs[vi].y;
-        } else {
-          *uvOut++ = 0.5f;
-          *uvOut++ = 0.5f;
-        }
+      {
+        const float* posData = reinterpret_cast<const float*>(prim.localPositions.data());
+        result.localPositions.insert(result.localPositions.end(),
+                                     posData, posData + vertexCount * 3);
       }
 
-      for (uint32_t idx : prim.indices) {
-        result.indices.push_back(static_cast<uint32_t>(baseVertex) + idx);
+      if (!prim.altitudes.empty()) {
+        result.altitudes.insert(result.altitudes.end(),
+                                prim.altitudes.data(),
+                                prim.altitudes.data() + vertexCount);
+      } else {
+        result.altitudes.resize(result.altitudes.size() + vertexCount, 0.0f);
+      }
+
+      if (hasPrimUVs) {
+        const float* uvData = reinterpret_cast<const float*>(prim.uvs.data());
+        result.uvs.insert(result.uvs.end(), uvData, uvData + vertexCount * 2);
+      } else {
+        result.uvs.resize(result.uvs.size() + vertexCount * 2, 0.5f);
+      }
+
+      {
+        const size_t   nIdx    = prim.indices.size();
+        const size_t   idxBase = result.indices.size();
+        result.indices.resize(idxBase + nIdx);
+        const uint32_t bv32    = static_cast<uint32_t>(baseVertex);
+        const uint32_t* __restrict srcIdx = prim.indices.data();
+              uint32_t* __restrict dstIdx = result.indices.data() + idxBase;
+        for (size_t ii = 0; ii < nIdx; ++ii) { dstIdx[ii] = srcIdx[ii] + bv32; }
       }
 
       const glm::dvec3 rtcCamRel =
@@ -727,6 +993,21 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   std::stable_partition(result.draws.begin(), result.draws.end(),
       [](const DrawPrimitive& d) { return d.lodFade >= 1.0f; });
 
+  // ── finalise cache state for next frame ──────────────────────────────
+  // Backends consume `geometrySignature` to short-circuit the host→GPU
+  // memcpy when their per-slot cached signature matches. We emit a non-zero
+  // signature only when this frame is byte-for-byte reproducible from the
+  // cached state — i.e. terrain is present and no LOD fades are in flight.
+  // Any fading-out draw forces a full upload because the dither cutoff
+  // changes every frame.
+  if (anyFadeDraws || noVisibleTerrain) {
+    result.geometrySignature = 0ULL;
+    cachedDraws_.clear();
+    stableSigFrames_ = 0;
+  } else {
+    result.geometrySignature = signature;
+  }
+
   result.tilesRendered = static_cast<int>(updateResult.tilesToRenderThisFrame.size());
   result.tilesLoading  = updateResult.workerThreadTileLoadQueueLength +
                          updateResult.mainThreadTileLoadQueueLength;
@@ -739,6 +1020,24 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
 
   if (trackTerrainFloor) {
     terrainFloorEllipsoidM_ = bestTerrainFloor;
+    // refresh the floor cache on a fresh scan (slow path always runs a
+    // scan unless the cache short-circuit fired above). Only memoise when
+    // the geometry signature is stable enough to key on.
+    if (runFloorScan && signature != 0ULL) {
+      floorCacheValid_     = true;
+      floorCacheSignature_ = signature;
+      floorCacheCamLonDeg_ = camParams.longitude;
+      floorCacheCamLatDeg_ = camParams.latitude;
+      floorCacheValue_     = bestTerrainFloor;
+    } else if (!runFloorScan) {
+      // Cache hit on the slow path is unusual but possible (e.g. fade
+      // started this frame after a stable cache was warm). Nothing to do
+      // — terrainFloorEllipsoidM_ is already the cached value.
+    } else {
+      // Cannot key on signature=0; invalidate so the next stable frame
+      // re-populates the cache deterministically.
+      floorCacheValid_ = false;
+    }
   }
 
   lifecycle_.advanceFrame();

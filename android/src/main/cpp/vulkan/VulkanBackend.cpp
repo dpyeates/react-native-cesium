@@ -297,6 +297,10 @@ void VulkanBackend::shutdown() {
   }
 
   for (int i = 0; i < kMaxFramesInFlight; ++i) {
+    if (vtxMapped_[i]) { vkUnmapMemory(device_, vtxMems_[i]); vtxMapped_[i] = nullptr; }
+    if (idxMapped_[i]) { vkUnmapMemory(device_, idxMems_[i]); idxMapped_[i] = nullptr; }
+    if (uvMapped_[i])  { vkUnmapMemory(device_, uvMems_[i]);  uvMapped_[i]  = nullptr; }
+    if (altMapped_[i]) { vkUnmapMemory(device_, altMems_[i]); altMapped_[i] = nullptr; }
     if (vtxBufs_[i]) vkDestroyBuffer(device_, vtxBufs_[i], nullptr);
     if (vtxMems_[i]) vkFreeMemory(device_, vtxMems_[i], nullptr);
     if (idxBufs_[i]) vkDestroyBuffer(device_, idxBufs_[i], nullptr);
@@ -859,7 +863,7 @@ void VulkanBackend::createSyncObjects() {
   // renderFinishedSemaphores_ created in beginFrame after swapchain is ready
 }
 
-// ── Pipeline cache (P1-vk-pipeline-cache) ───────────────────────────────────────
+// ── Pipeline cache (vk-pipeline-cache) ───────────────────────────────────────
 
 namespace {
 std::string pipelineCachePath(const std::string& cacheDir) {
@@ -1305,23 +1309,29 @@ bool VulkanBackend::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
 }
 
 void VulkanBackend::ensureBuffer(VkBuffer& buffer, VkDeviceMemory& memory,
-                                 size_t& capacity, size_t needed,
+                                 void*& mapped, size_t& capacity, size_t needed,
                                  const void* data, VkBufferUsageFlags usage) {
   if (needed == 0) return;
   if (needed > capacity) {
+    if (mapped) { vkUnmapMemory(device_, memory); mapped = nullptr; }
     if (buffer) vkDestroyBuffer(device_, buffer, nullptr);
     if (memory) vkFreeMemory(device_, memory, nullptr);
     size_t newCap = std::max(needed, capacity > 0 ? capacity * 2 : needed);
     newCap = (newCap + 4095UL) & ~4095UL;
-    createBuffer(static_cast<VkDeviceSize>(newCap), usage,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 buffer, memory);
+    if (!createBuffer(static_cast<VkDeviceSize>(newCap), usage,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      buffer, memory)) {
+      capacity = 0;
+      return;
+    }
     capacity = newCap;
+    if (vkMapMemory(device_, memory, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS) {
+      mapped = nullptr;
+      return;
+    }
   }
-  void* mapped = nullptr;
-  if (vkMapMemory(device_, memory, 0, needed, 0, &mapped) != VK_SUCCESS) return;
+  if (!mapped) return;
   memcpy(mapped, data, needed);
-  vkUnmapMemory(device_, memory);
 }
 
 VkCommandBuffer VulkanBackend::beginSingleTimeCommands() {
@@ -1469,25 +1479,34 @@ void VulkanBackend::initStagingRing(VkDeviceSize bytes) {
     stagingMemory_ = VK_NULL_HANDLE;
     return;
   }
-  stagingMapped_ = static_cast<uint8_t*>(mapped);
-  stagingHead_   = 0;
+  stagingMapped_         = static_cast<uint8_t*>(mapped);
+  stagingHead_           = 0;
+  stagingBytesThisBatch_ = 0;
 }
 
 VkDeviceSize VulkanBackend::allocateStagingSlice(VkDeviceSize size) {
   if (!stagingMapped_ || size == 0 || size > kStagingSize) return SIZE_MAX;
 
   VkDeviceSize aligned = (size + kStagingAlignment - 1) & ~(kStagingAlignment - 1);
+
+  // per-batch budget. Refuse the allocation if granting it would let a
+  // single beginFrame->flushPendingUploads cycle eat more than 1/N of the
+  // ring. The caller (createImageFromPixels) falls back to the synchronous
+  // single-tile path for that tile so the rest of the batch still goes via
+  // the async ring.
+  if (stagingBytesThisBatch_ + aligned > kStagingPerFrameBudget) {
+    return SIZE_MAX;
+  }
+
   VkDeviceSize off;
   if (stagingHead_ + aligned > kStagingSize) {
-    // Wrap to the start of the ring. Anything still in flight from before the
-    // wrap will keep its previous offset alive until its upload fence
-    // signalled in beginFrame.
     off = 0;
     stagingHead_ = aligned;
   } else {
     off = stagingHead_;
     stagingHead_ += aligned;
   }
+  stagingBytesThisBatch_ += aligned;
   return off;
 }
 
@@ -1594,23 +1613,41 @@ void VulkanBackend::flushPendingUploads() {
 
   vkEndCommandBuffer(cmd);
 
-  // SYNCHRONOUS submit and wait - simpler and more reliable than fence-based
-  // batching. The performance hit is minimal since uploads are infrequent.
+  // async submit. The fence lets beginFrame reclaim the staging slices in
+  // kMaxFramesInFlight frames' time without ever calling vkQueueWaitIdle.
+  // Ordering: this submit precedes endFrame()'s draw submit on the same
+  // graphicsQueue_, so the image layout transitions recorded above are
+  // visible to subsequent fragment-shader reads via the standard in-queue
+  // execution + memory-barrier rules — no extra semaphore needed.
+  vkResetFences(device_, 1, &uploadFences_[frameIndex_]);
+
   VkSubmitInfo si{};
   si.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   si.commandBufferCount = 1;
   si.pCommandBuffers    = &cmd;
 
-  VkResult submitResult = vkQueueSubmit(graphicsQueue_, 1, &si, VK_NULL_HANDLE);
+  VkResult submitResult =
+      vkQueueSubmit(graphicsQueue_, 1, &si, uploadFences_[frameIndex_]);
   if (submitResult != VK_SUCCESS) {
     LOGE("flushPendingUploads: vkQueueSubmit failed: %d", submitResult);
     return;
   }
 
-  vkQueueWaitIdle(graphicsQueue_);
-
   // Mark each texture as visible to subsequent draws (no longer pending).
+  // Safe to flip here because the next draw submit happens after this one on
+  // the same queue, and the upload CB ends in a TRANSFER → FRAGMENT_SHADER
+  // memory barrier.
   for (auto& u : uploads) u.tex->pendingUpload = false;
+
+  // Move uploads into this slot's in-flight list so beginFrame can free
+  // their staging slices once uploadFences_[frameIndex_] is signalled (which
+  // happens at most kMaxFramesInFlight frames from now).
+  {
+    std::lock_guard<std::mutex> lk(stagingMutex_);
+    auto& inflight = uploadsInFlight_[frameIndex_];
+    inflight.insert(inflight.end(), uploads.begin(), uploads.end());
+    stagingBytesThisBatch_ = 0;
+  }
 }
 
 // ── Generic image creator (P2-pipelines-dedupe) ─────────────────────────────
@@ -1978,11 +2015,14 @@ void VulkanBackend::beginFrame(const FrameParams& /*params*/) {
   ++totalFrameCount_;
   flushPendingDeletes();
 
-  // Reclaim staging slices for uploads that have now finished on the GPU.
-  // (Their submit was made N=kMaxFramesInFlight frames ago against
-  // uploadFences_[frameIndex_]; the wait above is on inFlightFences_, but
-  // since uploads were submitted on the same queue *before* the previous
-  // frame's draw they must have completed too.)
+  // reclaim staging slices owned by this slot's previous async upload
+  // submit. The upload fence is created SIGNALED, so the first wait through
+  // each slot is a no-op; on subsequent passes it ensures the GPU has finished
+  // reading those staging bytes before we let allocateStagingSlice hand them
+  // back out.
+  if (uploadFences_[frameIndex_] != VK_NULL_HANDLE) {
+    vkWaitForFences(device_, 1, &uploadFences_[frameIndex_], VK_TRUE, UINT64_MAX);
+  }
   {
     std::lock_guard<std::mutex> lk(stagingMutex_);
     uploadsInFlight_[frameIndex_].clear();
@@ -2085,26 +2125,48 @@ void VulkanBackend::drawScene(const FrameResult& frame) {
     vkCmdDraw(cmd, 3, 1, 0, 0);
   }
 
-  if (frame.draws.empty() || frame.localPositions.empty() || frame.indices.empty() ||
-      frame.altitudes.empty() || !terrainSolidPipeline_ || !terrainDitherPipeline_) {
+  if (frame.draws.empty() || !terrainSolidPipeline_ || !terrainDitherPipeline_) {
     return;
   }
 
   const int fi = frameIndex_;
 
-  const size_t vtxBytes = frame.localPositions.size() * sizeof(float);
-  const size_t idxBytes = frame.indices.size()        * sizeof(uint32_t);
-  const size_t uvBytes  = frame.uvs.size()            * sizeof(float);
-  const size_t altBytes = frame.altitudes.size()      * sizeof(float);
+  // check the per-slot geometry signature cache. When it matches we
+  // know the persistent vtx/idx/uv/alt buffers already hold the right bytes
+  // and the engine intentionally left the merged CPU arrays empty.
+  const uint64_t sig         = frame.geometrySignature;
+  const bool     slotMatches = (sig != 0ULL) && (sig == geomSlotSig_[fi]);
 
-  ensureBuffer(vtxBufs_[fi], vtxMems_[fi], vtxCaps_[fi], vtxBytes,
-               frame.localPositions.data(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-  ensureBuffer(idxBufs_[fi], idxMems_[fi], idxCaps_[fi], idxBytes,
-               frame.indices.data(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-  ensureBuffer(uvBufs_[fi], uvMems_[fi], uvCaps_[fi], uvBytes,
-               frame.uvs.data(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-  ensureBuffer(altBufs_[fi], altMems_[fi], altCaps_[fi], altBytes,
-               frame.altitudes.data(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+  if (!slotMatches && (frame.localPositions.empty() || frame.indices.empty() ||
+                       frame.altitudes.empty())) {
+    return;
+  }
+
+  if (!slotMatches) {
+    const size_t vtxBytes = frame.localPositions.size() * sizeof(float);
+    const size_t idxBytes = frame.indices.size()        * sizeof(uint32_t);
+    const size_t uvBytes  = frame.uvs.size()            * sizeof(float);
+    const size_t altBytes = frame.altitudes.size()      * sizeof(float);
+
+    ensureBuffer(vtxBufs_[fi], vtxMems_[fi], vtxMapped_[fi], vtxCaps_[fi],
+                 vtxBytes, frame.localPositions.data(),
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    ensureBuffer(idxBufs_[fi], idxMems_[fi], idxMapped_[fi], idxCaps_[fi],
+                 idxBytes, frame.indices.data(),
+                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    ensureBuffer(uvBufs_[fi], uvMems_[fi], uvMapped_[fi], uvCaps_[fi],
+                 uvBytes, frame.uvs.data(),
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    ensureBuffer(altBufs_[fi], altMems_[fi], altMapped_[fi], altCaps_[fi],
+                 altBytes, frame.altitudes.data(),
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    // Record what this slot now holds — set only after every buffer has
+    // been refreshed. If `sig == 0` we deliberately propagate it so future
+    // frames re-upload on this slot (e.g. an active fade is invalidating
+    // the cache).
+    geomSlotSig_[fi] = sig;
+  }
 
   if (!vtxBufs_[fi] || !idxBufs_[fi]) return;
 

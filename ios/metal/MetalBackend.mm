@@ -410,6 +410,8 @@ MetalBackend::MetalBackend()
   for (int i = 0; i < kMaxFramesInFlight; ++i) {
     vtxBufs_[i] = idxBufs_[i] = uvBufs_[i] = altBufs_[i] = nullptr;
     vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = altCaps_[i] = 0;
+    uniformsBufs_[i] = nullptr;
+    uniformsCaps_[i] = 0;
   }
 }
 
@@ -617,6 +619,8 @@ void MetalBackend::shutdown() {
     if (idxBufs_[i]) { CFRelease(idxBufs_[i]); idxBufs_[i] = nullptr; }
     if (uvBufs_[i])  { CFRelease(uvBufs_[i]);  uvBufs_[i]  = nullptr; }
     if (altBufs_[i]) { CFRelease(altBufs_[i]); altBufs_[i] = nullptr; }
+    if (uniformsBufs_[i]) { CFRelease(uniformsBufs_[i]); uniformsBufs_[i] = nullptr; }
+    uniformsCaps_[i] = 0;
     vtxCaps_[i] = idxCaps_[i] = uvCaps_[i] = altCaps_[i] = 0;
   }
 
@@ -819,27 +823,55 @@ void MetalBackend::drawScene(const FrameResult& frame) {
   }
 
   // ── Terrain pass ──────────────────────────────────────────────────────────
-  if (frame.draws.empty() || frame.localPositions.empty() || frame.indices.empty() ||
+  if (frame.draws.empty() ||
       !terrainSolidPipeline_ || !terrainDitherPipeline_ || !terrainDepthState_) {
     return;
   }
 
   const int fi = frameIndex_;
 
-  // Upload merged geometry to the current frame's persistent Metal buffers.
-  const size_t vtxBytes = frame.localPositions.size() * sizeof(float);
-  const size_t idxBytes = frame.indices.size()        * sizeof(uint32_t);
-  const size_t uvBytes  = frame.uvs.size()            * sizeof(float);
-  const size_t altBytes = frame.altitudes.size()      * sizeof(float);
+  // check the per-slot geometry signature. When it matches the engine
+  // has intentionally skipped repopulating the merged CPU arrays — the
+  // persistent vtx/idx/uv/alt buffers from a previous frame already hold the
+  // right bytes for this signature.
+  const uint64_t sig         = frame.geometrySignature;
+  const bool     slotMatches = (sig != 0ULL) && (sig == geomSlotSig_[fi]);
 
-  id<MTLBuffer> vtxBuf = ensureBuffer(&vtxBufs_[fi], &vtxCaps_[fi],
-                                       vtxBytes, frame.localPositions.data(), dev);
-  id<MTLBuffer> idxBuf = ensureBuffer(&idxBufs_[fi], &idxCaps_[fi],
-                                       idxBytes, frame.indices.data(), dev);
-  id<MTLBuffer> uvBuf  = ensureBuffer(&uvBufs_[fi],  &uvCaps_[fi],
-                                       uvBytes,  frame.uvs.data(), dev);
-  id<MTLBuffer> altBuf = ensureBuffer(&altBufs_[fi], &altCaps_[fi],
-                                       altBytes, frame.altitudes.data(), dev);
+  if (!slotMatches && (frame.localPositions.empty() || frame.indices.empty())) {
+    return;
+  }
+
+  id<MTLBuffer> vtxBuf = nil;
+  id<MTLBuffer> idxBuf = nil;
+  id<MTLBuffer> uvBuf  = nil;
+  id<MTLBuffer> altBuf = nil;
+
+  if (slotMatches) {
+    vtxBuf = (__bridge id<MTLBuffer>)vtxBufs_[fi];
+    idxBuf = (__bridge id<MTLBuffer>)idxBufs_[fi];
+    uvBuf  = (__bridge id<MTLBuffer>)uvBufs_[fi];
+    altBuf = (__bridge id<MTLBuffer>)altBufs_[fi];
+  } else {
+    const size_t vtxBytes = frame.localPositions.size() * sizeof(float);
+    const size_t idxBytes = frame.indices.size()        * sizeof(uint32_t);
+    const size_t uvBytes  = frame.uvs.size()            * sizeof(float);
+    const size_t altBytes = frame.altitudes.size()      * sizeof(float);
+
+    vtxBuf = ensureBuffer(&vtxBufs_[fi], &vtxCaps_[fi],
+                          vtxBytes, frame.localPositions.data(), dev);
+    idxBuf = ensureBuffer(&idxBufs_[fi], &idxCaps_[fi],
+                          idxBytes, frame.indices.data(), dev);
+    uvBuf  = ensureBuffer(&uvBufs_[fi],  &uvCaps_[fi],
+                          uvBytes,  frame.uvs.data(), dev);
+    altBuf = ensureBuffer(&altBufs_[fi], &altCaps_[fi],
+                          altBytes, frame.altitudes.data(), dev);
+
+    // Record what this slot now holds — set only after all four buffers
+    // have been refreshed (avoids the partial-update bug we hit on the
+    // previous attempt where the signature was bumped after the first
+    // buffer copy and the rest were skipped).
+    geomSlotSig_[fi] = sig;
+  }
 
   if (!vtxBuf || !idxBuf || !altBuf) return;
 
@@ -858,7 +890,8 @@ void MetalBackend::drawScene(const FrameResult& frame) {
 
   // Set vertex buffers that are shared across all draws.
   // buffer(0): tile-local positions, buffer(1): altitudes, buffer(3): UVs.
-  // buffer(2) is the per-draw MVP set in the loop below.
+  // buffer(2) is the per-draw VS uniforms (offset is updated per draw via the
+  // uniforms ring, fragment slot 0 likewise).
   [enc setVertexBuffer:vtxBuf offset:0 atIndex:0];
   [enc setVertexBuffer:altBuf offset:0 atIndex:1];
   if (uvBuf) [enc setVertexBuffer:uvBuf offset:0 atIndex:3];
@@ -866,9 +899,83 @@ void MetalBackend::drawScene(const FrameResult& frame) {
   id<MTLTexture> fallbackTex   = (__bridge id<MTLTexture>)fallbackTexture_;
   id<MTLTexture> fallbackWMTex = (__bridge id<MTLTexture>)fallbackWaterMaskTexture_;
 
+  // ── build the per-draw uniforms ring ───────────────────────────────
+  // Layout: [draw0 VS][draw0 FS][draw1 VS][draw1 FS]…, each padded to
+  // kUniformAlign (256 B). One contiguous MTLBuffer per frame slot. We
+  // memcpy all per-draw structs in one pass on the CPU, then in the draw
+  // loop only update setVertexBufferOffset / setFragmentBufferOffset.
+  const size_t pad      = kUniformAlign;
+  const size_t vsStride = ((sizeof(PerDrawVertexUniformsCPP) + pad - 1) / pad) * pad;
+  const size_t fsStride = ((sizeof(OverlayParamsCPP)         + pad - 1) / pad) * pad;
+  const size_t perDraw  = vsStride + fsStride;
+  const size_t needed   = perDraw * frame.draws.size();
+
+  id<MTLBuffer> uniBuf = nil;
+  if (needed > 0) {
+    if (needed > uniformsCaps_[fi]) {
+      size_t newCap = std::max(needed, uniformsCaps_[fi] > 0 ? uniformsCaps_[fi] * 2 : needed);
+      newCap = (newCap + 4095UL) & ~4095UL;
+      if (uniformsBufs_[fi]) CFRelease(uniformsBufs_[fi]);
+      id<MTLBuffer> b = [dev newBufferWithLength:newCap
+                                          options:MTLResourceStorageModeShared];
+      uniformsBufs_[fi] = (__bridge_retained void*)b;
+      uniformsCaps_[fi] = newCap;
+    }
+    uniBuf = (__bridge id<MTLBuffer>)uniformsBufs_[fi];
+
+    uint8_t* base = static_cast<uint8_t*>(uniBuf.contents);
+    size_t   off  = 0;
+    for (const auto& draw : frame.draws) {
+      auto* vdu = reinterpret_cast<PerDrawVertexUniformsCPP*>(base + off);
+      const float* mp = glm::value_ptr(draw.mvpMatrix);
+      for (int i = 0; i < 16; ++i) vdu->mvpMatrix[i] = mp[i];
+
+      auto* ov = reinterpret_cast<OverlayParamsCPP*>(base + off + vsStride);
+      *ov = OverlayParamsCPP{};
+      ov->hasOverlay          = (draw.overlayTexture && draw.hasUVs) ? 1u : 0u;
+      ov->isEllipsoidFallback = draw.isEllipsoidFallback ? 1u : 0u;
+      ov->isOnlyWater         = draw.isOnlyWater         ? 1u : 0u;
+      ov->hasWaterMask        = draw.waterMaskTexture     ? 1u : 0u;
+      ov->translation[0]      = draw.overlayTranslation.x;
+      ov->translation[1]      = draw.overlayTranslation.y;
+      ov->scale[0]            = draw.overlayScale.x;
+      ov->scale[1]            = draw.overlayScale.y;
+      ov->wmWest              = draw.wmTileBounds.x;
+      ov->wmSouth             = draw.wmTileBounds.y;
+      ov->wmEast              = draw.wmTileBounds.z;
+      ov->wmNorth             = draw.wmTileBounds.w;
+      ov->wmTransX            = draw.wmTranslation.x;
+      ov->wmTransY            = draw.wmTranslation.y;
+      ov->wmScale             = draw.wmScale;
+      ov->lodFade             = draw.lodFade;
+      ov->rtcCenterX          = draw.rtcCenterEcef.x;
+      ov->rtcCenterY          = draw.rtcCenterEcef.y;
+      ov->rtcCenterZ          = draw.rtcCenterEcef.z;
+      ov->cameraTilespaceX    = frame.cameraEcef.x - draw.rtcCenterEcef.x;
+      ov->cameraTilespaceY    = frame.cameraEcef.y - draw.rtcCenterEcef.y;
+      ov->cameraTilespaceZ    = frame.cameraEcef.z - draw.rtcCenterEcef.z;
+
+      off += perDraw;
+    }
+
+    // Bind once; per-draw we only rebind the offset (cheap encoder call).
+    [enc setVertexBuffer:uniBuf   offset:0 atIndex:2];
+    [enc setFragmentBuffer:uniBuf offset:0 atIndex:0];
+  }
+
   if (fallbackWMTex) [enc setFragmentTexture:fallbackWMTex atIndex:1];
 
+  // track last-bound textures to dedupe redundant setFragmentTexture
+  // calls. The Vulkan path already dedupes its descriptor-set 1/2 binds via
+  // VkDescriptorSet identity; this matches that on Metal.
+  id<MTLTexture> lastTex0 = nil;
+  id<MTLTexture> lastTex1 = fallbackWMTex; // bound above
+
+  size_t drawOff = 0;
   for (const auto& draw : frame.draws) {
+    const size_t thisOff = drawOff;
+    drawOff += perDraw;
+
     if (draw.indexCount == 0) continue;
 
     // ── Pipeline switch for LOD-fade dither ─────────────────────────────────
@@ -881,51 +988,24 @@ void MetalBackend::drawScene(const FrameResult& frame) {
       [enc setRenderPipelineState:currentPS];
     }
 
-    // ── Per-draw vertex uniforms: the tile's RTC MVP matrix ───────────────
-    PerDrawVertexUniformsCPP vdu{};
-    const float* mp = glm::value_ptr(draw.mvpMatrix);
-    for (int i = 0; i < 16; ++i) vdu.mvpMatrix[i] = mp[i];
-    [enc setVertexBytes:&vdu length:sizeof(vdu) atIndex:2];
-
-    // ── Per-draw fragment uniforms ─────────────────────────────────────────
-    OverlayParamsCPP ov{};
-    ov.hasOverlay          = (draw.overlayTexture && draw.hasUVs) ? 1u : 0u;
-    ov.isEllipsoidFallback = draw.isEllipsoidFallback ? 1u : 0u;
-    ov.isOnlyWater         = draw.isOnlyWater         ? 1u : 0u;
-    ov.hasWaterMask        = draw.waterMaskTexture     ? 1u : 0u;
-    ov.translation[0]      = draw.overlayTranslation.x;
-    ov.translation[1]      = draw.overlayTranslation.y;
-    ov.scale[0]            = draw.overlayScale.x;
-    ov.scale[1]            = draw.overlayScale.y;
-    ov.wmWest              = draw.wmTileBounds.x;
-    ov.wmSouth             = draw.wmTileBounds.y;
-    ov.wmEast              = draw.wmTileBounds.z;
-    ov.wmNorth             = draw.wmTileBounds.w;
-    ov.wmTransX            = draw.wmTranslation.x;
-    ov.wmTransY            = draw.wmTranslation.y;
-    ov.wmScale             = draw.wmScale;
-    ov.lodFade             = draw.lodFade;
-    // RTC: tile centre and camera-in-tile-space for fragment world-position
-    // reconstruction and view-direction lighting.
-    ov.rtcCenterX          = draw.rtcCenterEcef.x;
-    ov.rtcCenterY          = draw.rtcCenterEcef.y;
-    ov.rtcCenterZ          = draw.rtcCenterEcef.z;
-    // cameraTilespace = cameraEcef − rtcCentre.  Calculated here to keep the
-    // fragment shader free of subtraction of two large float3 values.
-    ov.cameraTilespaceX    = frame.cameraEcef.x - draw.rtcCenterEcef.x;
-    ov.cameraTilespaceY    = frame.cameraEcef.y - draw.rtcCenterEcef.y;
-    ov.cameraTilespaceZ    = frame.cameraEcef.z - draw.rtcCenterEcef.z;
-    [enc setFragmentBytes:&ov length:sizeof(ov) atIndex:0];
+    [enc setVertexBufferOffset:thisOff             atIndex:2];
+    [enc setFragmentBufferOffset:thisOff + vsStride atIndex:0];
 
     id<MTLTexture> tex = (draw.overlayTexture && draw.hasUVs)
         ? (__bridge id<MTLTexture>)draw.overlayTexture
         : fallbackTex;
-    if (tex) [enc setFragmentTexture:tex atIndex:0];
+    if (tex && tex != lastTex0) {
+      [enc setFragmentTexture:tex atIndex:0];
+      lastTex0 = tex;
+    }
 
     id<MTLTexture> wmTex = draw.waterMaskTexture
         ? (__bridge id<MTLTexture>)draw.waterMaskTexture
         : fallbackWMTex;
-    if (wmTex) [enc setFragmentTexture:wmTex atIndex:1];
+    if (wmTex && wmTex != lastTex1) {
+      [enc setFragmentTexture:wmTex atIndex:1];
+      lastTex1 = wmTex;
+    }
 
     [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                     indexCount:draw.indexCount
