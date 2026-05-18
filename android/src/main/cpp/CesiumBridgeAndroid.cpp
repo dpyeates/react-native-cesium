@@ -25,11 +25,21 @@ CesiumBridgeAndroid::~CesiumBridgeAndroid() {
 
 void CesiumBridgeAndroid::init(JNIEnv* env, jobject surface, int width, int height,
                                const std::string& cacheDir,
-                               const std::string& cacertPath) {
+                               const std::string& cacertPath,
+                               const std::string& ionAccessToken,
+                               int64_t ionAssetId) {
   config_.cacheDatabasePath = cacheDir.empty() ? "" : cacheDir + "/cesium_cache.db";
   config_.tlsCaBundlePath   = cacertPath;
   viewportWidth_  = width;
   viewportHeight_ = height;
+
+  // Seed the ion credentials before buildEngine so createTileset() can
+  // immediately start the async tileset.json HTTP round-trip, letting it
+  // overlap with Vulkan PSO compilation rather than run serially after it.
+  if (!ionAccessToken.empty()) {
+    config_.ionAccessToken = ionAccessToken;
+    config_.ionAssetId     = ionAssetId;
+  }
 
   // ANativeWindow_fromSurface() acquires one strong reference on the
   // returned window; we own it now and must call ANativeWindow_release() in
@@ -408,12 +418,15 @@ Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeCreate(JNIEnv*, j
 JNIEXPORT void JNICALL
 Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeInit(
     JNIEnv* env, jobject, jlong ptr, jobject surface, jint w, jint h,
-    jstring cacheDir, jstring cacertPath) {
+    jstring cacheDir, jstring cacertPath, jstring ionAccessToken, jlong ionAssetId) {
   const char* cacheDirC = env->GetStringUTFChars(cacheDir, nullptr);
   const char* cacertC   = env->GetStringUTFChars(cacertPath, nullptr);
-  getBridge(ptr)->init(env, surface, w, h, cacheDirC, cacertC);
+  const char* tokenC    = env->GetStringUTFChars(ionAccessToken, nullptr);
+  getBridge(ptr)->init(env, surface, w, h, cacheDirC, cacertC,
+                       tokenC ? tokenC : "", static_cast<int64_t>(ionAssetId));
   env->ReleaseStringUTFChars(cacheDir, cacheDirC);
   env->ReleaseStringUTFChars(cacertPath, cacertC);
+  env->ReleaseStringUTFChars(ionAccessToken, tokenC);
 }
 
 JNIEXPORT void JNICALL

@@ -286,7 +286,12 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
       val cacertPath = extractCacert()
       rh.post {
         val b = CesiumBridgeJNI()
-        b.init(surface, w, h, cacheDir, cacertPath)
+        // sqliteCacheMaxRows and taskProcessorThreads are consumed once inside
+        // CesiumEngine::initialize() (SqliteCache + TaskProcessor sizing).
+        // They must be seeded into config_ before init() calls buildEngine().
+        sqliteCacheMaxRows?.let { b.setSqliteCacheMaxRows(it.toInt()) }
+        taskProcessorThreads?.let { b.setTaskProcessorThreads(it.toInt()) }
+        b.init(surface, w, h, cacheDir, cacertPath, ionAccessToken, ionAssetId.toLong())
         bridge = b
         syncBridgePropsOnRenderThread(b)
 
@@ -313,12 +318,13 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
           b.setViewCorrection(q.w, q.x, q.y, q.z); pendingViewCorrection = null
         }
 
+        // Ion credentials were seeded at init() time for parallel tileset
+        // fetch; call updateIonAccessToken here only as a hot-reload safety
+        // net in case the token changed between bridge teardown and rebuild.
         if (ionAccessToken.isNotEmpty()) {
           b.updateIonAccessToken(ionAccessToken, ionAssetId.toLong())
         }
-        if (ionImageryAssetId != 1.0) {
-          b.updateImageryAssetId(ionImageryAssetId.toLong())
-        }
+        b.updateImageryAssetId(ionImageryAssetId.toLong())
         b.setMsaa(msaaSampleCount.toInt())
 
         pushRateCaps()
@@ -510,8 +516,8 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
     culledScreenSpaceError?.let { b.setCulledScreenSpaceError(it) }
     enableLodTransitionPeriod?.let { b.setEnableLodTransitionPeriod(it) }
     lodTransitionLength?.let { b.setLodTransitionLength(it) }
-    sqliteCacheMaxRows?.let { b.setSqliteCacheMaxRows(it.toInt()) }
-    taskProcessorThreads?.let { b.setTaskProcessorThreads(it.toInt()) }
+    // sqliteCacheMaxRows and taskProcessorThreads are applied before init() in
+    // surfaceCreated; calling them here (after buildEngine) has no effect.
     minAltitudeAboveTerrain?.let { b.setMinAltitudeAboveTerrain(it.toFloat()) }
   }
 

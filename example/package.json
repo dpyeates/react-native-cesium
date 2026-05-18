@@ -15,9 +15,9 @@
     "react-native-cesium": "link:..",
     "react-native-gesture-handler": "^2.31.2",
     "react-native-nitro-modules": "0.35.6",
-    "react-native-reanimated": "patch:react-native-reanimated@npm%3A4.3.1#~/.yarn/patches/react-native-reanimated-npm-4.3.1-2d3092d35d.patch",
+    "react-native-reanimated": "^4.3.1",
     "react-native-safe-area-context": "^5.7.0",
-    "react-native-worklets": "patch:react-native-worklets@npm%3A0.8.3#~/.yarn/patches/react-native-worklets-npm-0.8.3-89f34099cb.patch"
+    "react-native-worklets": "^0.8.3"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

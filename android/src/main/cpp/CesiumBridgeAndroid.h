@@ -36,7 +36,8 @@ struct CesiumBridgeAndroid {
   CesiumBridgeAndroid& operator=(CesiumBridgeAndroid&&) = delete;
 
   void init(JNIEnv* env, jobject surface, int width, int height,
-            const std::string& cacheDir, const std::string& cacertPath);
+            const std::string& cacheDir, const std::string& cacertPath,
+            const std::string& ionAccessToken, int64_t ionAssetId);
   void shutdown();
 
   void resize(int width, int height);

@@ -9,8 +9,9 @@ import android.view.Surface
 class CesiumBridgeJNI {
   private var nativePtr: Long = nativeCreate()
 
-  fun init(surface: Surface, width: Int, height: Int, cacheDir: String, cacertPath: String) {
-    nativeInit(nativePtr, surface, width, height, cacheDir, cacertPath)
+  fun init(surface: Surface, width: Int, height: Int, cacheDir: String, cacertPath: String,
+           ionAccessToken: String = "", ionAssetId: Long = 1L) {
+    nativeInit(nativePtr, surface, width, height, cacheDir, cacertPath, ionAccessToken, ionAssetId)
   }
 
   fun shutdown() = nativeShutdown(nativePtr)
@@ -98,7 +99,7 @@ class CesiumBridgeJNI {
   fun setMinAltitudeAboveTerrain(v: Float) = nativeSetMinAltitudeAboveTerrain(nativePtr, v)
 
   private external fun nativeCreate(): Long
-  private external fun nativeInit(ptr: Long, surface: Surface, w: Int, h: Int, cacheDir: String, cacertPath: String)
+  private external fun nativeInit(ptr: Long, surface: Surface, w: Int, h: Int, cacheDir: String, cacertPath: String, ionAccessToken: String, ionAssetId: Long)
   private external fun nativeShutdown(ptr: Long)
   private external fun nativeDestroy(ptr: Long)
   private external fun nativeResize(ptr: Long, w: Int, h: Int)

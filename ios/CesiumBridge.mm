@@ -56,7 +56,9 @@
                              height:(int)height
                            cacheDir:(NSString *)cacheDir
                     ionAccessToken:(NSString *)token
-                         ionAssetId:(int64_t)assetId {
+                         ionAssetId:(int64_t)assetId
+                 sqliteCacheMaxRows:(int32_t)sqliteRows
+               taskProcessorThreads:(int32_t)threads {
   self = [super init];
   if (self) {
     _viewportWidth     = width;
@@ -88,6 +90,16 @@
     if (token.length > 0) {
       _config.ionAccessToken = std::string([token UTF8String]);
       _config.ionAssetId     = assetId;
+    }
+
+    // These two params are consumed once inside CesiumEngine::initialize()
+    // (SqliteCache constructor and TaskProcessor thread-pool sizing). Setting
+    // them after buildEngine() has no effect, so they must be seeded here.
+    if (sqliteRows > 0) {
+      _config.sqliteCacheMaxRows = std::max<int32_t>(64, sqliteRows);
+    }
+    if (threads >= 0) {
+      _config.taskProcessorThreads = threads;
     }
 
     _metalBackend = std::make_unique<reactnativecesium::MetalBackend>();

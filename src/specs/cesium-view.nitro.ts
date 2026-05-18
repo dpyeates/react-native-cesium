@@ -61,13 +61,17 @@ export interface CesiumViewProps extends HybridViewProps {
   ionImageryAssetId: number
 
   // ── Optional perf / quality knobs ────────────────────────────────────────
+  // Note: all optional props below use "set once" semantics. Once a value has
+  // been applied to the native engine, removing the prop (returning it to
+  // `undefined`) does NOT revert the engine to its built-in default — the last
+  // explicitly set value is retained. To reset, pass the desired default value.
   /** RAM budget for live tileset, in mebibytes. Default 256. */
   maximumCachedMiB?: number
   /** Pre-load ancestor tiles around the visible set (smoother panning, more loads). Default true. */
   preloadAncestors?: boolean
   /** Pre-load sibling tiles around the visible set. Default true. */
   preloadSiblings?: boolean
-  /** Refuse to render holes in the terrain. Default true. Relax for fast pans. */
+  /** Refuse to render holes in the terrain. Default false (matching Cesium Native). Relax for fast pans. */
   forbidHoles?: boolean
   /** Decode water-mask textures (coastline shading). Default true. */
   enableWaterMask?: boolean
@@ -81,9 +85,17 @@ export interface CesiumViewProps extends HybridViewProps {
   enableLodTransitionPeriod?: boolean
   /** Length (s) of the LOD cross-fade. Default 1. */
   lodTransitionLength?: number
-  /** Sqlite asset cache row budget. Default 4096. */
+  /**
+   * Sqlite asset cache row budget. Default 4096.
+   * Must be set on initial mount — changes after the first render are ignored
+   * because the cache is opened once at engine construction time.
+   */
   sqliteCacheMaxRows?: number
-  /** Worker thread count. 0 = auto (hardware_concurrency-1, clamped 2..8). */
+  /**
+   * Worker thread count. 0 = auto (hardware_concurrency-1, clamped 2..16).
+   * Must be set on initial mount — the thread pool is sized once at engine
+   * construction time and cannot be resized at runtime.
+   */
   taskProcessorThreads?: number
   /**
    * Minimum altitude above the loaded terrain surface, in metres MSL.
@@ -98,6 +110,8 @@ export interface CesiumViewProps extends HybridViewProps {
   // angular / linear speed on the integrator's per-DoF velocity. Useful when
   // your sensor feed is noisy and you would rather drop the change than
   // visually whip the camera.
+  // Note: same "set once" semantics as the knobs above — removing the prop
+  // keeps the last value rather than reverting to 0 (uncapped).
   /** Maximum yaw rate (degrees per second). 0 = uncapped. */
   maxYawRateDegSec?: number
   /** Maximum pitch rate (degrees per second). 0 = uncapped. */

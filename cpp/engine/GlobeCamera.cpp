@@ -12,7 +12,6 @@
 namespace reactnativecesium {
 
 static constexpr double kNearPlane = 1.0;
-static constexpr double kFarPlane  = 50000000.0;
 static constexpr double kMinVfov   = 20.0;
 static constexpr double kMaxVfov   = 100.0;
 

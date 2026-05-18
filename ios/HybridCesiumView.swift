@@ -381,7 +381,9 @@ class HybridCesiumView: HybridCesiumViewSpec {
       height: Int32(h),
       cacheDir: cacheDir,
       ionAccessToken: ionAccessToken,
-      ionAssetId: Int64(ionAssetId)
+      ionAssetId: Int64(ionAssetId),
+      sqliteCacheMaxRows: Int32(sqliteCacheMaxRows ?? 0),
+      taskProcessorThreads: Int32(taskProcessorThreads ?? 0)
     )
 
     syncBridgeOptionsFromProps()
@@ -416,9 +418,7 @@ class HybridCesiumView: HybridCesiumViewSpec {
     if let f = pendingVfov           { bridge?.setVerticalFovDeg(f);                     pendingVfov     = nil }
     if let q = pendingViewCorrection { bridge?.setViewCorrectionW(q.w, x: q.x, y: q.y, z: q.z); pendingViewCorrection = nil }
 
-    if ionImageryAssetId != 1 {
-      bridge?.updateImageryAssetId(Int64(ionImageryAssetId))
-    }
+    bridge?.updateImageryAssetId(Int64(ionImageryAssetId))
 
     let sc = Int32(msaaSampleCount)
     bridge?.setMsaaSampleCount(sc)
@@ -457,8 +457,8 @@ class HybridCesiumView: HybridCesiumViewSpec {
     if let v = culledScreenSpaceError { bridge?.setCulledScreenSpaceError(v) }
     if let v = enableLodTransitionPeriod { bridge?.setEnableLodTransitionPeriod(v) }
     if let v = lodTransitionLength { bridge?.setLodTransitionLength(v) }
-    if let v = sqliteCacheMaxRows { bridge?.setSqliteCacheMaxRows(Int32(v)) }
-    if let v = taskProcessorThreads { bridge?.setTaskProcessorThreads(Int32(v)) }
+    // sqliteCacheMaxRows and taskProcessorThreads are applied at construction
+    // time via the CesiumBridge initializer; calling them here has no effect.
     if let v = minAltitudeAboveTerrain { bridge?.setMinAltitudeAboveTerrain(Float(v)) }
   }
 
