@@ -612,6 +612,14 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   double bestHorizDistSq  = std::numeric_limits<double>::max();
   bool   floorScanFound   = false;
 
+  // Horizontal search radius for floor sampling (50m = reasonable for urban terrain).
+  // Vertices within this radius are candidates; we pick the lowest (ground level).
+  constexpr double kFloorSearchRadiusM  = 50.0;
+  constexpr double kFloorSearchRadiusSq = kFloorSearchRadiusM * kFloorSearchRadiusM;
+  // 3D fallback: if no vertices within horizontal radius, use closest 3D vertex.
+  double bestDist3D       = std::numeric_limits<double>::max();
+  float  bestDist3DFloor  = 0.0f;
+
   // ── floor-scan cache lookup ─────────────────────────────────────────
   // Skip the per-vertex scan when the camera has moved less than ~10 cm in
   // both lat and lon AND the visible primitive set is unchanged (same
@@ -675,21 +683,34 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
             for (size_t vi = 0; vi < vc; ++vi) {
               const glm::dvec3 vECEF =
                   glm::dvec3(prim.localPositions[vi]) + prim.rtcCenter;
-              const glm::dvec3 delta = vECEF - cameraPos;
-              const double    de     = glm::dot(delta, floorEast);
-              const double    dn     = glm::dot(delta, floorNorth);
+              const glm::dvec3 delta  = vECEF - cameraPos;
+              const double    de      = glm::dot(delta, floorEast);
+              const double    dn      = glm::dot(delta, floorNorth);
               const double    horizSq = de * de + dn * dn;
-              if (horizSq < bestHorizDistSq) {
-                bestHorizDistSq  = horizSq;
-                bestTerrainFloor = prim.altitudes[vi];
-                floorScanFound   = true;
-              } else if (horizSq <= bestHorizDistSq * (1.0 + 1e-9) + 1e-4) {
-                bestTerrainFloor =
-                    std::min(bestTerrainFloor, prim.altitudes[vi]);
-                floorScanFound = true;
+              const float     vAlt    = prim.altitudes[vi];
+
+              // Primary: horizontal search within radius, pick minimum altitude.
+              if (horizSq <= kFloorSearchRadiusSq) {
+                if (!floorScanFound || vAlt < bestTerrainFloor) {
+                  bestTerrainFloor = vAlt;
+                  bestHorizDistSq  = horizSq;
+                  floorScanFound   = true;
+                }
+              }
+
+              // Fallback: track closest 3D vertex for sparse/ocean scenarios.
+              const double dist3D = glm::length(delta);
+              if (dist3D < bestDist3D) {
+                bestDist3D      = dist3D;
+                bestDist3DFloor = vAlt;
               }
             }
           }
+        }
+        // If no vertices within horizontal radius, use 3D fallback.
+        if (!floorScanFound && bestDist3D < std::numeric_limits<double>::max()) {
+          bestTerrainFloor = bestDist3DFloor;
+          floorScanFound   = true;
         }
       }
 
@@ -791,16 +812,29 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
             const double    de      = glm::dot(delta, floorEast);
             const double    dn      = glm::dot(delta, floorNorth);
             const double    horizSq = de * de + dn * dn;
-            if (horizSq < bestHorizDistSq) {
-              bestHorizDistSq  = horizSq;
-              bestTerrainFloor = prim.altitudes[vi];
-              floorScanFound   = true;
-            } else if (horizSq <= bestHorizDistSq * (1.0 + 1e-9) + 1e-4) {
-              bestTerrainFloor =
-                  std::min(bestTerrainFloor, prim.altitudes[vi]);
-              floorScanFound = true;
+            const float     vAlt    = prim.altitudes[vi];
+
+            // Primary: horizontal search within radius, pick minimum altitude.
+            if (horizSq <= kFloorSearchRadiusSq) {
+              if (!floorScanFound || vAlt < bestTerrainFloor) {
+                bestTerrainFloor = vAlt;
+                bestHorizDistSq  = horizSq;
+                floorScanFound   = true;
+              }
+            }
+
+            // Fallback: track closest 3D vertex for sparse/ocean scenarios.
+            const double dist3D = glm::length(delta);
+            if (dist3D < bestDist3D) {
+              bestDist3D      = dist3D;
+              bestDist3DFloor = vAlt;
             }
           }
+        }
+        // If no vertices within horizontal radius, use 3D fallback.
+        if (!floorScanFound && bestDist3D < std::numeric_limits<double>::max()) {
+          bestTerrainFloor = bestDist3DFloor;
+          floorScanFound   = true;
         }
       }
     }
