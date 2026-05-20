@@ -13,7 +13,9 @@
 #include <Cesium3DTilesSelection/TilesetExternals.h>
 #include <Cesium3DTilesSelection/TilesetOptions.h>
 #include <CesiumGeospatial/BoundingRegion.h>
+#include <CesiumGeospatial/Ellipsoid.h>
 #include <CesiumGeospatial/GlobeRectangle.h>
+#include <CesiumGeospatial/GlobeTransforms.h>
 #include <CesiumAsync/CachingAssetAccessor.h>
 #include <CesiumAsync/SqliteCache.h>
 #include <CesiumCurl/CurlAssetAccessor.h>
@@ -607,7 +609,8 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   const double camLatRad = glm::radians(camParams.latitude);
   const double camLonRad = glm::radians(camParams.longitude);
   float  bestTerrainFloor = terrainFloorEllipsoidM_; // carry previous value if no tile matches
-  double bestTerrainDist  = std::numeric_limits<double>::max();
+  double bestHorizDistSq  = std::numeric_limits<double>::max();
+  bool   floorScanFound   = false;
 
   // ── floor-scan cache lookup ─────────────────────────────────────────
   // Skip the per-vertex scan when the camera has moved less than ~10 cm in
@@ -629,6 +632,18 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   // behaviour already gated on trackTerrainFloor; this just keeps the cache
   // semantics aligned).
   const bool runFloorScan = trackTerrainFloor && !floorScanFromCache;
+
+  // ENU basis at the camera — horizontal distance to each terrain vertex.
+  glm::dvec3 floorEast(1.0, 0.0, 0.0);
+  glm::dvec3 floorNorth(0.0, 1.0, 0.0);
+  if (runFloorScan) {
+    const auto& ellipsoid = CesiumGeospatial::Ellipsoid::WGS84;
+    const glm::dmat4 enuToEcef =
+        CesiumGeospatial::GlobeTransforms::eastNorthUpToFixedFrame(
+            cameraPos, ellipsoid);
+    floorEast  = glm::normalize(glm::dvec3(enuToEcef[0]));
+    floorNorth = glm::normalize(glm::dvec3(enuToEcef[1]));
+  }
 
   // ── fast path ────────────────────────────────────────────────────────
   // The visible primitive list has been identical for kMaxFramesInFlight
@@ -660,10 +675,18 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
             for (size_t vi = 0; vi < vc; ++vi) {
               const glm::dvec3 vECEF =
                   glm::dvec3(prim.localPositions[vi]) + prim.rtcCenter;
-              const double dist = glm::length(vECEF - cameraPos);
-              if (dist < bestTerrainDist) {
-                bestTerrainDist  = dist;
+              const glm::dvec3 delta = vECEF - cameraPos;
+              const double    de     = glm::dot(delta, floorEast);
+              const double    dn     = glm::dot(delta, floorNorth);
+              const double    horizSq = de * de + dn * dn;
+              if (horizSq < bestHorizDistSq) {
+                bestHorizDistSq  = horizSq;
                 bestTerrainFloor = prim.altitudes[vi];
+                floorScanFound   = true;
+              } else if (horizSq <= bestHorizDistSq * (1.0 + 1e-9) + 1e-4) {
+                bestTerrainFloor =
+                    std::min(bestTerrainFloor, prim.altitudes[vi]);
+                floorScanFound = true;
               }
             }
           }
@@ -703,8 +726,9 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
     result.cameraLon = paramsFP.longitude;
     result.cameraAlt = paramsFP.altitude;
 
-    if (trackTerrainFloor) {
+    if (trackTerrainFloor && (floorScanFound || floorScanFromCache)) {
       terrainFloorEllipsoidM_ = bestTerrainFloor;
+      terrainFloorValid_      = true;
       // P5: refresh the floor cache on a fresh scan; skip when we hit the
       // cache (the stored value already reflects this signature).
       if (runFloorScan && signature != 0ULL) {
@@ -763,10 +787,18 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
           for (size_t vi = 0; vi < vertexCount; ++vi) {
             const glm::dvec3 vECEF =
                 glm::dvec3(prim.localPositions[vi]) + prim.rtcCenter;
-            const double dist = glm::length(vECEF - cameraPos);
-            if (dist < bestTerrainDist) {
-              bestTerrainDist  = dist;
+            const glm::dvec3 delta  = vECEF - cameraPos;
+            const double    de      = glm::dot(delta, floorEast);
+            const double    dn      = glm::dot(delta, floorNorth);
+            const double    horizSq = de * de + dn * dn;
+            if (horizSq < bestHorizDistSq) {
+              bestHorizDistSq  = horizSq;
               bestTerrainFloor = prim.altitudes[vi];
+              floorScanFound   = true;
+            } else if (horizSq <= bestHorizDistSq * (1.0 + 1e-9) + 1e-4) {
+              bestTerrainFloor =
+                  std::min(bestTerrainFloor, prim.altitudes[vi]);
+              floorScanFound = true;
             }
           }
         }
@@ -1018,8 +1050,9 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   result.cameraLon     = params.longitude;
   result.cameraAlt     = params.altitude;
 
-  if (trackTerrainFloor) {
+  if (trackTerrainFloor && (floorScanFound || floorScanFromCache)) {
     terrainFloorEllipsoidM_ = bestTerrainFloor;
+    terrainFloorValid_      = true;
     // refresh the floor cache on a fresh scan (slow path always runs a
     // scan unless the cache short-circuit fired above). Only memoise when
     // the geometry signature is stable enough to key on.

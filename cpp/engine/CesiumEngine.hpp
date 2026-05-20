@@ -142,10 +142,11 @@ public:
 
   const EngineConfig& getConfig() const { return config_; }
 
-  // Ellipsoid height (metres) of the terrain vertex nearest to the camera nadir,
-  // updated each frame from the loaded tile mesh. 0.0 until the first terrain
-  // tile covering the camera position has been rendered.
+  // Ellipsoid height (metres) of the terrain surface under the camera nadir,
+  // sampled from loaded tile meshes. Meaningless until terrainFloorKnown().
   float terrainFloorEllipsoidMeters() const { return terrainFloorEllipsoidM_; }
+  // True after at least one frame has sampled the floor from real terrain tiles.
+  bool terrainFloorKnown() const { return terrainFloorValid_; }
 
 private:
   void createTileset();
@@ -184,9 +185,10 @@ private:
   GlobeCamera          camera_;
   TileLifecycleManager lifecycle_;
 
-  // Ellipsoid height of the terrain surface at the camera nadir, updated each
-  // frame. Initialised to 0 (sea level) until a terrain tile is first loaded.
+  // Ellipsoid height of the terrain surface at the camera nadir (horizontal
+  // nearest-neighbour sample). Only written after a successful tile scan.
   float terrainFloorEllipsoidM_ = 0.0f;
+  bool  terrainFloorValid_      = false;
 
   // Wall-clock timestamp of the previous updateFrame call. Used to compute
   // deltaTime for Tileset::updateViewGroup, which drives LOD transition fading.
@@ -225,7 +227,8 @@ private:
   // ── terrain-floor scan cache ──────────────────────────────────────
   // The minAltitudeAboveTerrain clamp scans every vertex of every tile whose
   // bounding region contains the camera lon/lat and picks the altitude of
-  // the vertex with the smallest 3D distance to the camera. That's an O(NV)
+  // the vertex with the smallest horizontal (ENU) distance to the camera
+  // nadir (tie-break: lower ellipsoid height). That's an O(NV)
   // scan over the visible primitives — dominant CPU cost when the camera
   // sits over a dense LOD chain. Result depends only on the camera lon/lat
   // and the set of visible primitives, so we cache it keyed on

@@ -312,17 +312,15 @@ void CesiumBridgeAndroid::renderFrame(double nowSeconds) {
 
   // ── Terrain floor clamp ───────────────────────────────────────────────
   const float minAbove = engine_->getConfig().minAltitudeAboveTerrain;
-  if (minAbove > 0.0f) {
-    const double geoidOffset =
+  if (minAbove > 0.0f && engine_->terrainFloorKnown()) {
+    const double geoidN =
         reactnativecesium::mslToEllipsoidMeters(actual.latitude, actual.longitude, 0.0);
-    const double camEllipsoid =
-        reactnativecesium::mslToEllipsoidMeters(actual.latitude, actual.longitude, actual.altitude);
-    const double minEllipsoid =
-        static_cast<double>(engine_->terrainFloorEllipsoidMeters()) + minAbove;
-    if (camEllipsoid < minEllipsoid) {
-      const double clampedMsl = minEllipsoid - geoidOffset;
-      integrator_->clampActualAltitude(clampedMsl);
-      actual.altitude = clampedMsl;
+    const double floorMsl =
+        static_cast<double>(engine_->terrainFloorEllipsoidMeters()) - geoidN;
+    const double minMsl = floorMsl + static_cast<double>(minAbove);
+    if (actual.altitude < minMsl) {
+      integrator_->clampActualAltitude(minMsl);
+      actual.altitude = minMsl;
     }
   }
 

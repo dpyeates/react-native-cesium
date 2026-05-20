@@ -387,17 +387,15 @@
     // Uses terrain floor from the previous frame (one-frame lag is
     // imperceptible at 60 fps). Skipped when minAltitudeAboveTerrain == 0.
     const float minAbove = _engine->getConfig().minAltitudeAboveTerrain;
-    if (minAbove > 0.0f) {
-      const double geoidOffset =
+    if (minAbove > 0.0f && _engine->terrainFloorKnown()) {
+      const double geoidN =
           reactnativecesium::mslToEllipsoidMeters(actual.latitude, actual.longitude, 0.0);
-      const double camEllipsoid =
-          reactnativecesium::mslToEllipsoidMeters(actual.latitude, actual.longitude, actual.altitude);
-      const double minEllipsoid =
-          static_cast<double>(_engine->terrainFloorEllipsoidMeters()) + minAbove;
-      if (camEllipsoid < minEllipsoid) {
-        const double clampedMsl = minEllipsoid - geoidOffset;
-        _integrator->clampActualAltitude(clampedMsl);
-        actual.altitude = clampedMsl;
+      const double floorMsl =
+          static_cast<double>(_engine->terrainFloorEllipsoidMeters()) - geoidN;
+      const double minMsl = floorMsl + static_cast<double>(minAbove);
+      if (actual.altitude < minMsl) {
+        _integrator->clampActualAltitude(minMsl);
+        actual.altitude = minMsl;
       }
     }
 

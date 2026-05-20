@@ -98,10 +98,12 @@ export interface CesiumViewProps extends HybridViewProps {
    */
   taskProcessorThreads?: number
   /**
-   * Minimum altitude above the loaded terrain surface, in metres MSL.
-   * Default 0 (no constraint). Set to e.g. 2 to prevent the camera from going underground.
-   * The clamp is applied every frame in native, based on the altitude of the nearest
-   * terrain mesh vertex to the camera nadir.
+   * Minimum clearance above the loaded terrain surface, in metres (added on top of the
+   * terrain MSL height at the camera position). Default 0 (no constraint).
+   * Set to e.g. 2 to prevent the camera from going underground.
+   * The clamp runs only after terrain tiles have been sampled; until then the demand
+   * altitude is used as-is. The demand altitude is not modified — only the rendered
+   * (actual) camera may be raised to meet this minimum.
    */
   minAltitudeAboveTerrain?: number
 
