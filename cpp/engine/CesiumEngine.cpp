@@ -4,6 +4,7 @@
 #endif
 
 #include "CesiumEngine.hpp"
+#include "GeoidConverter.hpp"
 
 
 #include <Cesium3DTilesContent/registerAllTileContentTypes.h>
@@ -608,15 +609,23 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   const CameraParams camParams  = trackTerrainFloor ? camera_.getParams() : CameraParams{};
   const double camLatRad = glm::radians(camParams.latitude);
   const double camLonRad = glm::radians(camParams.longitude);
+  
+  // Expected ground ellipsoid height at camera location (from geoid).
+  // Used to filter out elevated structures (buildings) during floor sampling.
+  const double expectedGroundEllipsoid = trackTerrainFloor
+      ? mslToEllipsoidMeters(camParams.latitude, camParams.longitude, 0.0)
+      : 0.0;
+  
   float  bestTerrainFloor = terrainFloorEllipsoidM_; // carry previous value if no tile matches
   double bestHorizDistSq  = std::numeric_limits<double>::max();
   bool   floorScanFound   = false;
 
-  // Horizontal search radius for floor sampling (50m = reasonable for urban terrain).
-  // Vertices within this radius are candidates; we pick the lowest (ground level).
+  // Horizontal search radius for floor sampling.
   constexpr double kFloorSearchRadiusM  = 50.0;
   constexpr double kFloorSearchRadiusSq = kFloorSearchRadiusM * kFloorSearchRadiusM;
-  // 3D fallback: if no vertices within horizontal radius, use closest 3D vertex.
+  // Only accept vertices within this tolerance of expected ground (filters out buildings).
+  constexpr double kGroundToleranceM    = 10.0;
+  // 3D fallback: if no ground-level vertices found, use closest 3D vertex.
   double bestDist3D       = std::numeric_limits<double>::max();
   float  bestDist3DFloor  = 0.0f;
 
@@ -689,12 +698,17 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
               const double    horizSq = de * de + dn * dn;
               const float     vAlt    = prim.altitudes[vi];
 
-              // Primary: horizontal search within radius, pick minimum altitude.
+              // Primary: horizontal search within radius, only accept vertices near ground level.
+              // This filters out elevated structures (buildings) in urban areas.
               if (horizSq <= kFloorSearchRadiusSq) {
-                if (!floorScanFound || vAlt < bestTerrainFloor) {
-                  bestTerrainFloor = vAlt;
-                  bestHorizDistSq  = horizSq;
-                  floorScanFound   = true;
+                const double heightAboveGround = static_cast<double>(vAlt) - expectedGroundEllipsoid;
+                if (heightAboveGround >= -kGroundToleranceM && 
+                    heightAboveGround <= kGroundToleranceM) {
+                  if (!floorScanFound || vAlt < bestTerrainFloor) {
+                    bestTerrainFloor = vAlt;
+                    bestHorizDistSq  = horizSq;
+                    floorScanFound   = true;
+                  }
                 }
               }
 
@@ -707,10 +721,23 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
             }
           }
         }
-        // If no vertices within horizontal radius, use 3D fallback.
-        if (!floorScanFound && bestDist3D < std::numeric_limits<double>::max()) {
-          bestTerrainFloor = bestDist3DFloor;
-          floorScanFound   = true;
+        // Fallback: if no ground-level vertices found, use expected ground from geoid.
+        // This handles urban areas where terrain tiles only contain building structures.
+        if (!floorScanFound) {
+          if (bestDist3D < std::numeric_limits<double>::max()) {
+            // Use closest 3D vertex only if it's near ground level
+            const double heightAboveGround = static_cast<double>(bestDist3DFloor) - expectedGroundEllipsoid;
+            if (heightAboveGround >= -kGroundToleranceM && 
+                heightAboveGround <= kGroundToleranceM) {
+              bestTerrainFloor = bestDist3DFloor;
+              floorScanFound   = true;
+            }
+          }
+          // Ultimate fallback: use geoid-based ground estimate
+          if (!floorScanFound) {
+            bestTerrainFloor = static_cast<float>(expectedGroundEllipsoid);
+            floorScanFound   = true;
+          }
         }
       }
 
@@ -814,12 +841,17 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
             const double    horizSq = de * de + dn * dn;
             const float     vAlt    = prim.altitudes[vi];
 
-            // Primary: horizontal search within radius, pick minimum altitude.
+            // Primary: horizontal search within radius, only accept vertices near ground level.
+            // This filters out elevated structures (buildings) in urban areas.
             if (horizSq <= kFloorSearchRadiusSq) {
-              if (!floorScanFound || vAlt < bestTerrainFloor) {
-                bestTerrainFloor = vAlt;
-                bestHorizDistSq  = horizSq;
-                floorScanFound   = true;
+              const double heightAboveGround = static_cast<double>(vAlt) - expectedGroundEllipsoid;
+              if (heightAboveGround >= -kGroundToleranceM && 
+                  heightAboveGround <= kGroundToleranceM) {
+                if (!floorScanFound || vAlt < bestTerrainFloor) {
+                  bestTerrainFloor = vAlt;
+                  bestHorizDistSq  = horizSq;
+                  floorScanFound   = true;
+                }
               }
             }
 
@@ -831,10 +863,23 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
             }
           }
         }
-        // If no vertices within horizontal radius, use 3D fallback.
-        if (!floorScanFound && bestDist3D < std::numeric_limits<double>::max()) {
-          bestTerrainFloor = bestDist3DFloor;
-          floorScanFound   = true;
+        // Fallback: if no ground-level vertices found, use expected ground from geoid.
+        // This handles urban areas where terrain tiles only contain building structures.
+        if (!floorScanFound) {
+          if (bestDist3D < std::numeric_limits<double>::max()) {
+            // Use closest 3D vertex only if it's near ground level
+            const double heightAboveGround = static_cast<double>(bestDist3DFloor) - expectedGroundEllipsoid;
+            if (heightAboveGround >= -kGroundToleranceM && 
+                heightAboveGround <= kGroundToleranceM) {
+              bestTerrainFloor = bestDist3DFloor;
+              floorScanFound   = true;
+            }
+          }
+          // Ultimate fallback: use geoid-based ground estimate
+          if (!floorScanFound) {
+            bestTerrainFloor = static_cast<float>(expectedGroundEllipsoid);
+            floorScanFound   = true;
+          }
         }
       }
     }
