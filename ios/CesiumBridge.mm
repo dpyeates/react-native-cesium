@@ -384,17 +384,18 @@
     auto actual = _integrator->step();
 
     // ── Terrain floor clamp ───────────────────────────────────────────────
-    // Uses terrain floor from the previous frame (one-frame lag is
-    // imperceptible at 60 fps). Skipped when minAltitudeAboveTerrain == 0.
+    // Simple collision detection: if camera goes below terrain + offset, snap it up.
+    // Equivalent to CesiumJS's preRender terrain clamping.
     const float minAbove = _engine->getConfig().minAltitudeAboveTerrain;
     if (minAbove > 0.0f && _engine->terrainFloorKnown()) {
       const double geoidN =
           reactnativecesium::mslToEllipsoidMeters(actual.latitude, actual.longitude, 0.0);
-      const double floorMsl =
-          static_cast<double>(_engine->terrainFloorEllipsoidMeters()) - geoidN;
+      const double floorEllipsoid = static_cast<double>(_engine->terrainFloorEllipsoidMeters());
+      const double floorMsl = floorEllipsoid - geoidN;
       const double minMsl = floorMsl + static_cast<double>(minAbove);
+
+      // Simple clamp: if below minimum, snap to minimum
       if (actual.altitude < minMsl) {
-        _integrator->clampActualAltitude(minMsl);
         actual.altitude = minMsl;
       }
     }

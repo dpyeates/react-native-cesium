@@ -341,9 +341,20 @@ CameraParams CameraIntegrator::step() {
 }
 
 void CameraIntegrator::clampActualAltitude(double newAltMsl) {
+  const auto now = Clock::now();
   std::lock_guard<std::mutex> g(mutex_);
-  alt_.value    = newAltMsl;
-  alt_.velocity = 0.0;
+  
+  // Instead of snapping, feed the clamped altitude through the alpha-beta
+  // tracker for smooth interpolation. This matches how heading/pitch/roll work.
+  updateAlphaBeta(alt_, newAltMsl, now,
+                  tunables::kAlphaAlt, tunables::kBetaAlt, false);
+  
+  // Only clamp DOWNWARD velocity to prevent descending through terrain.
+  // Allow upward velocity for smooth ascents over rising terrain.
+  if (alt_.velocity < 0.0) {
+    alt_.velocity = 0.0;
+  }
+  
   // Do not touch demand_.altitude — getDemand() should still report what the
   // user asked for.
 }

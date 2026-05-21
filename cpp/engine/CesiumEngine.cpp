@@ -6,6 +6,7 @@
 #include "CesiumEngine.hpp"
 #include "GeoidConverter.hpp"
 
+#include <iostream>
 
 #include <Cesium3DTilesContent/registerAllTileContentTypes.h>
 #include <Cesium3DTilesSelection/BoundingVolume.h>
@@ -36,6 +37,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <thread>
 
 
@@ -609,25 +611,21 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   const CameraParams camParams  = trackTerrainFloor ? camera_.getParams() : CameraParams{};
   const double camLatRad = glm::radians(camParams.latitude);
   const double camLonRad = glm::radians(camParams.longitude);
-  
+
   // Expected ground ellipsoid height at camera location (from geoid).
   // Used to filter out elevated structures (buildings) during floor sampling.
   const double expectedGroundEllipsoid = trackTerrainFloor
       ? mslToEllipsoidMeters(camParams.latitude, camParams.longitude, 0.0)
       : 0.0;
-  
+
   float  bestTerrainFloor = terrainFloorEllipsoidM_; // carry previous value if no tile matches
   double bestHorizDistSq  = std::numeric_limits<double>::max();
   bool   floorScanFound   = false;
 
   // Horizontal search radius for floor sampling.
-  constexpr double kFloorSearchRadiusM  = 50.0;
+  // Increased to 200m to ensure robust sampling across terrain LODs and camera speeds.
+  constexpr double kFloorSearchRadiusM  = 200.0;
   constexpr double kFloorSearchRadiusSq = kFloorSearchRadiusM * kFloorSearchRadiusM;
-  // Only accept vertices within this tolerance of expected ground (filters out buildings).
-  constexpr double kGroundToleranceM    = 10.0;
-  // 3D fallback: if no ground-level vertices found, use closest 3D vertex.
-  double bestDist3D       = std::numeric_limits<double>::max();
-  float  bestDist3DFloor  = 0.0f;
 
   // ── floor-scan cache lookup ─────────────────────────────────────────
   // Skip the per-vertex scan when the camera has moved less than ~10 cm in
@@ -653,6 +651,10 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   // ENU basis at the camera — horizontal distance to each terrain vertex.
   glm::dvec3 floorEast(1.0, 0.0, 0.0);
   glm::dvec3 floorNorth(0.0, 1.0, 0.0);
+  glm::dvec3 floorScanPos = cameraPos; // Always scan directly below camera
+  glm::dvec3 floorScanAheadPos = cameraPos; // Also scan ahead if moving
+  bool useLookAhead = false;
+  
   if (runFloorScan) {
     const auto& ellipsoid = CesiumGeospatial::Ellipsoid::WGS84;
     const glm::dmat4 enuToEcef =
@@ -660,6 +662,58 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
             cameraPos, ellipsoid);
     floorEast  = glm::normalize(glm::dvec3(enuToEcef[0]));
     floorNorth = glm::normalize(glm::dvec3(enuToEcef[1]));
+    
+    // ── Look-ahead terrain sampling ──────────────────────────────────────
+    // Sample terrain BOTH below camera AND ahead. Use the maximum height to
+    // prevent clipping through terrain between current position and look-ahead.
+    if (floorCacheValid_) {
+      // Convert previous lat/lon to ECEF to get movement vector
+      const double prevLonRad = floorCacheCamLonDeg_ * M_PI / 180.0;
+      const double prevLatRad = floorCacheCamLatDeg_ * M_PI / 180.0;
+      const glm::dvec3 prevCamPos = ellipsoid.cartographicToCartesian(
+          CesiumGeospatial::Cartographic(prevLonRad, prevLatRad, camParams.altitude));
+      
+      // Calculate horizontal movement since last frame
+      const glm::dvec3 movement3D = cameraPos - prevCamPos;
+      const double moveEast = glm::dot(movement3D, floorEast);
+      const double moveNorth = glm::dot(movement3D, floorNorth);
+      const double horizMovement = std::sqrt(moveEast * moveEast + moveNorth * moveNorth);
+      
+      // Look ahead by 5x recent movement (minimum 10m, max 100m)
+      constexpr double kMinLookAhead = 10.0;   // meters
+      constexpr double kMaxLookAhead = 100.0;  // meters
+      constexpr double kLookAheadMultiplier = 5.0;
+      
+      double lookAheadDist = std::clamp(
+          horizMovement * kLookAheadMultiplier,
+          kMinLookAhead,
+          kMaxLookAhead);
+      
+      if (horizMovement > 0.1) { // Only look ahead if actually moving
+        // Project sampling point forward in direction of movement
+        const glm::dvec3 moveDir = glm::normalize(
+            floorEast * moveEast + floorNorth * moveNorth);
+        floorScanAheadPos = cameraPos + moveDir * lookAheadDist;
+        useLookAhead = true;
+      }
+    }
+  }
+
+  // Convert floor scan positions to lat/lon for tile bounds checking
+  // Camera position (always used)
+  double floorScanLonRad = camLonRad;
+  double floorScanLatRad = camLatRad;
+  
+  // Look-ahead position (used when moving)
+  double floorScanAheadLonRad = camLonRad;
+  double floorScanAheadLatRad = camLatRad;
+  if (runFloorScan && useLookAhead) {
+    const auto& ellipsoid = CesiumGeospatial::Ellipsoid::WGS84;
+    const auto scanCartographic = ellipsoid.cartesianToCartographic(floorScanAheadPos);
+    if (scanCartographic) {
+      floorScanAheadLonRad = scanCartographic->longitude;
+      floorScanAheadLatRad = scanCartographic->latitude;
+    }
   }
 
   // ── fast path ────────────────────────────────────────────────────────
@@ -678,65 +732,82 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
 
       // Floor scan (run once per res so multi-primitive tiles aren't scanned
       // twice). Skipped when the P5 cache hit above produced a usable value.
+      // Sample terrain at BOTH camera position and look-ahead position.
+      // Find lowest terrain at each position, then use the MAXIMUM of the two.
       if (runFloorScan && c.res != lastScanRes) {
         lastScanRes = c.res;
-        const bool inside =
-            (c.wmTileBounds.x <= static_cast<float>(camLonRad) &&
-             static_cast<float>(camLonRad) <= c.wmTileBounds.z) &&
-            (c.wmTileBounds.y <= static_cast<float>(camLatRad) &&
-             static_cast<float>(camLatRad) <= c.wmTileBounds.w);
-        if (inside) {
+        
+        // Check if camera position is in tile bounds
+        const bool camInside =
+            (c.wmTileBounds.x <= static_cast<float>(floorScanLonRad) &&
+             static_cast<float>(floorScanLonRad) <= c.wmTileBounds.z) &&
+            (c.wmTileBounds.y <= static_cast<float>(floorScanLatRad) &&
+             static_cast<float>(floorScanLatRad) <= c.wmTileBounds.w);
+        
+        // Check if look-ahead position is in tile bounds (when moving)
+        const bool aheadInside = useLookAhead && 
+            (c.wmTileBounds.x <= static_cast<float>(floorScanAheadLonRad) &&
+             static_cast<float>(floorScanAheadLonRad) <= c.wmTileBounds.z) &&
+            (c.wmTileBounds.y <= static_cast<float>(floorScanAheadLatRad) &&
+             static_cast<float>(floorScanAheadLatRad) <= c.wmTileBounds.w);
+        
+        if (camInside || aheadInside) {
+          // Track lowest terrain at each position separately
+          float terrainAtCam = std::numeric_limits<float>::max();
+          float terrainAhead = std::numeric_limits<float>::max();
+          bool foundAtCam = false;
+          bool foundAhead = false;
+          
           for (const auto& prim : c.res->primitives) {
             if (prim.altitudes.empty() || prim.localPositions.empty()) continue;
             const size_t vc = prim.localPositions.size();
+            
             for (size_t vi = 0; vi < vc; ++vi) {
-              const glm::dvec3 vECEF =
-                  glm::dvec3(prim.localPositions[vi]) + prim.rtcCenter;
-              const glm::dvec3 delta  = vECEF - cameraPos;
-              const double    de      = glm::dot(delta, floorEast);
-              const double    dn      = glm::dot(delta, floorNorth);
-              const double    horizSq = de * de + dn * dn;
-              const float     vAlt    = prim.altitudes[vi];
-
-              // Primary: horizontal search within radius, only accept vertices near ground level.
-              // This filters out elevated structures (buildings) in urban areas.
-              if (horizSq <= kFloorSearchRadiusSq) {
-                const double heightAboveGround = static_cast<double>(vAlt) - expectedGroundEllipsoid;
-                if (heightAboveGround >= -kGroundToleranceM && 
-                    heightAboveGround <= kGroundToleranceM) {
-                  if (!floorScanFound || vAlt < bestTerrainFloor) {
-                    bestTerrainFloor = vAlt;
-                    bestHorizDistSq  = horizSq;
-                    floorScanFound   = true;
+              const glm::dvec3 vECEF = glm::dvec3(prim.localPositions[vi]) + prim.rtcCenter;
+              const float vAlt = prim.altitudes[vi];
+              
+              // Sample terrain at camera position - find LOWEST
+              if (camInside) {
+                const glm::dvec3 deltaCam = vECEF - floorScanPos;
+                const double deCam = glm::dot(deltaCam, floorEast);
+                const double dnCam = glm::dot(deltaCam, floorNorth);
+                const double horizSqCam = deCam * deCam + dnCam * dnCam;
+                
+                if (horizSqCam <= kFloorSearchRadiusSq) {
+                  if (!foundAtCam || vAlt < terrainAtCam) {
+                    terrainAtCam = vAlt;
+                    foundAtCam = true;
                   }
                 }
               }
-
-              // Fallback: track closest 3D vertex for sparse/ocean scenarios.
-              const double dist3D = glm::length(delta);
-              if (dist3D < bestDist3D) {
-                bestDist3D      = dist3D;
-                bestDist3DFloor = vAlt;
+              
+              // Sample terrain at look-ahead position - find LOWEST
+              if (aheadInside) {
+                const glm::dvec3 deltaAhead = vECEF - floorScanAheadPos;
+                const double deAhead = glm::dot(deltaAhead, floorEast);
+                const double dnAhead = glm::dot(deltaAhead, floorNorth);
+                const double horizSqAhead = deAhead * deAhead + dnAhead * dnAhead;
+                
+                if (horizSqAhead <= kFloorSearchRadiusSq) {
+                  if (!foundAhead || vAlt < terrainAhead) {
+                    terrainAhead = vAlt;
+                    foundAhead = true;
+                  }
+                }
               }
             }
           }
-        }
-        // Fallback: if no ground-level vertices found, use expected ground from geoid.
-        // This handles urban areas where terrain tiles only contain building structures.
-        if (!floorScanFound) {
-          if (bestDist3D < std::numeric_limits<double>::max()) {
-            // Use closest 3D vertex only if it's near ground level
-            const double heightAboveGround = static_cast<double>(bestDist3DFloor) - expectedGroundEllipsoid;
-            if (heightAboveGround >= -kGroundToleranceM && 
-                heightAboveGround <= kGroundToleranceM) {
-              bestTerrainFloor = bestDist3DFloor;
-              floorScanFound   = true;
-            }
-          }
-          // Ultimate fallback: use geoid-based ground estimate
-          if (!floorScanFound) {
-            bestTerrainFloor = static_cast<float>(expectedGroundEllipsoid);
-            floorScanFound   = true;
+          
+          // Use the MAXIMUM of the two terrain samples (prevents clipping through either)
+          if (foundAtCam && foundAhead) {
+            bestTerrainFloor = std::max(terrainAtCam, terrainAhead);
+            floorScanFound = true;
+          } else if (foundAtCam) {
+            bestTerrainFloor = terrainAtCam;
+            floorScanFound = true;
+          } else if (foundAhead) {
+            bestTerrainFloor = terrainAhead;
+            floorScanFound = true;
           }
         }
       }
@@ -824,62 +895,71 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
           static_cast<float>(rect.getEast()),
           static_cast<float>(rect.getNorth()));
 
-      // ── Terrain floor: find nearest vertex to camera nadir ────────────
-      // Suppressed when the cache returned a usable value for the
-      // current (signature, camLon, camLat) tuple.
-      if (runFloorScan &&
-          rect.contains(CesiumGeospatial::Cartographic(camLonRad, camLatRad, 0.0))) {
+      // ── Terrain floor: sample at both camera and look-ahead positions ────
+      // Find lowest terrain at each position, then use the MAXIMUM of the two.
+      // Suppressed when the cache returned a usable value.
+      const bool camInside = runFloorScan && 
+          rect.contains(CesiumGeospatial::Cartographic(floorScanLonRad, floorScanLatRad, 0.0));
+      const bool aheadInside = runFloorScan && useLookAhead &&
+          rect.contains(CesiumGeospatial::Cartographic(floorScanAheadLonRad, floorScanAheadLatRad, 0.0));
+      
+      if (camInside || aheadInside) {
+        // Track lowest terrain at each position separately
+        float terrainAtCam = std::numeric_limits<float>::max();
+        float terrainAhead = std::numeric_limits<float>::max();
+        bool foundAtCam = false;
+        bool foundAhead = false;
+        
         for (const auto& prim : res->primitives) {
           if (prim.altitudes.empty() || prim.localPositions.empty()) continue;
           const size_t vertexCount = prim.localPositions.size();
+          
           for (size_t vi = 0; vi < vertexCount; ++vi) {
-            const glm::dvec3 vECEF =
-                glm::dvec3(prim.localPositions[vi]) + prim.rtcCenter;
-            const glm::dvec3 delta  = vECEF - cameraPos;
-            const double    de      = glm::dot(delta, floorEast);
-            const double    dn      = glm::dot(delta, floorNorth);
-            const double    horizSq = de * de + dn * dn;
-            const float     vAlt    = prim.altitudes[vi];
-
-            // Primary: horizontal search within radius, only accept vertices near ground level.
-            // This filters out elevated structures (buildings) in urban areas.
-            if (horizSq <= kFloorSearchRadiusSq) {
-              const double heightAboveGround = static_cast<double>(vAlt) - expectedGroundEllipsoid;
-              if (heightAboveGround >= -kGroundToleranceM && 
-                  heightAboveGround <= kGroundToleranceM) {
-                if (!floorScanFound || vAlt < bestTerrainFloor) {
-                  bestTerrainFloor = vAlt;
-                  bestHorizDistSq  = horizSq;
-                  floorScanFound   = true;
+            const glm::dvec3 vECEF = glm::dvec3(prim.localPositions[vi]) + prim.rtcCenter;
+            const float vAlt = prim.altitudes[vi];
+            
+            // Sample terrain at camera position - find LOWEST
+            if (camInside) {
+              const glm::dvec3 deltaCam = vECEF - floorScanPos;
+              const double deCam = glm::dot(deltaCam, floorEast);
+              const double dnCam = glm::dot(deltaCam, floorNorth);
+              const double horizSqCam = deCam * deCam + dnCam * dnCam;
+              
+              if (horizSqCam <= kFloorSearchRadiusSq) {
+                if (!foundAtCam || vAlt < terrainAtCam) {
+                  terrainAtCam = vAlt;
+                  foundAtCam = true;
                 }
               }
             }
-
-            // Fallback: track closest 3D vertex for sparse/ocean scenarios.
-            const double dist3D = glm::length(delta);
-            if (dist3D < bestDist3D) {
-              bestDist3D      = dist3D;
-              bestDist3DFloor = vAlt;
+            
+            // Sample terrain at look-ahead position - find LOWEST
+            if (aheadInside) {
+              const glm::dvec3 deltaAhead = vECEF - floorScanAheadPos;
+              const double deAhead = glm::dot(deltaAhead, floorEast);
+              const double dnAhead = glm::dot(deltaAhead, floorNorth);
+              const double horizSqAhead = deAhead * deAhead + dnAhead * dnAhead;
+              
+              if (horizSqAhead <= kFloorSearchRadiusSq) {
+                if (!foundAhead || vAlt < terrainAhead) {
+                  terrainAhead = vAlt;
+                  foundAhead = true;
+                }
+              }
             }
           }
         }
-        // Fallback: if no ground-level vertices found, use expected ground from geoid.
-        // This handles urban areas where terrain tiles only contain building structures.
-        if (!floorScanFound) {
-          if (bestDist3D < std::numeric_limits<double>::max()) {
-            // Use closest 3D vertex only if it's near ground level
-            const double heightAboveGround = static_cast<double>(bestDist3DFloor) - expectedGroundEllipsoid;
-            if (heightAboveGround >= -kGroundToleranceM && 
-                heightAboveGround <= kGroundToleranceM) {
-              bestTerrainFloor = bestDist3DFloor;
-              floorScanFound   = true;
-            }
-          }
-          // Ultimate fallback: use geoid-based ground estimate
-          if (!floorScanFound) {
-            bestTerrainFloor = static_cast<float>(expectedGroundEllipsoid);
-            floorScanFound   = true;
-          }
+        
+        // Use the MAXIMUM of the two terrain samples (prevents clipping through either)
+        if (foundAtCam && foundAhead) {
+          bestTerrainFloor = std::max(terrainAtCam, terrainAhead);
+          floorScanFound = true;
+        } else if (foundAtCam) {
+          bestTerrainFloor = terrainAtCam;
+          floorScanFound = true;
+        } else if (foundAhead) {
+          bestTerrainFloor = terrainAhead;
+          floorScanFound = true;
         }
       }
     }
