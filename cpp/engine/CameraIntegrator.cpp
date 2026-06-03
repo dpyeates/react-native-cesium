@@ -147,7 +147,17 @@ void CameraIntegrator::extrapolate(
   if (maxRateAbs > 0.0) {
     s.velocity = clampAbs(s.velocity, maxRateAbs);
   }
-  s.value += s.velocity * dt;
+
+  // While measurements are still arriving (gesture / sensor stream), advance
+  // along the learned velocity for smooth inter-frame motion. Once they stop
+  // (fling decay finished, finger lifted), do not coast on that velocity —
+  // only demand-pull toward the last set value. Coasting past demand is what
+  // users perceive as the camera "springing back" after a fling.
+  const bool measurementsStopped =
+      silence > grace && s.tLastMeas.time_since_epoch().count() > 0;
+  if (!measurementsStopped) {
+    s.value += s.velocity * dt;
+  }
   s.tState = now;
 
   // Demand pull — guarantees convergence to the last demanded value for
@@ -155,7 +165,7 @@ void CameraIntegrator::extrapolate(
   // when measurements have stopped (silence > grace); continuous gesture or
   // sensor streams always deliver a new update before the grace window
   // expires, so this term is never active for them.
-  if (silence > grace && tunables::kDemandPullTauSec > 1.0e-6) {
+  if (measurementsStopped && tunables::kDemandPullTauSec > 1.0e-6) {
     s.value += (1.0 - std::exp(-dt / tunables::kDemandPullTauSec))
                * (demand - s.value);
   }
@@ -193,8 +203,20 @@ void CameraIntegrator::setAltitude(double altitudeMeters) {
   }
 
   altitudeMeters = std::min(altitudeMeters, kMaxAltMeters);
+  
+  // Adaptive alpha based on altitude error magnitude:
+  // - Large changes (pinch gesture, cliffs) → fast (α ≈ 0.7)
+  // - Small changes (gentle terrain) → smooth (α ≈ 0.3)
+  const double error = std::abs(altitudeMeters - alt_.value);
+  constexpr double kMinAlpha = 0.3;   // Smooth for small changes
+  constexpr double kMaxAlpha = 0.7;   // Fast for large changes
+  constexpr double kErrorScale = 20.0; // 20m error → max alpha
+  
+  const double adaptiveAlpha = kMinAlpha + (kMaxAlpha - kMinAlpha) * 
+                               std::min(error / kErrorScale, 1.0);
+  
   updateAlphaBeta(alt_, altitudeMeters, now,
-                  tunables::kAlphaAlt, tunables::kBetaAlt, false);
+                  adaptiveAlpha, tunables::kBetaAlt, false);
   demand_.altitude = altitudeMeters;
 }
 

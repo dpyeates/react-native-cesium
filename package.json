@@ -1,6 +1,6 @@
 {
   "name": "react-native-cesium",
-  "version": "1.2.13",
+  "version": "1.2.14",
   "description": "Experimental Cesium rendering for React Native via Nitro",
   "main": "./lib/commonjs/index.js",
   "module": "./lib/module/index.js",
@@ -64,7 +64,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "react-native-nitro-modules": "^0.35.7"
+    "react-native-nitro-modules": "^0.35.9"
   },
   "publishConfig": {
     "access": "public",
@@ -77,7 +77,7 @@
     "@types/jest": "^29.5.14",
     "@types/react": "19.2.14",
     "conventional-changelog-conventionalcommits": "^9.3.1",
-    "nitrogen": "0.35.7",
+    "nitrogen": "0.35.9",
     "react": "19.2.3",
     "react-native": "0.85.3",
     "react-native-builder-bob": "^0.41.0",

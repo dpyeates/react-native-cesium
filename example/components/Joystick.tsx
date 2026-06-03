@@ -1,6 +1,9 @@
-import React, { memo, useCallback, useMemo } from 'react';
+import React, { memo, useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import {
+  GestureDetector,
+  usePanGesture,
+} from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -44,41 +47,35 @@ export const Joystick = memo(function Joystick({ onRateChange }: JoystickProps) 
     onRateChange(0, 0);
   }, [onRateChange]);
 
-  const panGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .minPointers(1)
-        .maxPointers(1)
-        .enableTrackpadTwoFingerGesture(false)
-        .minDistance(0)
-        .onBegin(() => {
-          'worklet';
-          thumbX.value = 0;
-          thumbY.value = 0;
-        })
-        .onUpdate(e => {
-          'worklet';
-          const tx = e.translationX;
-          const ty = e.translationY;
-          const dist = Math.sqrt(tx * tx + ty * ty);
-          const clamp = Math.min(dist, JOYSTICK_RADIUS);
-          if (dist > 0) {
-            thumbX.value = (tx / dist) * clamp;
-            thumbY.value = (ty / dist) * clamp;
-          } else {
-            thumbX.value = 0;
-            thumbY.value = 0;
-          }
-          scheduleOnRN(emitRates, tx, ty);
-        })
-        .onFinalize(() => {
-          'worklet';
-          thumbX.value = withSpring(0);
-          thumbY.value = withSpring(0);
-          scheduleOnRN(stopRates);
-        }),
-    [emitRates, stopRates, thumbX, thumbY],
-  );
+  const panGesture = usePanGesture({
+    minPointers: 1,
+    maxPointers: 1,
+    enableTrackpadTwoFingerGesture: false,
+    minDistance: 0,
+    onBegin: () => {
+      thumbX.value = 0;
+      thumbY.value = 0;
+    },
+    onUpdate: e => {
+      const tx = e.translationX;
+      const ty = e.translationY;
+      const dist = Math.sqrt(tx * tx + ty * ty);
+      const clamp = Math.min(dist, JOYSTICK_RADIUS);
+      if (dist > 0) {
+        thumbX.value = (tx / dist) * clamp;
+        thumbY.value = (ty / dist) * clamp;
+      } else {
+        thumbX.value = 0;
+        thumbY.value = 0;
+      }
+      scheduleOnRN(emitRates, tx, ty);
+    },
+    onFinalize: () => {
+      thumbX.value = withSpring(0);
+      thumbY.value = withSpring(0);
+      scheduleOnRN(stopRates);
+    },
+  });
 
   const thumbStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: thumbX.value }, { translateY: thumbY.value }],

@@ -383,9 +383,10 @@
     // `nowSeconds` is still used below for the FPS-EMA dt only.
     auto actual = _integrator->step();
 
-    // ── Terrain floor clamp ───────────────────────────────────────────────
-    // Simple collision detection: if camera goes below terrain + offset, snap it up.
-    // Equivalent to CesiumJS's preRender terrain clamping.
+    // ── Terrain floor following using integrator's alpha-beta smoothing ───
+    // Set demand altitude to terrain floor, let the integrator's alpha-beta
+    // tracker smoothly interpolate. The tracker already provides adaptive
+    // exponential easing (alpha=0.6, beta=0.05 in EngineTunables.hpp).
     const float minAbove = _engine->getConfig().minAltitudeAboveTerrain;
     if (minAbove > 0.0f && _engine->terrainFloorKnown()) {
       const double geoidN =
@@ -394,9 +395,17 @@
       const double floorMsl = floorEllipsoid - geoidN;
       const double minMsl = floorMsl + static_cast<double>(minAbove);
 
-      // Simple clamp: if below minimum, snap to minimum
+      // Continuously update demand to follow terrain
+      const double demandAlt = _integrator->getDemand().altitude;
+      if (demandAlt <= 0.0) {
+        _integrator->setAltitude(minMsl);
+        actual = _integrator->getActual();
+      }
+      
+      // Safety floor: hard clamp if already below terrain (shouldn't happen with look-ahead)
       if (actual.altitude < minMsl) {
-        actual.altitude = minMsl;
+        _integrator->clampActualAltitude(minMsl);
+        actual = _integrator->getActual();
       }
     }
 
