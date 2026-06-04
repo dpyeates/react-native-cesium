@@ -1,0 +1,40 @@
+diff --git a/android/build.gradle.kts b/android/build.gradle.kts
+index 6b80964c088278caba621ce6968e41282f4bc7e7..a5a6ff39289f433fd99a75b9ba0c9c371d6f8f29 100644
+--- a/android/build.gradle.kts
++++ b/android/build.gradle.kts
+@@ -23,6 +23,17 @@ fun safeAppExtGet(prop: String, fallback: Any?): Any? {
+         fallback
+ }
+ 
++fun resolveNodeExecutable(): String =
++    listOf(
++        System.getenv("NODE_BINARY"),
++        project.findProperty("react.nodeBinary") as String?,
++        "/opt/homebrew/bin/node",
++        "/usr/local/bin/node",
++        "node",
++    ).firstOrNull { candidate ->
++        candidate != null && (candidate == "node" || file(candidate).exists())
++    } ?: "node"
++
+ fun resolveReactNativeDirectory(): File {
+     val reactNativeLocation = safeAppExtGet("REACT_NATIVE_NODE_MODULES_DIR", null) as String?
+     if (reactNativeLocation != null) {
+@@ -33,7 +44,7 @@ fun resolveReactNativeDirectory(): File {
+     val reactNativePackage = file(
+         providers.exec {
+             workingDir(rootDir)
+-            commandLine("node", "--print", "require.resolve('react-native/package.json')")
++            commandLine(resolveNodeExecutable(), "--print", "require.resolve('react-native/package.json')")
+         }.standardOutput.asText.get().trim()
+     )
+     if (reactNativePackage.exists()) {
+@@ -312,7 +323,7 @@ androidComponents {
+ 
+ val validateReactNativeVersionResult = providers.exec {
+     workingDir(projectDir.path)
+-    commandLine("node", "./../scripts/validate-react-native-version.js", REACT_NATIVE_VERSION)
++    commandLine(resolveNodeExecutable(), "./../scripts/validate-react-native-version.js", REACT_NATIVE_VERSION)
+     isIgnoreExitValue = true
+ }
+ 

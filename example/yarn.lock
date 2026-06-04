@@ -3308,9 +3308,9 @@ __metadata:
     react-native-dotenv: "npm:^3.4.11"
     react-native-gesture-handler: "npm:^3.0.0"
     react-native-nitro-modules: "npm:0.35.9"
-    react-native-reanimated: "npm:^4.4.0"
+    react-native-reanimated: "patch:react-native-reanimated@npm%3A4.4.1#~/.yarn/patches/react-native-reanimated-npm-4.4.1-90d4bf3b7a.patch"
     react-native-safe-area-context: "npm:^5.8.0"
-    react-native-worklets: "npm:^0.9.1"
+    react-native-worklets: "patch:react-native-worklets@npm%3A0.9.1#~/.yarn/patches/react-native-worklets-npm-0.9.1-5bc5b900ed.patch"
     react-test-renderer: "npm:19.2.3"
     semver: "npm:^7.8.1"
     typescript: "npm:^5.9.3"
@@ -8061,9 +8061,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-reanimated@npm:^4.4.0":
-  version: 4.4.0
-  resolution: "react-native-reanimated@npm:4.4.0"
+"react-native-reanimated@npm:4.4.1":
+  version: 4.4.1
+  resolution: "react-native-reanimated@npm:4.4.1"
   dependencies:
     react-native-is-edge-to-edge: "npm:^1.3.1"
     semver: "npm:^7.7.3"
@@ -8071,7 +8071,21 @@ __metadata:
     react: "*"
     react-native: 0.83 - 0.86
     react-native-worklets: 0.9.x
-  checksum: 10c0/6a7ac5b9349d1313f16c2ac514993cf5b113c8e76a2463636112673daf648aaa902d601fff7358bf87fff0dcc707e956b600e5ff9d5fc64e7d703726933df608
+  checksum: 10c0/400db6b846c23ee523a74a0b449d07358c6ec20e4ac6e08d867eec3488b1572a2809bc324d4c860479a3fed4e2d182f51146761f24457de07dd10756ffc6de97
+  languageName: node
+  linkType: hard
+
+"react-native-reanimated@patch:react-native-reanimated@npm%3A4.4.1#~/.yarn/patches/react-native-reanimated-npm-4.4.1-90d4bf3b7a.patch":
+  version: 4.4.1
+  resolution: "react-native-reanimated@patch:react-native-reanimated@npm%3A4.4.1#~/.yarn/patches/react-native-reanimated-npm-4.4.1-90d4bf3b7a.patch::version=4.4.1&hash=2b23a8"
+  dependencies:
+    react-native-is-edge-to-edge: "npm:^1.3.1"
+    semver: "npm:^7.7.3"
+  peerDependencies:
+    react: "*"
+    react-native: 0.83 - 0.86
+    react-native-worklets: 0.9.x
+  checksum: 10c0/9d60a4b36ccc1b37eecbdb6b34c73f067bb7ed243e315ae8e581c9c32d3b7a6bffe0da6572cf583328d124dd69e7cc7348418f4c891a3f84cd14d978b568da0f
   languageName: node
   linkType: hard
 
@@ -8085,7 +8099,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-worklets@npm:^0.9.1":
+"react-native-worklets@npm:0.9.1":
   version: 0.9.1
   resolution: "react-native-worklets@npm:0.9.1"
   dependencies:
@@ -8106,6 +8120,30 @@ __metadata:
     react: "*"
     react-native: 0.83 - 0.86
   checksum: 10c0/a3612d9c2b3613c789dc0b15ffe4e200681b8e64a715029748d29fb4176930765f1afb9fa4d625c02a2c136f3c331ab488e28fbb75e28295fa15edd4000195f3
+  languageName: node
+  linkType: hard
+
+"react-native-worklets@patch:react-native-worklets@npm%3A0.9.1#~/.yarn/patches/react-native-worklets-npm-0.9.1-5bc5b900ed.patch":
+  version: 0.9.1
+  resolution: "react-native-worklets@patch:react-native-worklets@npm%3A0.9.1#~/.yarn/patches/react-native-worklets-npm-0.9.1-5bc5b900ed.patch::version=0.9.1&hash=7c5f3d"
+  dependencies:
+    "@babel/plugin-transform-arrow-functions": "npm:^7.27.1"
+    "@babel/plugin-transform-class-properties": "npm:^7.28.6"
+    "@babel/plugin-transform-classes": "npm:^7.28.6"
+    "@babel/plugin-transform-nullish-coalescing-operator": "npm:^7.28.6"
+    "@babel/plugin-transform-optional-chaining": "npm:^7.28.6"
+    "@babel/plugin-transform-shorthand-properties": "npm:^7.27.1"
+    "@babel/plugin-transform-template-literals": "npm:^7.27.1"
+    "@babel/plugin-transform-unicode-regex": "npm:^7.27.1"
+    "@babel/preset-typescript": "npm:^7.28.5"
+    convert-source-map: "npm:^2.0.0"
+    semver: "npm:^7.7.4"
+  peerDependencies:
+    "@babel/core": "*"
+    "@react-native/metro-config": "*"
+    react: "*"
+    react-native: 0.83 - 0.86
+  checksum: 10c0/0e230d7b2c0066bb8e4affdccfed2870d047d6c7257c8d6f6c6364f4d2f25a79dc07025ffe2fdcbac74983116bc0b0a49fa2edeee72016f3b6c8ab2adab655cd
   languageName: node
   linkType: hard
 

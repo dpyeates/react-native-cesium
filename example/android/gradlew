@@ -88,6 +88,24 @@ APP_BASE_NAME=${0##*/}
 # Discard cd standard output in case $CDPATH is set (https://github.com/gradle/gradle/issues/25036)
 APP_HOME=$( cd -P "${APP_HOME:-./}" > /dev/null && printf '%s\n' "$PWD" ) || exit
 
+# Android Studio and other GUI-launched builds often inherit a minimal PATH without
+# Homebrew/nvm node. Prepend common install locations so Gradle can run `node`.
+if [ -d "/opt/homebrew/bin" ]; then
+  PATH="/opt/homebrew/bin:$PATH"
+fi
+if [ -d "/usr/local/bin" ]; then
+  PATH="/usr/local/bin:$PATH"
+fi
+export PATH
+if [ -z "${NODE_BINARY:-}" ]; then
+  if [ -x "/opt/homebrew/bin/node" ]; then
+    NODE_BINARY="/opt/homebrew/bin/node"
+  elif [ -x "/usr/local/bin/node" ]; then
+    NODE_BINARY="/usr/local/bin/node"
+  fi
+  export NODE_BINARY
+fi
+
 # Use the maximum available, or set MAX_FD != -1 to use that value.
 MAX_FD=maximum
 

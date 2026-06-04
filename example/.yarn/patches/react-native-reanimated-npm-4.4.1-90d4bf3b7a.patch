@@ -1,0 +1,49 @@
+diff --git a/android/build.gradle.kts b/android/build.gradle.kts
+index 982507062a557bb828249a2d5469e32fc637dfec..c80076aff2032f7e586cf7f6df9bfdca188f8968 100644
+--- a/android/build.gradle.kts
++++ b/android/build.gradle.kts
+@@ -23,6 +23,17 @@ fun safeAppExtGet(prop: String, fallback: Any?): Any? {
+         fallback
+ }
+ 
++fun resolveNodeExecutable(): String =
++    listOf(
++        System.getenv("NODE_BINARY"),
++        project.findProperty("react.nodeBinary") as String?,
++        "/opt/homebrew/bin/node",
++        "/usr/local/bin/node",
++        "node",
++    ).firstOrNull { candidate ->
++        candidate != null && (candidate == "node" || file(candidate).exists())
++    } ?: "node"
++
+ fun resolveReactNativeDirectory(): File {
+     val reactNativeLocation = safeAppExtGet("REACT_NATIVE_NODE_MODULES_DIR", null) as String?
+     if (reactNativeLocation != null) {
+@@ -33,7 +44,7 @@ fun resolveReactNativeDirectory(): File {
+     val reactNativePackage = file(
+         providers.exec {
+             workingDir(rootDir)
+-            commandLine("node", "--print", "require.resolve('react-native/package.json')")
++            commandLine(resolveNodeExecutable(), "--print", "require.resolve('react-native/package.json')")
+         }.standardOutput.asText.get().trim()
+     )
+     if (reactNativePackage.exists()) {
+@@ -267,7 +278,7 @@ androidComponents {
+ 
+ val validateReactNativeVersionResult = providers.exec {
+     workingDir(projectDir.path)
+-    commandLine("node", "./../scripts/validate-react-native-version.js", REACT_NATIVE_VERSION)
++    commandLine(resolveNodeExecutable(), "./../scripts/validate-react-native-version.js", REACT_NATIVE_VERSION)
+     isIgnoreExitValue = true
+ }
+ 
+@@ -284,7 +295,7 @@ tasks.named("preBuild") { dependsOn("assertMinimalReactNativeVersionTask") }
+ 
+ val validateWorkletsBuildResult = providers.exec {
+     workingDir(projectDir.path)
+-    commandLine("node", "./../scripts/validate-worklets-build.js")
++    commandLine(resolveNodeExecutable(), "./../scripts/validate-worklets-build.js")
+     isIgnoreExitValue = true
+ }
+ 
