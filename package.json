@@ -1,6 +1,6 @@
 {
   "name": "react-native-cesium",
-  "version": "1.2.15",
+  "version": "1.2.16",
   "description": "Experimental Cesium rendering for React Native via Nitro",
   "main": "./lib/commonjs/index.js",
   "module": "./lib/module/index.js",
@@ -41,6 +41,7 @@
     "android/fix-prefab.gradle",
     "android/gradle.properties",
     "android/CMakeLists.txt",
+    "android/cmake",
     "android/src",
     "example/react-native-cesium-example.jpg",
     "ios/**/*.h",
