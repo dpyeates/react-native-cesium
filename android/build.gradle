@@ -31,14 +31,12 @@ if (isNewArchitectureEnabled()) {
 
 def reactNativeCesiumPackageDir = projectDir.parentFile
 
-tasks.register('ensureCesiumNativeAndroid') {
+tasks.register('ensureCesiumNativeAndroid', Exec) {
   group 'cesium'
   description 'If vendor/android Cesium Native is missing, runs scripts/cesium/ensure-native.mjs (update + build). Can take a long time.'
-  doLast {
-    def marker = new File(reactNativeCesiumPackageDir, 'vendor/android/share/cesium-native/cmake/cesium-nativeConfig.cmake')
-    if (marker.exists()) {
-      return
-    }
+  def marker = new File(reactNativeCesiumPackageDir, 'vendor/android/share/cesium-native/cmake/cesium-nativeConfig.cmake')
+  onlyIf { !marker.exists() }
+  doFirst {
     if (System.getenv('REACT_NATIVE_CESIUM_SKIP_NATIVE_BUILD') == '1') {
       throw new RuntimeException(
         'react-native-cesium: Android Cesium Native artifacts are missing under vendor/android. ' +
@@ -46,11 +44,9 @@ tasks.register('ensureCesiumNativeAndroid') {
           'Or unset REACT_NATIVE_CESIUM_SKIP_NATIVE_BUILD to allow automatic build during Gradle. See package README.'
       )
     }
-    project.exec {
-      workingDir reactNativeCesiumPackageDir
-      commandLine 'node', 'scripts/cesium/ensure-native.mjs', '--android'
-    }
   }
+  workingDir reactNativeCesiumPackageDir
+  commandLine 'node', 'scripts/cesium/ensure-native.mjs', '--android'
 }
 
 tasks.preBuild {

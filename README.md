@@ -153,6 +153,8 @@ What happens on **`./gradlew`** / Android Studio build:
 
 You still need a discoverable **Android NDK** (expand **Additional Android specific requirements** under [System dependencies](#system-dependencies) above) so that build can succeed.
 
+**Maintainers:** verify Android builds with **Gradle 9.3+** (as in React Native 0.85+ templates; this repo’s example app uses the wrapper under `example/android/gradle/wrapper/`).
+
 ### Building
 
 **Automatic (default):** assuming you have done the above and have all the required dependencies in place, when the native output is missing, the package tries to build it for you:
