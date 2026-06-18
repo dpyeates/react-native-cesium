@@ -22,3 +22,99 @@ buildscript {
 
 apply plugin: "com.facebook.react.rootproject"
 
+def resolveNodeBinary = {
+    def fromEnv = System.getenv("NODE_BINARY")
+    if (fromEnv) {
+        return fromEnv
+    }
+
+    def gradleProps = new Properties()
+    def gradlePropsFile = rootProject.file("gradle.properties")
+    if (gradlePropsFile.exists()) {
+        gradlePropsFile.withInputStream { gradleProps.load(it) }
+    }
+    def fromGradleProps = gradleProps.getProperty("react.nodeBinary")
+    if (fromGradleProps) {
+        return fromGradleProps
+    }
+
+    def localProps = new Properties()
+    def localPropsFile = rootProject.file("local.properties")
+    if (localPropsFile.exists()) {
+        localPropsFile.withInputStream { localProps.load(it) }
+    }
+    def fromLocalProps = localProps.getProperty("node.binary")
+    if (fromLocalProps) {
+        return fromLocalProps
+    }
+
+    def candidates = ["/opt/homebrew/bin/node", "/usr/local/bin/node"]
+    def found = candidates.find { new File(it).exists() }
+    return found ?: "node"
+}
+
+def nodeBinary = resolveNodeBinary()
+
+def resolveReactNativeVersion = {
+    def props = new Properties()
+    def rnGradleProps = rootProject.file("../node_modules/react-native/ReactAndroid/gradle.properties")
+    rnGradleProps.withInputStream { props.load(it) }
+    return props.getProperty("VERSION_NAME")
+}
+
+// Reanimated/worklets call bare `node` via providers.exec. Android Studio's Gradle daemon
+// often has no Homebrew/nvm on PATH (unlike gradlew, which prepends common locations).
+def patchNodeAssertTask = { project, taskName, List scriptArgs ->
+    project.tasks.matching { it.name == taskName }.configureEach { task ->
+        task.actions.clear()
+        task.doFirst {
+            def process = new ProcessBuilder([nodeBinary] + scriptArgs)
+                .directory(project.projectDir)
+                .redirectErrorStream(true)
+                .start()
+            def output = process.inputStream.getText("UTF-8")
+            def exitCode = process.waitFor()
+            if (exitCode != 0) {
+                def message = output.trim()
+                throw new GradleException(
+                    message.isEmpty() ? "Node script failed: ${scriptArgs.join(' ')}" : message
+                )
+            }
+        }
+    }
+}
+
+def patchNodeAssertTasksForProject = { subproject ->
+    if (subproject.name == "react-native-reanimated") {
+        def rnVersion = resolveReactNativeVersion()
+        patchNodeAssertTask(
+            subproject,
+            "assertMinimalReactNativeVersionTask",
+            ["../scripts/validate-react-native-version.js", rnVersion]
+        )
+        patchNodeAssertTask(
+            subproject,
+            "assertWorkletsVersionTask",
+            ["../scripts/validate-worklets-build.js"]
+        )
+    }
+    if (subproject.name == "react-native-worklets") {
+        def rnVersion = resolveReactNativeVersion()
+        patchNodeAssertTask(
+            subproject,
+            "assertMinimalReactNativeVersionTask",
+            ["../scripts/validate-react-native-version.js", rnVersion]
+        )
+    }
+}
+
+subprojects { subproject ->
+    if (subproject.state.executed) {
+        patchNodeAssertTasksForProject(subproject)
+    } else {
+        subproject.afterEvaluate {
+            patchNodeAssertTasksForProject(subproject)
+        }
+    }
+}
+

@@ -114,6 +114,12 @@ android {
     }
 }
 
+// Android Studio / IntelliJ sometimes invoke `:app:compileJava`, which Gradle 9 treats as
+// ambiguous (it abbreviates to every *JavaWithJavac variant). Register an exact match.
+tasks.register("compileJava") {
+    dependsOn("compileDebugJavaWithJavac")
+}
+
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")

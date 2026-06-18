@@ -550,6 +550,8 @@ void MetalBackend::buildRenderPipelines() {
 }
 
 void MetalBackend::setMsaaSampleCount(int sc) {
+  if (!device_) return;
+
   int n = sc;
   if (n != 2 && n != 4) n = 1;
   id<MTLDevice> dev = (__bridge id<MTLDevice>)device_;
@@ -594,24 +596,26 @@ void MetalBackend::resize(int width, int height) {
 }
 
 void MetalBackend::shutdown() {
-  // Drain in-flight frames: wait until all GPU completion handlers have fired
-  // before releasing the semaphore and the persistent buffers they reference.
-  // Bounded wait — if a slot doesn't release in 1 s we are almost certainly
-  // looking at a hung GPU command. Forcing release lets the app exit/teardown
-  // cleanly rather than ANRing on backgrounding.
+  // Idempotent — CesiumBridge calls shutdown() explicitly and the unique_ptr
+  // dtor calls it again; during Fast Refresh teardown may also overlap with
+  // in-flight Metal completion handlers that captured the frame semaphore.
+  if (!device_) return;
+
+  // Drain in-flight frame slots: each beginFrame wait consumes a token and
+  // endFrame's GPU completion handler signals it back. Blocking here until
+  // every committed command buffer has finished ensures no handler signals
+  // the semaphore after we CFRelease it (Fast Refresh / unmount crash).
   if (frameSemaphore_) {
     dispatch_semaphore_t sem = (__bridge dispatch_semaphore_t)frameSemaphore_;
     for (int i = 0; i < kMaxFramesInFlight; ++i) {
-      dispatch_time_t deadline = dispatch_time(DISPATCH_TIME_NOW,
-                                               (int64_t)NSEC_PER_SEC);
-      if (dispatch_semaphore_wait(sem, deadline) != 0) {
-        NSLog(@"[CesiumMetal] shutdown semaphore wait timed out at slot %d; "
-              @"force-releasing and continuing teardown", i);
-        break;
-      }
+      dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
     }
-    CFRelease(frameSemaphore_);
+    for (int i = 0; i < kMaxFramesInFlight; ++i) {
+      dispatch_semaphore_signal(sem);
+    }
+    void* semToRelease = frameSemaphore_;
     frameSemaphore_ = nullptr;
+    CFRelease(semToRelease);
   }
 
   for (int i = 0; i < kMaxFramesInFlight; ++i) {
@@ -733,6 +737,8 @@ void* MetalBackend::createRasterTexture(const uint8_t* pixels,
 // ── Per-frame ─────────────────────────────────────────────────────────────────
 
 void MetalBackend::beginFrame(const FrameParams& /*params*/) {
+  if (!device_ || !frameSemaphore_) return;
+
   // Acquire a frame slot.  Blocks if kMaxFramesInFlight frames are already
   // queued on the GPU.  The completion handler in endFrame() signals the
   // semaphore to release the slot.
@@ -1031,7 +1037,9 @@ void MetalBackend::endFrame() {
   // Signal the frame semaphore when the GPU is done with this frame's buffers.
   void* semPtr = frameSemaphore_;
   [cb addCompletedHandler:^(id<MTLCommandBuffer> __unused) {
-    dispatch_semaphore_signal((__bridge dispatch_semaphore_t)semPtr);
+    if (semPtr) {
+      dispatch_semaphore_signal((__bridge dispatch_semaphore_t)semPtr);
+    }
   }];
 
   [cb presentDrawable:drawable];
