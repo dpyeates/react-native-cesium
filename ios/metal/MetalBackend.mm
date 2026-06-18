@@ -16,7 +16,9 @@
 //     ellipsoidHeightMeters(wp) in the old shader.
 //   • Single merged vertex + index buffer uploaded each frame.
 //   • Reversed-Z infinite projection: depth clear = 0, compare = GREATER.
-//   • Sky drawn first (no depth write), terrain drawn after.
+//   • Terrain drawn first (writes depth); sky drawn after with a depth test
+//     (no write) so the full-screen atmospheric shader only runs on pixels not
+//     covered by terrain.
 //   • Triple-buffered persistent MTLBuffers: one slot per in-flight frame.
 
 #import <Foundation/Foundation.h>
@@ -335,9 +337,10 @@ fragment float4 skyFragment(SkyVOut in [[stage_in]],
   // underground sample heights to zero (ground-level density).
   float tmax=at.y;
   float tmin=max(at.x,0.f);if(tmin>=tmax)return float4(0,0,0,1);
-  // Halved from 16/4 to 8/2 — visually negligible at typical phone DPI
-  // (atmospheric scattering banding is sub-pixel at this sample count).
-  const int S=8,L=2;
+  // Reduced 16/4 -> 8/2 -> 6/2 — visually negligible at typical phone DPI
+  // (atmospheric scattering banding is sub-pixel at this sample count) and
+  // cuts per-pixel `exp` calls further. Kept in sync with the Vulkan sky.frag.
+  const int S=6,L=2;
   float ss=(tmax-tmin)/float(S);
   float3 rayl=0,miel=0;float oR=0,oM=0;
   for(int i=0;i<S;++i){
@@ -542,7 +545,11 @@ void MetalBackend::buildRenderPipelines() {
   }
   if (!skyDepthState_) {
     MTLDepthStencilDescriptor* sd = [MTLDepthStencilDescriptor new];
-    sd.depthCompareFunction = MTLCompareFunctionAlways;
+    // Sky is drawn after terrain with a depth test (no write). skyVertex emits
+    // z=0 (the reversed-Z far plane) and the depth buffer clears to 0, so
+    // GreaterEqual passes only where no terrain wrote a closer (>0) depth —
+    // i.e. the raymarch only runs on uncovered pixels.
+    sd.depthCompareFunction = MTLCompareFunctionGreaterEqual;
     sd.depthWriteEnabled    = NO;
     skyDepthState_ = (__bridge_retained void*)
         [dev newDepthStencilStateWithDescriptor:sd];
@@ -803,32 +810,11 @@ void MetalBackend::drawScene(const FrameResult& frame) {
   id<MTLRenderCommandEncoder> enc = (__bridge id<MTLRenderCommandEncoder>)currentEncoder_;
   id<MTLDevice> dev = (__bridge id<MTLDevice>)device_;
 
-  // ── Sky pass ──────────────────────────────────────────────────────────────
-  if (skyPipeline_ && skyDepthState_) {
-    SkyUniforms skyU{};
-    const float* iv = glm::value_ptr(frame.invVP);
-    for (int i = 0; i < 16; ++i) skyU.invVP[i] = iv[i];
-    skyU.cameraEcef[0] = frame.cameraEcef.x;
-    skyU.cameraEcef[1] = frame.cameraEcef.y;
-    skyU.cameraEcef[2] = frame.cameraEcef.z;
-    float cl = sqrtf(frame.cameraEcef.x * frame.cameraEcef.x +
-                     frame.cameraEcef.y * frame.cameraEcef.y +
-                     frame.cameraEcef.z * frame.cameraEcef.z);
-    if (cl > 0.0f) {
-      skyU.lightDir[0] = frame.cameraEcef.x / cl;
-      skyU.lightDir[1] = frame.cameraEcef.y / cl;
-      skyU.lightDir[2] = frame.cameraEcef.z / cl;
-    }
-
-    [enc setRenderPipelineState:(__bridge id<MTLRenderPipelineState>)skyPipeline_];
-    [enc setDepthStencilState:(__bridge id<MTLDepthStencilState>)skyDepthState_];
-    [enc setCullMode:MTLCullModeNone];
-    [enc setVertexBytes:&skyU length:sizeof(skyU) atIndex:0];
-    [enc setFragmentBytes:&skyU length:sizeof(skyU) atIndex:0];
-    [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
-  }
-
   // ── Terrain pass ──────────────────────────────────────────────────────────
+  // Drawn FIRST (writes depth) so the sky pass below can depth-test against the
+  // terrain and skip the expensive full-screen atmospheric raymarch on every
+  // covered pixel. Wrapped in a lambda so its early-outs fall through to sky.
+  auto drawTerrain = [&]() {
   if (frame.draws.empty() ||
       !terrainSolidPipeline_ || !terrainDitherPipeline_ || !terrainDepthState_) {
     return;
@@ -1018,6 +1004,35 @@ void MetalBackend::drawScene(const FrameResult& frame) {
                      indexType:MTLIndexTypeUInt32
                    indexBuffer:idxBuf
              indexBufferOffset:draw.indexByteOffset];
+  }
+  }; // drawTerrain
+  drawTerrain();
+
+  // ── Sky pass ──────────────────────────────────────────────────────────────
+  // Drawn LAST, depth-tested (no write): only shades pixels not covered by
+  // terrain (depth still at the cleared reversed-Z far plane).
+  if (skyPipeline_ && skyDepthState_) {
+    SkyUniforms skyU{};
+    const float* iv = glm::value_ptr(frame.invVP);
+    for (int i = 0; i < 16; ++i) skyU.invVP[i] = iv[i];
+    skyU.cameraEcef[0] = frame.cameraEcef.x;
+    skyU.cameraEcef[1] = frame.cameraEcef.y;
+    skyU.cameraEcef[2] = frame.cameraEcef.z;
+    float cl = sqrtf(frame.cameraEcef.x * frame.cameraEcef.x +
+                     frame.cameraEcef.y * frame.cameraEcef.y +
+                     frame.cameraEcef.z * frame.cameraEcef.z);
+    if (cl > 0.0f) {
+      skyU.lightDir[0] = frame.cameraEcef.x / cl;
+      skyU.lightDir[1] = frame.cameraEcef.y / cl;
+      skyU.lightDir[2] = frame.cameraEcef.z / cl;
+    }
+
+    [enc setRenderPipelineState:(__bridge id<MTLRenderPipelineState>)skyPipeline_];
+    [enc setDepthStencilState:(__bridge id<MTLDepthStencilState>)skyDepthState_];
+    [enc setCullMode:MTLCullModeNone];
+    [enc setVertexBytes:&skyU length:sizeof(skyU) atIndex:0];
+    [enc setFragmentBytes:&skyU length:sizeof(skyU) atIndex:0];
+    [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
   }
 }
 

@@ -38,11 +38,11 @@ void main() {
   float tmin = max(at.x, 0.0);
   if (tmin >= tmax) { outColor = vec4(0, 0, 0, 1); return; }
 
-  // Sample counts halved from 16/4 to 8/2 — visually negligible at typical
+  // Sample counts reduced 16/4 -> 8/2 -> 6/2 — visually negligible at typical
   // phone DPI / viewport sizes (a 24-bit screen can't resolve the difference
-  // in atmospheric scattering past ~6 primary samples), saves ~half the
-  // expensive `exp` calls per pixel.
-  const int S = 8, L = 2;
+  // in atmospheric scattering past ~6 primary samples), and cuts the expensive
+  // per-pixel `exp` calls further (helps weak/software GPUs most).
+  const int S = 6, L = 2;
   float ss = (tmax - tmin) / float(S);
   vec3 rayl = vec3(0), miel = vec3(0);
   float oR = 0.0, oM = 0.0;

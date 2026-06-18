@@ -80,7 +80,9 @@ android {
 
         buildTypes {
           debug {
-            cppFlags "-O1 -g"
+            // -O2 (was -O1) so debug builds — the default dev/emulator workflow —
+            // aren't unfairly slow when profiling the renderer. -g keeps symbols.
+            cppFlags "-O2 -g"
           }
           release {
             cppFlags "-O2"

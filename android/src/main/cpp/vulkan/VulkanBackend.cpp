@@ -10,7 +10,9 @@
 //     catastrophic cancellation in the shader.
 //   - Single merged vertex + index buffer uploaded each frame.
 //   - Reversed-Z infinite projection: depth clear = 0, compare = GREATER.
-//   - Sky drawn first (no depth write), terrain drawn after.
+//   - Terrain drawn first (writes depth); sky drawn after with a depth test
+//     (no write) so the full-screen atmospheric shader only runs on pixels not
+//     covered by terrain.
 //   - Water mask: UV computed from geographic lat/lon + tile bounds (not fragUV).
 //   - Push constants: bytes 0-63 vertex (MVP), bytes 64-127 fragment.
 //   - Triple-buffered persistent VkBuffers guarded by VkFence.
@@ -446,6 +448,29 @@ void VulkanBackend::pickPhysicalDevice() {
   vkGetPhysicalDeviceProperties(physicalDevice_, &props);
   supportsAnisotropy_ = feats.samplerAnisotropy == VK_TRUE;
   maxAnisotropy_      = props.limits.maxSamplerAnisotropy;
+
+  // One-time log of the selected GPU so we can tell a real hardware device from
+  // a software rasterizer (e.g. the Android Emulator's SwiftShader / a slow
+  // gfxstream translation layer), which is the dominant factor in emulator FPS.
+  const char* typeStr = "OTHER";
+  switch (props.deviceType) {
+    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:   typeStr = "DISCRETE_GPU";   break;
+    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: typeStr = "INTEGRATED_GPU"; break;
+    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:    typeStr = "VIRTUAL_GPU";    break;
+    case VK_PHYSICAL_DEVICE_TYPE_CPU:            typeStr = "CPU (software)";  break;
+    default:                                     typeStr = "OTHER";          break;
+  }
+  LOGI("Vulkan GPU: \"%s\" type=%s apiVersion=%u.%u.%u driverVersion=0x%x",
+       props.deviceName, typeStr,
+       VK_VERSION_MAJOR(props.apiVersion),
+       VK_VERSION_MINOR(props.apiVersion),
+       VK_VERSION_PATCH(props.apiVersion),
+       props.driverVersion);
+  if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) {
+    LOGW("Selected a CPU/software Vulkan device — expect very low FPS. "
+         "This is typical on the Android Emulator without host-GPU acceleration; "
+         "measure on a physical device for representative performance.");
+  }
 
   const VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts &
                                     props.limits.framebufferDepthSampleCounts;
@@ -1065,6 +1090,7 @@ struct PipelineBuildSpec {
   const VkVertexInputAttributeDescription* attributes;
   bool depthTest;
   bool depthWrite;
+  VkCompareOp depthCompare;
   VkCullModeFlags cull;
   VkSampleCountFlagBits samples;
 };
@@ -1115,7 +1141,7 @@ VkPipeline buildPipeline(VkDevice                 device,
   depthStencil.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
   depthStencil.depthTestEnable  = spec.depthTest  ? VK_TRUE : VK_FALSE;
   depthStencil.depthWriteEnable = spec.depthWrite ? VK_TRUE : VK_FALSE;
-  depthStencil.depthCompareOp   = VK_COMPARE_OP_GREATER; // Reversed-Z
+  depthStencil.depthCompareOp   = spec.depthCompare; // Reversed-Z (GREATER family)
 
   VkPipelineColorBlendAttachmentState colorBlendAttach{};
   colorBlendAttach.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -1166,8 +1192,15 @@ void VulkanBackend::createSkyPipeline() {
   spec.bindings       = nullptr;
   spec.attributeCount = 0;
   spec.attributes     = nullptr;
-  spec.depthTest      = false;
+  // Depth-test the sky against the terrain (which is drawn first and writes
+  // depth) so the expensive atmospheric raymarch only runs on pixels that
+  // aren't covered by geometry. sky.vert emits z=0 (the reversed-Z far plane)
+  // and the depth buffer is cleared to 0, so GREATER_OR_EQUAL passes only where
+  // no terrain wrote a closer (>0) depth. No depth write — the sky never
+  // occludes anything.
+  spec.depthTest      = true;
   spec.depthWrite     = false;
+  spec.depthCompare   = VK_COMPARE_OP_GREATER_OR_EQUAL;
   spec.cull           = VK_CULL_MODE_NONE;
   spec.samples        = sampleCount_;
   skyPipeline_ = buildPipeline(device_, skyPipelineLayout_, renderPass_,
@@ -1207,6 +1240,7 @@ void VulkanBackend::createTerrainPipeline() {
     spec.attributes     = attrs;
     spec.depthTest      = true;
     spec.depthWrite     = true;
+    spec.depthCompare   = VK_COMPARE_OP_GREATER; // Reversed-Z
     spec.cull           = VK_CULL_MODE_BACK_BIT;
     spec.samples        = sampleCount_;
     return buildPipeline(device_, terrainPipelineLayout_, renderPass_,
@@ -2100,31 +2134,11 @@ void VulkanBackend::drawScene(const FrameResult& frame) {
 
   VkCommandBuffer cmd = commandBuffers_[frameIndex_];
 
-  // ── Sky pass ──────────────────────────────────────────────────────────────
-  if (skyPipeline_ && skyDescSet_) {
-    SkyUBO skyU{};
-    const float* iv = glm::value_ptr(frame.invVP);
-    for (int i = 0; i < 16; ++i) skyU.invVP[i] = iv[i];
-    skyU.cameraEcef[0] = frame.cameraEcef.x;
-    skyU.cameraEcef[1] = frame.cameraEcef.y;
-    skyU.cameraEcef[2] = frame.cameraEcef.z;
-    float cl = sqrtf(frame.cameraEcef.x * frame.cameraEcef.x +
-                     frame.cameraEcef.y * frame.cameraEcef.y +
-                     frame.cameraEcef.z * frame.cameraEcef.z);
-    if (cl > 0.0f) {
-      skyU.lightDir[0] = frame.cameraEcef.x / cl;
-      skyU.lightDir[1] = frame.cameraEcef.y / cl;
-      skyU.lightDir[2] = frame.cameraEcef.z / cl;
-    }
-
-    memcpy(skyUboMapped_, &skyU, sizeof(SkyUBO));
-
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline_);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipelineLayout_,
-                            0, 1, &skyDescSet_, 0, nullptr);
-    vkCmdDraw(cmd, 3, 1, 0, 0);
-  }
-
+  // ── Terrain pass (opaque, writes depth) ─────────────────────────────────────
+  // Drawn FIRST so the sky pass below can depth-test against the terrain and
+  // skip the expensive full-screen atmospheric raymarch on every covered pixel.
+  // Wrapped in a lambda so its early-outs still fall through to the sky pass.
+  auto drawTerrain = [&]() {
   if (frame.draws.empty() || !terrainSolidPipeline_ || !terrainDitherPipeline_) {
     return;
   }
@@ -2276,6 +2290,36 @@ void VulkanBackend::drawScene(const FrameResult& frame) {
 
     uint32_t firstIndex = draw.indexByteOffset / sizeof(uint32_t);
     vkCmdDrawIndexed(cmd, draw.indexCount, 1, firstIndex, 0, 0);
+  }
+  }; // drawTerrain
+  drawTerrain();
+
+  // ── Sky pass ────────────────────────────────────────────────────────────────
+  // Drawn LAST and depth-tested (no write): the raymarch only executes on pixels
+  // where no terrain was rendered (depth still at the cleared reversed-Z far
+  // plane). This avoids shading the full screen and then overdrawing it.
+  if (skyPipeline_ && skyDescSet_) {
+    SkyUBO skyU{};
+    const float* iv = glm::value_ptr(frame.invVP);
+    for (int i = 0; i < 16; ++i) skyU.invVP[i] = iv[i];
+    skyU.cameraEcef[0] = frame.cameraEcef.x;
+    skyU.cameraEcef[1] = frame.cameraEcef.y;
+    skyU.cameraEcef[2] = frame.cameraEcef.z;
+    float cl = sqrtf(frame.cameraEcef.x * frame.cameraEcef.x +
+                     frame.cameraEcef.y * frame.cameraEcef.y +
+                     frame.cameraEcef.z * frame.cameraEcef.z);
+    if (cl > 0.0f) {
+      skyU.lightDir[0] = frame.cameraEcef.x / cl;
+      skyU.lightDir[1] = frame.cameraEcef.y / cl;
+      skyU.lightDir[2] = frame.cameraEcef.z / cl;
+    }
+
+    memcpy(skyUboMapped_, &skyU, sizeof(SkyUBO));
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipelineLayout_,
+                            0, 1, &skyDescSet_, 0, nullptr);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
   }
 }
 
