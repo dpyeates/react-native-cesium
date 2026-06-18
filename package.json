@@ -1,6 +1,6 @@
 {
   "name": "react-native-cesium",
-  "version": "1.2.17",
+  "version": "1.2.18",
   "description": "Experimental Cesium rendering for React Native via Nitro",
   "main": "./lib/commonjs/index.js",
   "module": "./lib/module/index.js",

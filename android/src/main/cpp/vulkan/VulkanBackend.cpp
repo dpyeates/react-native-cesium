@@ -607,6 +607,32 @@ void VulkanBackend::createSwapchain() {
   VkSwapchainCreateInfoKHR swapInfo{};
   swapInfo.sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
   swapInfo.surface          = surface_;
+  // ── Surface rotation (Android pre-rotation) ──────────────────────────────
+  // We deliberately let the Android Compositor handle device rotation instead
+  // of pre-rotating the scene ourselves: present with an IDENTITY transform so
+  // the presentation engine rotates the rendered image to the current device
+  // orientation before scan-out.
+  //
+  // The alternative — preTransform = caps.currentTransform — only renders
+  // correctly if the app ALSO swaps the swapchain extent for 90/270 rotations
+  // AND bakes a matching rotation into every MVP/VP matrix. Doing neither (as
+  // before) made the scene render sideways once the device left its identity
+  // orientation: in landscape Android reports ROTATE_90/270, the compositor
+  // was told "already handled", and the un-rotated terrain appeared rotated
+  // 90° (ground stuck on the side of the screen). Since the swapchain image is
+  // the engine's only render target and modern Android display processors
+  // rotate essentially for free, the compositor path is both correct and cheap.
+  //
+  // Consequence: while the device is rotated, preTransform != currentTransform,
+  // so vkAcquireNextImageKHR / vkQueuePresentKHR return VK_SUBOPTIMAL_KHR every
+  // frame. That is expected here and must NOT trigger swapchain recreation (see
+  // beginFrame() / endFrame()); genuine size/orientation changes are driven by
+  // surfaceChanged() -> resize() instead.
+  VkSurfaceTransformFlagBitsKHR preTransform = caps.currentTransform;
+  if (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) {
+    preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+  }
+
   swapInfo.minImageCount    = imageCount;
   swapInfo.imageFormat      = swapchainFormat_;
   swapInfo.imageColorSpace  = colorSpace;
@@ -614,7 +640,7 @@ void VulkanBackend::createSwapchain() {
   swapInfo.imageArrayLayers = 1;
   swapInfo.imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
   swapInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  swapInfo.preTransform     = caps.currentTransform;
+  swapInfo.preTransform     = preTransform;
   swapInfo.compositeAlpha   = compositeAlpha;
   swapInfo.presentMode      = pickPresentMode();
   swapInfo.clipped          = VK_TRUE;
@@ -2076,13 +2102,18 @@ void VulkanBackend::beginFrame(const FrameParams& /*params*/) {
     frameBegan_ = false;
     return;
   }
-  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+  // Only OUT_OF_DATE forces a recreate. VK_SUBOPTIMAL_KHR is expected on every
+  // frame while the device is rotated: we present with an IDENTITY preTransform
+  // and let the compositor rotate (see createSwapchain). The acquired image is
+  // still valid, so we proceed and use it. Genuine size/orientation changes
+  // arrive via surfaceChanged() -> resize() -> needsSwapchainRecreate_.
+  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
     recreateSwapchain();
     result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
                                    imageAvailableSemaphores_[frameIndex_],
                                    VK_NULL_HANDLE, &imageIndex_);
   }
-  if (result != VK_SUCCESS) {
+  if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
     frameBegan_ = false;
     return;
   }
@@ -2355,7 +2386,12 @@ void VulkanBackend::endFrame() {
   presentInfo.pImageIndices      = &imageIndex_;
 
   VkResult result = vkQueuePresentKHR(presentQueue_, &presentInfo);
-  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+  // VK_SUBOPTIMAL_KHR is expected every frame while the device is rotated (we
+  // present an IDENTITY preTransform and let the compositor rotate — see
+  // createSwapchain), so it must NOT trigger a recreate or we'd thrash the
+  // swapchain every frame. Real changes come through surfaceChanged() ->
+  // resize() -> needsSwapchainRecreate_.
+  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
     needsSwapchainRecreate_ = true;
   }
 
