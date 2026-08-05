@@ -64,7 +64,7 @@ public:
   void free(Cesium3DTilesSelection::Tile& tile, void* pLoadThreadResult,
             void* pMainThreadResult) noexcept override;
 
-  void* prepareRasterInLoadThread(CesiumGltf::ImageAsset& image,
+  void* prepareRasterInLoadThread(CesiumImage::ImageAsset& image,
                                   const std::any& rendererOptions) override;
   void* prepareRasterInMainThread(
       CesiumRasterOverlays::RasterOverlayTile& rasterTile,

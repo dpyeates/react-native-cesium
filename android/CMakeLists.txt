@@ -151,6 +151,7 @@ target_link_libraries(
         CesiumGltf
         CesiumGltfReader
         CesiumGltfContent
+        CesiumImage
         CesiumGeospatial
         CesiumGeometry
         CesiumAsync

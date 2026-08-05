@@ -5,4 +5,4 @@
  */
 
 /** Git tag of CesiumGS/cesium-native to clone and build. */
-export const CESIUM_NATIVE_REF = 'v0.61.0'
+export const CESIUM_NATIVE_REF = 'v0.63.0'

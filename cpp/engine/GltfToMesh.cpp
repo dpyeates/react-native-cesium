@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <optional>
 
 namespace reactnativecesium {
 
@@ -64,12 +65,17 @@ GltfToMesh::convert(const CesiumGltf::Model& model,
 
         const CesiumGltf::PositionAccessorType posAccessor =
             CesiumGltf::getPositionAccessorView(gltf, primitive);
-        if (posAccessor.status() != CesiumGltf::AccessorViewStatus::Valid ||
-            posAccessor.size() <= 0)
+        const CesiumGltf::AccessorViewStatus posStatus =
+            std::visit(CesiumGltf::StatusFromAccessor{}, posAccessor);
+        if (posStatus != CesiumGltf::AccessorViewStatus::Valid)
+          return;
+
+        const int64_t vertexCount =
+            std::visit(CesiumGltf::CountFromAccessor{}, posAccessor);
+        if (vertexCount <= 0)
           return;
 
         const glm::dmat4 worldTransform = rootTransform * nodeTransform;
-        const int64_t    vertexCount    = posAccessor.size();
 
         // RTC centre = translation column of the world transform.
         // After applyRtcCenter this is the tile's ECEF centre embedded by
@@ -82,8 +88,11 @@ GltfToMesh::convert(const CesiumGltf::Model& model,
         prim.altitudes.reserve(static_cast<size_t>(vertexCount));
 
         for (int64_t i = 0; i < vertexCount; ++i) {
-          const auto&      p    = posAccessor[i];
-          const glm::dvec3 gltfLocal(p.value[0], p.value[1], p.value[2]);
+          const std::optional<glm::dvec3> pos = std::visit(
+              CesiumGltf::PositionFromAccessor{i}, posAccessor);
+          if (!pos)
+            continue;
+          const glm::dvec3 gltfLocal = *pos;
           // Absolute ECEF in double precision.
           const glm::dvec3 ecef(worldTransform * glm::dvec4(gltfLocal, 1.0));
           // Tile-local position (small float, retains full float32 precision

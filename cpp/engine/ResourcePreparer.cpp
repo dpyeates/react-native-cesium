@@ -1,7 +1,7 @@
 #include "ResourcePreparer.hpp"
 
 #include <Cesium3DTilesSelection/Tile.h>
-#include <CesiumGltf/ImageAsset.h>
+#include <CesiumImage/ImageAsset.h>
 #include <CesiumGltf/Model.h>
 #include <CesiumUtility/JsonValue.h>
 
@@ -117,12 +117,12 @@ void ResourcePreparer::free(Cesium3DTilesSelection::Tile& /*tile*/,
 
 // ── Raster overlay pipeline ─────────────────────────────────────────────────
 
-void* ResourcePreparer::prepareRasterInLoadThread(CesiumGltf::ImageAsset& image,
+void* ResourcePreparer::prepareRasterInLoadThread(CesiumImage::ImageAsset& image,
                                                    const std::any&) {
   if (image.pixelData.empty() || image.width <= 0 || image.height <= 0) {
     return nullptr;
   }
-  if (image.compressedPixelFormat != CesiumGltf::GpuCompressedPixelFormat::NONE) {
+  if (image.compressedPixelFormat != CesiumImage::GpuCompressedPixelFormat::NONE) {
     return nullptr;
   }
   if (image.bytesPerChannel != 1) return nullptr;

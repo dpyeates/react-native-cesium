@@ -184,7 +184,7 @@ npm run build --prefix node_modules/react-native-cesium
 
 **Yarn/npm workspaces:** if `react-native-cesium` is a workspace package in your monorepo, use your tool’s workspace runner, e.g. `yarn workspace react-native-cesium run update` (exact syntax depends on your workspace layout).
 
-- `update` checks out **Cesium Native `v0.59.0`** into `vendor/cesium-native` under the package (next to its other files; typically ignored in app repos).
+- `update` checks out **Cesium Native `v0.63.0`** into `vendor/cesium-native` under the package (next to its other files; typically ignored in app repos).
 - `build` runs `scripts/cesium/build.mjs` (**CMake**, **vcpkg** under `vendor/vcpkg` unless **`VCPKG_ROOT`** is set, **Ninja** on macOS) and writes **`vendor/ios/CesiumNative.xcframework`** and/or **`vendor/android`** depending on **`CESIUM_BUILD_ONLY`**.
 
 Then install pods (iOS):
