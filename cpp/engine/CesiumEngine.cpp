@@ -4,7 +4,7 @@
 #endif
 
 #include "CesiumEngine.hpp"
-#include "GeoidConverter.hpp"
+#include "TerrainHeight.hpp"
 
 #include <iostream>
 
@@ -37,7 +37,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <limits>
 #include <thread>
 
 
@@ -404,9 +403,7 @@ void CesiumEngine::applyImageryOverlay(int64_t targetAssetId) {
   lastDrawSignature_   = 0;
   stableSigFrames_     = 0;
   cachedDraws_.clear();
-  // floor cache is keyed on signature — drop it too so the next frame
-  // re-scans before establishing a new entry.
-  floorCacheValid_     = false;
+  heightCache_.valid = false;
 }
 
 void CesiumEngine::destroyTileset() {
@@ -422,8 +419,7 @@ void CesiumEngine::destroyTileset() {
   lastDrawSignature_   = 0;
   stableSigFrames_     = 0;
   cachedDraws_.clear();
-  // P5: the cached value was keyed on TileGPUResources we just freed.
-  floorCacheValid_     = false;
+  clearResidentTerrain();
 }
 
 void CesiumEngine::setImageryAssetId(int64_t assetId) {
@@ -444,6 +440,126 @@ inline uint64_t fnv1a64Mix(uint64_t h, uint64_t v) {
   return h;
 }
 } // namespace
+
+void CesiumEngine::clearResidentTerrain() {
+  residentTiles_.clear();
+  residentSignature_ = 0;
+  heightCache_.valid = false;
+}
+
+bool CesiumEngine::sampleTerrainEllipsoidMeters(double latitudeDeg,
+                                                double longitudeDeg,
+                                                float& outEllipsoidMeters) {
+  if (residentTiles_.empty() || !std::isfinite(latitudeDeg) || !std::isfinite(longitudeDeg)) {
+    return false;
+  }
+
+  // ~0.5 m cell. A hover reuses the sample; moving to the next cell rescans.
+  constexpr double kCellDeg = 4.5e-6;
+  const int latCell = static_cast<int>(std::floor(latitudeDeg / kCellDeg));
+  const int lonCell = static_cast<int>(std::floor(longitudeDeg / kCellDeg));
+  if (heightCache_.valid &&
+      heightCache_.signature == residentSignature_ &&
+      heightCache_.latCell == latCell &&
+      heightCache_.lonCell == lonCell) {
+    outEllipsoidMeters = heightCache_.height;
+    return true;
+  }
+
+  const double latRad = glm::radians(latitudeDeg);
+  const double lonRad = glm::radians(longitudeDeg);
+
+  const ResidentTerrainTile* tried[8] = {};
+  int triedCount = 0;
+
+  const auto& ellipsoid = CesiumGeospatial::Ellipsoid::WGS84;
+  const glm::dvec3 origin = ellipsoid.cartographicToCartesian(
+      CesiumGeospatial::Cartographic(lonRad, latRad, 0.0));
+  const glm::dmat4 enuToEcef =
+      CesiumGeospatial::GlobeTransforms::eastNorthUpToFixedFrame(origin, ellipsoid);
+  const glm::dvec3 east  = glm::normalize(glm::dvec3(enuToEcef[0]));
+  const glm::dvec3 north = glm::normalize(glm::dvec3(enuToEcef[1]));
+
+  auto contains = [&](const ResidentTerrainTile& tile) {
+    if (latRad < tile.south || latRad > tile.north) return false;
+    if (tile.west <= tile.east) return lonRad >= tile.west && lonRad <= tile.east;
+    return lonRad >= tile.west || lonRad <= tile.east;
+  };
+
+  auto sampleTile = [&](const ResidentTerrainTile& tile, float& outHeight) {
+    if (!tile.res) return false;
+    bool found = false;
+    float best = 0.0f;
+    for (const auto& prim : tile.res->primitives) {
+      const size_t nVerts = prim.localPositions.size();
+      if (nVerts == 0 || prim.altitudes.size() != nVerts) continue;
+      const size_t nTri = prim.indices.size() / 3;
+      for (size_t t = 0; t < nTri; ++t) {
+        const uint32_t i0 = prim.indices[t * 3];
+        const uint32_t i1 = prim.indices[t * 3 + 1];
+        const uint32_t i2 = prim.indices[t * 3 + 2];
+        if (i0 >= nVerts || i1 >= nVerts || i2 >= nVerts) continue;
+
+        auto project = [&](uint32_t i, double& e, double& n) {
+          const glm::dvec3 world = glm::dvec3(prim.localPositions[i]) + prim.rtcCenter;
+          const glm::dvec3 delta = world - origin;
+          e = glm::dot(delta, east);
+          n = glm::dot(delta, north);
+        };
+        double e0, n0, e1, n1, e2, n2;
+        project(i0, e0, n0);
+        project(i1, e1, n1);
+        project(i2, e2, n2);
+
+        float h = 0.0f;
+        if (!horizontalTriangleHeight(0.0, 0.0,
+                                      e0, n0, prim.altitudes[i0],
+                                      e1, n1, prim.altitudes[i1],
+                                      e2, n2, prim.altitudes[i2],
+                                      h)) {
+          continue;
+        }
+        if (!found || h > best) {
+          best = h;
+          found = true;
+        }
+      }
+    }
+    if (!found) return false;
+    outHeight = best;
+    return true;
+  };
+
+  // Finest containing tile first. If its mesh misses the point (a crack
+  // between tiles), try the next-finest. At most a handful of LODs overlap.
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const ResidentTerrainTile* best = nullptr;
+    for (const auto& tile : residentTiles_) {
+      if (!contains(tile)) continue;
+      bool skipped = false;
+      for (int i = 0; i < triedCount; ++i) {
+        if (tried[i] == &tile) { skipped = true; break; }
+      }
+      if (skipped) continue;
+      if (!best || tile.geometricError < best->geometricError) best = &tile;
+    }
+    if (!best) break;
+
+    float height = 0.0f;
+    if (sampleTile(*best, height)) {
+      heightCache_.valid = true;
+      heightCache_.tile = best->res;
+      heightCache_.latCell = latCell;
+      heightCache_.lonCell = lonCell;
+      heightCache_.signature = residentSignature_;
+      heightCache_.height = height;
+      outEllipsoidMeters = height;
+      return true;
+    }
+    if (triedCount < 8) tried[triedCount++] = best;
+  }
+  return false;
+}
 
 void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   result.localPositions.clear();
@@ -475,6 +591,7 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
     lastDrawSignature_ = 0;
     stableSigFrames_   = 0;
     cachedDraws_.clear();
+    clearResidentTerrain();
     lifecycle_.advanceFrame();
     return;
   }
@@ -604,116 +721,35 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
                            stableSigFrames_ > tunables::kMaxFramesInFlight &&
                            !cachedDraws_.empty();
 
-  // ── Terrain floor tracking (for minAltitudeAboveTerrain clamp) ───────────
-  // Computed once before the tile loop and updated per-tile inside it.
-  // Only active when the feature is enabled to avoid any overhead otherwise.
-  const bool trackTerrainFloor = (config_.minAltitudeAboveTerrain > 0.0f);
-  const CameraParams camParams  = trackTerrainFloor ? camera_.getParams() : CameraParams{};
-  const double camLatRad = glm::radians(camParams.latitude);
-  const double camLonRad = glm::radians(camParams.longitude);
-
-  // Expected ground ellipsoid height at camera location (from geoid).
-  // Used to filter out elevated structures (buildings) during floor sampling.
-  const double expectedGroundEllipsoid = trackTerrainFloor
-      ? mslToEllipsoidMeters(camParams.latitude, camParams.longitude, 0.0)
-      : 0.0;
-
-  float  bestTerrainFloor = terrainFloorEllipsoidM_; // carry previous value if no tile matches
-  double bestHorizDistSq  = std::numeric_limits<double>::max();
-  bool   floorScanFound   = false;
-
-  // Horizontal search radius for floor sampling.
-  // Increased to 200m to ensure robust sampling across terrain LODs and camera speeds.
-  constexpr double kFloorSearchRadiusM  = 200.0;
-  constexpr double kFloorSearchRadiusSq = kFloorSearchRadiusM * kFloorSearchRadiusM;
-
-  // ── floor-scan cache lookup ─────────────────────────────────────────
-  // Skip the per-vertex scan when the camera has moved less than ~10 cm in
-  // both lat and lon AND the visible primitive set is unchanged (same
-  // geometry signature). The cached value is only trusted for non-zero
-  // signatures — sig==0 means a fade or rebuild is in flight, in which case
-  // we always re-scan and refresh the cache afterwards.
-  bool floorScanFromCache = false;
-  if (trackTerrainFloor && floorCacheValid_ && signature != 0ULL &&
-      signature == floorCacheSignature_) {
-    const double dLon = std::abs(camParams.longitude - floorCacheCamLonDeg_);
-    const double dLat = std::abs(camParams.latitude  - floorCacheCamLatDeg_);
-    if (dLon < 1e-6 && dLat < 1e-6) {
-      bestTerrainFloor   = floorCacheValue_;
-      floorScanFromCache = true;
+  // Capture the tiles this frame actually drew. The next render samples
+  // height from this list before updateViewGroup can release it. Bounds and
+  // geometric error only — no per-vertex work on the draw path.
+  if (noVisibleTerrain) {
+    clearResidentTerrain();
+  } else {
+    residentTiles_.clear();
+    residentTiles_.reserve(updateResult.tilesToRenderThisFrame.size());
+    for (const auto& tile : updateResult.tilesToRenderThisFrame) {
+      if (!tile) continue;
+      const auto* rc = tile->getContent().getRenderContent();
+      if (!rc) continue;
+      const auto* res = static_cast<const TileGPUResources*>(rc->getRenderResources());
+      if (!res || res->primitives.empty()) continue;
+      const CesiumGeospatial::BoundingRegion* region =
+          Cesium3DTilesSelection::getBoundingRegionFromBoundingVolume(tile->getBoundingVolume());
+      if (!region) continue;
+      const auto& rect = region->getRectangle();
+      ResidentTerrainTile entry;
+      entry.res = res;
+      entry.geometricError = tile->getGeometricError();
+      entry.west = rect.getWest();
+      entry.south = rect.getSouth();
+      entry.east = rect.getEast();
+      entry.north = rect.getNorth();
+      residentTiles_.push_back(entry);
     }
-  }
-  // When tracking is off, suppress the per-tile scan branches (legacy
-  // behaviour already gated on trackTerrainFloor; this just keeps the cache
-  // semantics aligned).
-  const bool runFloorScan = trackTerrainFloor && !floorScanFromCache;
-
-  // ENU basis at the camera — horizontal distance to each terrain vertex.
-  glm::dvec3 floorEast(1.0, 0.0, 0.0);
-  glm::dvec3 floorNorth(0.0, 1.0, 0.0);
-  glm::dvec3 floorScanPos = cameraPos; // Always scan directly below camera
-  glm::dvec3 floorScanAheadPos = cameraPos; // Also scan ahead if moving
-  bool useLookAhead = false;
-  
-  if (runFloorScan) {
-    const auto& ellipsoid = CesiumGeospatial::Ellipsoid::WGS84;
-    const glm::dmat4 enuToEcef =
-        CesiumGeospatial::GlobeTransforms::eastNorthUpToFixedFrame(
-            cameraPos, ellipsoid);
-    floorEast  = glm::normalize(glm::dvec3(enuToEcef[0]));
-    floorNorth = glm::normalize(glm::dvec3(enuToEcef[1]));
-    
-    // ── Look-ahead terrain sampling ──────────────────────────────────────
-    // Sample terrain BOTH below camera AND ahead. Use the maximum height to
-    // prevent clipping through terrain between current position and look-ahead.
-    if (floorCacheValid_) {
-      // Convert previous lat/lon to ECEF to get movement vector
-      const double prevLonRad = floorCacheCamLonDeg_ * M_PI / 180.0;
-      const double prevLatRad = floorCacheCamLatDeg_ * M_PI / 180.0;
-      const glm::dvec3 prevCamPos = ellipsoid.cartographicToCartesian(
-          CesiumGeospatial::Cartographic(prevLonRad, prevLatRad, camParams.altitude));
-      
-      // Calculate horizontal movement since last frame
-      const glm::dvec3 movement3D = cameraPos - prevCamPos;
-      const double moveEast = glm::dot(movement3D, floorEast);
-      const double moveNorth = glm::dot(movement3D, floorNorth);
-      const double horizMovement = std::sqrt(moveEast * moveEast + moveNorth * moveNorth);
-      
-      // Look ahead by 5x recent movement (minimum 10m, max 100m)
-      constexpr double kMinLookAhead = 10.0;   // meters
-      constexpr double kMaxLookAhead = 100.0;  // meters
-      constexpr double kLookAheadMultiplier = 5.0;
-      
-      double lookAheadDist = std::clamp(
-          horizMovement * kLookAheadMultiplier,
-          kMinLookAhead,
-          kMaxLookAhead);
-      
-      if (horizMovement > 0.1) { // Only look ahead if actually moving
-        // Project sampling point forward in direction of movement
-        const glm::dvec3 moveDir = glm::normalize(
-            floorEast * moveEast + floorNorth * moveNorth);
-        floorScanAheadPos = cameraPos + moveDir * lookAheadDist;
-        useLookAhead = true;
-      }
-    }
-  }
-
-  // Convert floor scan positions to lat/lon for tile bounds checking
-  // Camera position (always used)
-  double floorScanLonRad = camLonRad;
-  double floorScanLatRad = camLatRad;
-  
-  // Look-ahead position (used when moving)
-  double floorScanAheadLonRad = camLonRad;
-  double floorScanAheadLatRad = camLatRad;
-  if (runFloorScan && useLookAhead) {
-    const auto& ellipsoid = CesiumGeospatial::Ellipsoid::WGS84;
-    const auto scanCartographic = ellipsoid.cartesianToCartographic(floorScanAheadPos);
-    if (scanCartographic) {
-      floorScanAheadLonRad = scanCartographic->longitude;
-      floorScanAheadLatRad = scanCartographic->latitude;
-    }
+    residentSignature_ = signature;
+    if (heightCache_.signature != residentSignature_) heightCache_.valid = false;
   }
 
   // ── fast path ────────────────────────────────────────────────────────
@@ -726,91 +762,8 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   // detect this via result.geometrySignature and use their cached slot data.
   if (canFastPath) {
     result.draws.reserve(cachedDraws_.size());
-    const TileGPUResources* lastScanRes = nullptr;
     for (const auto& c : cachedDraws_) {
       lifecycle_.stampTileUsed(const_cast<TileGPUResources*>(c.res));
-
-      // Floor scan (run once per res so multi-primitive tiles aren't scanned
-      // twice). Skipped when the P5 cache hit above produced a usable value.
-      // Sample terrain at BOTH camera position and look-ahead position.
-      // Find lowest terrain at each position, then use the MAXIMUM of the two.
-      if (runFloorScan && c.res != lastScanRes) {
-        lastScanRes = c.res;
-        
-        // Check if camera position is in tile bounds
-        const bool camInside =
-            (c.wmTileBounds.x <= static_cast<float>(floorScanLonRad) &&
-             static_cast<float>(floorScanLonRad) <= c.wmTileBounds.z) &&
-            (c.wmTileBounds.y <= static_cast<float>(floorScanLatRad) &&
-             static_cast<float>(floorScanLatRad) <= c.wmTileBounds.w);
-        
-        // Check if look-ahead position is in tile bounds (when moving)
-        const bool aheadInside = useLookAhead && 
-            (c.wmTileBounds.x <= static_cast<float>(floorScanAheadLonRad) &&
-             static_cast<float>(floorScanAheadLonRad) <= c.wmTileBounds.z) &&
-            (c.wmTileBounds.y <= static_cast<float>(floorScanAheadLatRad) &&
-             static_cast<float>(floorScanAheadLatRad) <= c.wmTileBounds.w);
-        
-        if (camInside || aheadInside) {
-          // Track lowest terrain at each position separately
-          float terrainAtCam = std::numeric_limits<float>::max();
-          float terrainAhead = std::numeric_limits<float>::max();
-          bool foundAtCam = false;
-          bool foundAhead = false;
-          
-          for (const auto& prim : c.res->primitives) {
-            if (prim.altitudes.empty() || prim.localPositions.empty()) continue;
-            const size_t vc = prim.localPositions.size();
-            
-            for (size_t vi = 0; vi < vc; ++vi) {
-              const glm::dvec3 vECEF = glm::dvec3(prim.localPositions[vi]) + prim.rtcCenter;
-              const float vAlt = prim.altitudes[vi];
-              
-              // Sample terrain at camera position - find LOWEST
-              if (camInside) {
-                const glm::dvec3 deltaCam = vECEF - floorScanPos;
-                const double deCam = glm::dot(deltaCam, floorEast);
-                const double dnCam = glm::dot(deltaCam, floorNorth);
-                const double horizSqCam = deCam * deCam + dnCam * dnCam;
-                
-                if (horizSqCam <= kFloorSearchRadiusSq) {
-                  if (!foundAtCam || vAlt < terrainAtCam) {
-                    terrainAtCam = vAlt;
-                    foundAtCam = true;
-                  }
-                }
-              }
-              
-              // Sample terrain at look-ahead position - find LOWEST
-              if (aheadInside) {
-                const glm::dvec3 deltaAhead = vECEF - floorScanAheadPos;
-                const double deAhead = glm::dot(deltaAhead, floorEast);
-                const double dnAhead = glm::dot(deltaAhead, floorNorth);
-                const double horizSqAhead = deAhead * deAhead + dnAhead * dnAhead;
-                
-                if (horizSqAhead <= kFloorSearchRadiusSq) {
-                  if (!foundAhead || vAlt < terrainAhead) {
-                    terrainAhead = vAlt;
-                    foundAhead = true;
-                  }
-                }
-              }
-            }
-          }
-          
-          // Use the MAXIMUM of the two terrain samples (prevents clipping through either)
-          if (foundAtCam && foundAhead) {
-            bestTerrainFloor = std::max(terrainAtCam, terrainAhead);
-            floorScanFound = true;
-          } else if (foundAtCam) {
-            bestTerrainFloor = terrainAtCam;
-            floorScanFound = true;
-          } else if (foundAhead) {
-            bestTerrainFloor = terrainAhead;
-            floorScanFound = true;
-          }
-        }
-      }
 
       const glm::dvec3 rtcCamRel = c.rtcCenter - glm::dvec3(cameraPos);
       const glm::dmat4 translateD = glm::translate(glm::dmat4(1.0), rtcCamRel);
@@ -844,20 +797,6 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
     result.cameraLat = paramsFP.latitude;
     result.cameraLon = paramsFP.longitude;
     result.cameraAlt = paramsFP.altitude;
-
-    if (trackTerrainFloor && (floorScanFound || floorScanFromCache)) {
-      terrainFloorEllipsoidM_ = bestTerrainFloor;
-      terrainFloorValid_      = true;
-      // P5: refresh the floor cache on a fresh scan; skip when we hit the
-      // cache (the stored value already reflects this signature).
-      if (runFloorScan && signature != 0ULL) {
-        floorCacheValid_     = true;
-        floorCacheSignature_ = signature;
-        floorCacheCamLonDeg_ = camParams.longitude;
-        floorCacheCamLatDeg_ = camParams.latitude;
-        floorCacheValue_     = bestTerrainFloor;
-      }
-    }
 
     lifecycle_.advanceFrame();
     return;
@@ -894,74 +833,6 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
           static_cast<float>(rect.getSouth()),
           static_cast<float>(rect.getEast()),
           static_cast<float>(rect.getNorth()));
-
-      // ── Terrain floor: sample at both camera and look-ahead positions ────
-      // Find lowest terrain at each position, then use the MAXIMUM of the two.
-      // Suppressed when the cache returned a usable value.
-      const bool camInside = runFloorScan && 
-          rect.contains(CesiumGeospatial::Cartographic(floorScanLonRad, floorScanLatRad, 0.0));
-      const bool aheadInside = runFloorScan && useLookAhead &&
-          rect.contains(CesiumGeospatial::Cartographic(floorScanAheadLonRad, floorScanAheadLatRad, 0.0));
-      
-      if (camInside || aheadInside) {
-        // Track lowest terrain at each position separately
-        float terrainAtCam = std::numeric_limits<float>::max();
-        float terrainAhead = std::numeric_limits<float>::max();
-        bool foundAtCam = false;
-        bool foundAhead = false;
-        
-        for (const auto& prim : res->primitives) {
-          if (prim.altitudes.empty() || prim.localPositions.empty()) continue;
-          const size_t vertexCount = prim.localPositions.size();
-          
-          for (size_t vi = 0; vi < vertexCount; ++vi) {
-            const glm::dvec3 vECEF = glm::dvec3(prim.localPositions[vi]) + prim.rtcCenter;
-            const float vAlt = prim.altitudes[vi];
-            
-            // Sample terrain at camera position - find LOWEST
-            if (camInside) {
-              const glm::dvec3 deltaCam = vECEF - floorScanPos;
-              const double deCam = glm::dot(deltaCam, floorEast);
-              const double dnCam = glm::dot(deltaCam, floorNorth);
-              const double horizSqCam = deCam * deCam + dnCam * dnCam;
-              
-              if (horizSqCam <= kFloorSearchRadiusSq) {
-                if (!foundAtCam || vAlt < terrainAtCam) {
-                  terrainAtCam = vAlt;
-                  foundAtCam = true;
-                }
-              }
-            }
-            
-            // Sample terrain at look-ahead position - find LOWEST
-            if (aheadInside) {
-              const glm::dvec3 deltaAhead = vECEF - floorScanAheadPos;
-              const double deAhead = glm::dot(deltaAhead, floorEast);
-              const double dnAhead = glm::dot(deltaAhead, floorNorth);
-              const double horizSqAhead = deAhead * deAhead + dnAhead * dnAhead;
-              
-              if (horizSqAhead <= kFloorSearchRadiusSq) {
-                if (!foundAhead || vAlt < terrainAhead) {
-                  terrainAhead = vAlt;
-                  foundAhead = true;
-                }
-              }
-            }
-          }
-        }
-        
-        // Use the MAXIMUM of the two terrain samples (prevents clipping through either)
-        if (foundAtCam && foundAhead) {
-          bestTerrainFloor = std::max(terrainAtCam, terrainAhead);
-          floorScanFound = true;
-        } else if (foundAtCam) {
-          bestTerrainFloor = terrainAtCam;
-          floorScanFound = true;
-        } else if (foundAhead) {
-          bestTerrainFloor = terrainAhead;
-          floorScanFound = true;
-        }
-      }
     }
 
     for (const auto& prim : res->primitives) {
@@ -1208,29 +1079,6 @@ void CesiumEngine::updateFrame(double w, double h, FrameResult& result) {
   result.cameraLat     = params.latitude;
   result.cameraLon     = params.longitude;
   result.cameraAlt     = params.altitude;
-
-  if (trackTerrainFloor && (floorScanFound || floorScanFromCache)) {
-    terrainFloorEllipsoidM_ = bestTerrainFloor;
-    terrainFloorValid_      = true;
-    // refresh the floor cache on a fresh scan (slow path always runs a
-    // scan unless the cache short-circuit fired above). Only memoise when
-    // the geometry signature is stable enough to key on.
-    if (runFloorScan && signature != 0ULL) {
-      floorCacheValid_     = true;
-      floorCacheSignature_ = signature;
-      floorCacheCamLonDeg_ = camParams.longitude;
-      floorCacheCamLatDeg_ = camParams.latitude;
-      floorCacheValue_     = bestTerrainFloor;
-    } else if (!runFloorScan) {
-      // Cache hit on the slow path is unusual but possible (e.g. fade
-      // started this frame after a stable cache was warm). Nothing to do
-      // — terrainFloorEllipsoidM_ is already the cached value.
-    } else {
-      // Cannot key on signature=0; invalidate so the next stable frame
-      // re-populates the cache deterministically.
-      floorCacheValid_ = false;
-    }
-  }
 
   lifecycle_.advanceFrame();
 }

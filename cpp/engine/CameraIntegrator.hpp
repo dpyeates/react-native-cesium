@@ -73,11 +73,18 @@ public:
   // values and an instant runaway.
   CameraParams step();
 
-  // Terrain-floor write-back hook. Replaces the *actual* altitude value with
-  // `newAltMsl` and zeroes vertical velocity so the integrator does not
-  // immediately try to descend back through the floor. The *demand* altitude
-  // is left untouched — getDemand().altitude continues to reflect what the
-  // consumer asked for.
+  // Terrain floor in metres MSL. While active, the rendered altitude is never
+  // below this value. When the demand altitude is at or below the floor the
+  // camera rides it exactly (uphill and downhill), so a later setAltitude
+  // under the surface cannot pull the rendered camera back inside. Demand
+  // itself is left untouched.
+  void setTerrainFloor(double floorMsl);
+
+  // Drops the floor so the next slew or the next frame can establish a new
+  // one. Used by teleport().
+  void clearTerrainFloor();
+
+  // Sets the terrain floor to `newAltMsl`. Same as setTerrainFloor.
   void clampActualAltitude(double newAltMsl);
 
   // Runtime override of the rate caps (driven by view props). 0 = uncapped
@@ -122,9 +129,14 @@ private:
                               double alpha, double beta, bool wrapAngle);
 
   // Advance the running estimate to `now`, clamp velocity to `maxRateAbs`
-  // (per second; 0 = uncapped). For angles, the resulting value is also
-  // normalised to its canonical range by the caller as needed.
-  static void extrapolate(AlphaBeta& s, TimePoint now, double maxRateAbs, double demand);
+  // (per second; 0 = uncapped). `wrapAngle` makes the silence demand-pull
+  // take the short arc (longitude, heading, pitch, roll).
+  static void extrapolate(AlphaBeta& s, TimePoint now, double maxRateAbs,
+                          double demand, bool wrapAngle);
+
+  // Snap the rendered altitude onto the floor when the camera is in contact
+  // or currently below it. Demand is not modified.
+  void enforceTerrainFloor();
 
   mutable std::mutex mutex_;
 
@@ -141,6 +153,13 @@ private:
 
   // Runtime overrides; 0 = use compile-time defaults from EngineTunables.
   CameraRateCaps caps_{};
+
+  // Last step() timestamp. Drives the dt-based fov blend and view-correction
+  // slerp. Epoch means "no step yet".
+  TimePoint lastStep_{};
+
+  bool   terrainFloorActive_ = false;
+  double terrainFloorMsl_    = 0.0;
 };
 
 } // namespace reactnativecesium

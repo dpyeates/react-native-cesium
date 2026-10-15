@@ -1,7 +1,7 @@
 #include "CesiumBridgeAndroid.h"
 
 #include "engine/EngineTunables.hpp"
-#include "engine/GeoidConverter.hpp"
+#include "engine/TerrainFloor.hpp"
 #include "vulkan/VulkanBackend.h"
 
 #include <android/native_window_jni.h>
@@ -191,6 +191,7 @@ void CesiumBridgeAndroid::teleport(double lat, double lon, double alt,
   p.verticalFov    = vfov;
   p.viewCorrection = integrator_->getActual().viewCorrection;
   integrator_->teleport(p);
+  reactnativecesium::noteTerrainSlew(*integrator_, terrainLead_);
   engine_->camera().setParams(p);
   forceRender_.store(true, std::memory_order_release);
 }
@@ -309,20 +310,9 @@ void CesiumBridgeAndroid::renderFrame(double nowSeconds) {
   // The integrator owns its own clock — see CameraIntegrator::step().
   // `nowSeconds` is still used below for the metrics-only dt EMA.
   auto actual = integrator_->step();
-
-  // ── Terrain floor clamp ───────────────────────────────────────────────
-  const float minAbove = engine_->getConfig().minAltitudeAboveTerrain;
-  if (minAbove > 0.0f && engine_->terrainFloorKnown()) {
-    const double geoidN =
-        reactnativecesium::mslToEllipsoidMeters(actual.latitude, actual.longitude, 0.0);
-    const double floorMsl =
-        static_cast<double>(engine_->terrainFloorEllipsoidMeters()) - geoidN;
-    const double minMsl = floorMsl + static_cast<double>(minAbove);
-    if (actual.altitude < minMsl) {
-      integrator_->clampActualAltitude(minMsl);
-      actual.altitude = minMsl;
-    }
-  }
+  actual = reactnativecesium::applyTerrainFloor(
+      *engine_, *integrator_, actual, terrainLead_,
+      static_cast<double>(engine_->getConfig().minAltitudeAboveTerrain));
 
   engine_->camera().setParams(actual);
 

@@ -11,7 +11,9 @@
 
 #include "../CameraIntegrator.hpp"
 #include "../EngineTunables.hpp"
+#include "../TerrainHeight.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -189,6 +191,257 @@ static void testTerrainClamp() {
   CHECK(approxEq(demand.altitude, 100.0, 1e-6), "terrain_clamp.demand_preserved");
 }
 
+static void followFloors(const double* floors, int count, const char* label,
+                         bool expectRiseThenFall) {
+  CameraIntegrator integ;
+  CameraParams seed;
+  seed.altitude = floors[0];
+  integ.teleport(seed);
+  // A demand under every floor, plus a downward velocity sample, must not
+  // pull the rendered camera through the surface.
+  integ.setAltitude(0.0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  integ.setAltitude(0.0);
+
+  double prev = 0.0;
+  bool havePrev = false;
+  bool sawPeak = false;
+  for (int i = 0; i < count; ++i) {
+    const double floor = floors[i];
+    integ.setAltitude(0.0);
+    integ.setTerrainFloor(floor);
+    const CameraParams actual = integ.step();
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "%s.exact_%d", label, i);
+    CHECK(approxEq(actual.altitude, floor, 1e-6), buf);
+    CHECK(approxEq(integ.getDemand().altitude, 0.0, 1e-9), label);
+    if (havePrev) {
+      if (!expectRiseThenFall) {
+        std::snprintf(buf, sizeof(buf), "%s.monotonic_%d", label, i);
+        if (floors[i] > floors[i - 1]) {
+          CHECK(actual.altitude > prev - 1e-6, buf);
+        } else {
+          CHECK(actual.altitude < prev + 1e-6, buf);
+        }
+      }
+      if (expectRiseThenFall && floors[i] < floors[i - 1]) {
+        sawPeak = true;
+        std::snprintf(buf, sizeof(buf), "%s.descends_%d", label, i);
+        CHECK(actual.altitude < prev - 1e-6, buf);
+      }
+      if (expectRiseThenFall && sawPeak && floors[i] > floors[i - 1]) {
+        std::snprintf(buf, sizeof(buf), "%s.climbs_%d", label, i);
+        CHECK(actual.altitude > prev + 1e-6, buf);
+      }
+    }
+    prev = actual.altitude;
+    havePrev = true;
+  }
+}
+
+static void testUphillContact() {
+  const double floors[] = {100.0, 110.0, 120.0, 130.0};
+  followFloors(floors, 4, "uphill", false);
+}
+
+static void testDownhillContact() {
+  const double floors[] = {130.0, 120.0, 110.0, 100.0};
+  followFloors(floors, 4, "downhill", false);
+}
+
+static void testCrest() {
+  const double floors[] = {100.0, 110.0, 120.0, 110.0, 100.0};
+  followFloors(floors, 5, "crest", true);
+}
+
+static void testValley() {
+  const double floors[] = {120.0, 110.0, 100.0, 110.0, 120.0};
+  followFloors(floors, 5, "valley", true);
+
+  // Descent velocity must not carry the camera into the rising face.
+  CameraIntegrator integ;
+  CameraParams seed;
+  seed.altitude = 100.0;
+  integ.teleport(seed);
+  integ.clearTerrainFloor();
+  integ.setAltitude(0.0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  integ.setAltitude(0.0);
+  CHECK(integ.getActual().altitude < 100.0, "valley.velocity_descended");
+  integ.setTerrainFloor(110.0);
+  CHECK(approxEq(integ.getActual().altitude, 110.0, 1e-6), "valley.climb_exact");
+  CHECK(approxEq(integ.step().altitude, 110.0, 1e-6), "valley.climb_holds");
+}
+
+static void testSetAltitudeUnderFloor() {
+  CameraIntegrator integ;
+  CameraParams seed;
+  seed.altitude = 100.0;
+  integ.teleport(seed);
+  integ.setTerrainFloor(150.0);
+  integ.setAltitude(10.0);
+  CHECK(approxEq(integ.getActual().altitude, 150.0, 1e-6), "under_floor.actual");
+  CHECK(approxEq(integ.getDemand().altitude, 10.0, 1e-9), "under_floor.demand");
+  const CameraParams stepped = integ.step();
+  CHECK(approxEq(stepped.altitude, 150.0, 1e-6), "under_floor.after_step");
+}
+
+static void testIdleOnFloor() {
+  CameraIntegrator integ;
+  CameraParams seed;
+  seed.altitude = 100.0;
+  integ.teleport(seed);
+  integ.setTerrainFloor(150.0);
+  integ.setAltitude(40.0);
+  const CameraParams stepped = integ.step();
+  CHECK(approxEq(stepped.altitude, 150.0, 1e-6), "idle_floor.actual");
+  CHECK(!integ.isActive(), "idle_floor.inactive");
+}
+
+static void testFlyingAboveFloor() {
+  CameraIntegrator integ;
+  CameraParams seed;
+  seed.altitude = 500.0;
+  integ.teleport(seed);
+  integ.setTerrainFloor(100.0);
+  const CameraParams stepped = integ.step();
+  CHECK(approxEq(stepped.altitude, 500.0, 1e-3), "above_floor.untouched");
+  CHECK(approxEq(integ.getDemand().altitude, 500.0, 1e-9), "above_floor.demand");
+}
+
+static double wrap180(double deg) {
+  double v = std::fmod(deg + 180.0, 360.0);
+  if (v < 0.0) v += 360.0;
+  return v - 180.0;
+}
+
+static void testHeadingShortPull() {
+  CameraIntegrator integ;
+  CameraParams seed;
+  seed.heading = 350.0;
+  integ.teleport(seed);
+  integ.setHeading(10.0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(250));
+  bool onShortArc = true;
+  for (int i = 0; i < 90; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const double h = integ.step().heading;
+    if (!(h >= 330.0 || h <= 40.0)) onShortArc = false;
+  }
+  CHECK(onShortArc, "heading_pull.short_arc");
+  const double end = integ.getActual().heading;
+  const double err = std::abs(wrap180(end - 10.0));
+  CHECK(err < 2.0, "heading_pull.converged");
+}
+
+static void testLongitudeShortPull() {
+  CameraIntegrator integ;
+  CameraParams seed;
+  seed.longitude = 179.0;
+  integ.teleport(seed);
+  integ.setPosition(seed.latitude, -179.0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(250));
+  bool onShortArc = true;
+  for (int i = 0; i < 90; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const double wrapped = wrap180(integ.step().longitude);
+    if (!(std::abs(wrapped) > 90.0)) onShortArc = false;
+  }
+  CHECK(onShortArc, "lon_pull.short_arc");
+  const double err = std::abs(wrap180(integ.getActual().longitude - (-179.0)));
+  CHECK(err < 2.0, "lon_pull.converged");
+}
+
+static void testVerticalFovConverges() {
+  CameraIntegrator integ;
+  CameraParams seed;
+  seed.verticalFov = 60.0;
+  integ.teleport(seed);
+  integ.setVerticalFov(30.0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(16));
+  const double first = integ.step().verticalFov;
+  CHECK(first < 59.0 && first > 40.0, "vfov.first_step_eases");
+  CameraParams mid;
+  for (int i = 0; i < 80; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    mid = integ.step();
+  }
+  CHECK(approxEq(mid.verticalFov, 30.0, 0.5), "vfov.converged");
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  const double held = integ.step().verticalFov;
+  CHECK(approxEq(held, 30.0, 0.5), "vfov.stays");
+}
+
+static void testLeadAndTriangle() {
+  float out = 0.0f;
+  CHECK(resolveSurfaceEllipsoid(true, 100.0f, true, 90.0f, out) && out == 100.0f,
+        "lead.crest_no_sticky_peak");
+  CHECK(resolveSurfaceEllipsoid(true, 100.0f, true, 110.0f, out) && out == 110.0f,
+        "lead.valley_raises");
+  CHECK(resolveSurfaceEllipsoid(true, 120.0f, false, 0.0f, out) && out == 120.0f,
+        "lead.nadir_only");
+  CHECK(!resolveSurfaceEllipsoid(false, 0.0f, false, 0.0f, out), "lead.neither");
+
+  double lat = 0.0, lon = 0.0;
+  const bool slew = terrainLeadLatLon(0.0, 1.0, 0.0, 0.0, true, lat, lon);
+  CHECK(!slew, "lead.slew_ignored");
+
+  const bool step = terrainLeadLatLon(0.0, 0.0001, 0.0, 0.0, true, lat, lon);
+  CHECK(step, "lead.one_frame");
+  CHECK(approxEq(lat, 0.0, 1e-12), "lead.lat");
+  CHECK(approxEq(lon, 0.0002, 1e-9), "lead.lon_ahead");
+
+  float h = -1.0f;
+  const bool hit = horizontalTriangleHeight(
+      2.0, 2.0,
+      0.0, 0.0, 0.0f,
+      10.0, 0.0, 0.0f,
+      0.0, 10.0, 30.0f,
+      h);
+  CHECK(hit && approxEq(h, 6.0, 1e-3), "tri.interpolated");
+
+  float outside = 0.0f;
+  CHECK(!horizontalTriangleHeight(
+            20.0, 20.0,
+            0.0, 0.0, 0.0f,
+            10.0, 0.0, 0.0f,
+            0.0, 10.0, 30.0f,
+            outside),
+        "tri.outside");
+
+  float skirt = 0.0f;
+  CHECK(!horizontalTriangleHeight(
+            1.0, 0.0,
+            0.0, 0.0, 100.0f,
+            0.0, 0.0, 0.0f,
+            5.0, 0.0, 100.0f,
+            skirt),
+        "tri.skirt_rejected");
+  // 100 m edge, 1 mm of horizontal width: a float-error skirt, not terrain.
+  CHECK(!horizontalTriangleHeight(
+            0.0, 0.0005,
+            0.0, 0.0, 100.0f,
+            100.0, 0.0, 100.0f,
+            0.0, 0.001, 0.0f,
+            skirt),
+        "tri.thin_skirt_rejected");
+
+  float low = 0.0f, high = 0.0f;
+  const bool lowHit = horizontalTriangleHeight(
+      2.0, 2.0,
+      0.0, 0.0, 5.0f,
+      10.0, 0.0, 5.0f,
+      0.0, 10.0, 5.0f,
+      low);
+  const bool highHit = horizontalTriangleHeight(
+      2.0, 2.0,
+      0.0, 0.0, 20.0f,
+      10.0, 0.0, 20.0f,
+      0.0, 10.0, 20.0f,
+      high);
+  CHECK(lowHit && highHit && std::max(low, high) == 20.0f, "tri.overlap_keeps_higher");
+}
+
 int main() {
   testStepInput();
   testConstantVelocity();
@@ -196,6 +449,17 @@ int main() {
   testLongPause();
   testGestureEndBleed();
   testTerrainClamp();
+  testUphillContact();
+  testDownhillContact();
+  testCrest();
+  testValley();
+  testSetAltitudeUnderFloor();
+  testIdleOnFloor();
+  testFlyingAboveFloor();
+  testHeadingShortPull();
+  testLongitudeShortPull();
+  testVerticalFovConverges();
+  testLeadAndTriangle();
   if (g_failures == 0) {
     std::fprintf(stderr, "\nALL TESTS PASSED.\n");
   } else {

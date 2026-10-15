@@ -8,6 +8,7 @@
 #include "engine/CameraIntegrator.hpp"
 #include "engine/CesiumEngine.hpp"
 #include "engine/MetricsAggregator.hpp"
+#include "engine/TerrainFloor.hpp"
 
 struct ANativeWindow;
 
@@ -144,5 +145,6 @@ private:
 
   reactnativecesium::EngineConfig      config_;
   reactnativecesium::MetricsAggregator metrics_;
+  reactnativecesium::TerrainLeadState  terrainLead_{};
   double                               lastTickSeconds_ = 0.0;
 };

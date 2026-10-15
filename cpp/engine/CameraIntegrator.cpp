@@ -110,7 +110,7 @@ void CameraIntegrator::updateAlphaBeta(
 }
 
 void CameraIntegrator::extrapolate(
-    AlphaBeta& s, TimePoint now, double maxRateAbs, double demand) {
+    AlphaBeta& s, TimePoint now, double maxRateAbs, double demand, bool wrapAngle) {
   double dt = std::chrono::duration<double>(now - s.tState).count();
   if (dt <= 0.0) {
     s.tState = now;
@@ -166,8 +166,9 @@ void CameraIntegrator::extrapolate(
   // sensor streams always deliver a new update before the grace window
   // expires, so this term is never active for them.
   if (measurementsStopped && tunables::kDemandPullTauSec > 1.0e-6) {
-    s.value += (1.0 - std::exp(-dt / tunables::kDemandPullTauSec))
-               * (demand - s.value);
+    const double delta = wrapAngle ? shortAngleDeltaDeg(s.value, demand)
+                                   : (demand - s.value);
+    s.value += (1.0 - std::exp(-dt / tunables::kDemandPullTauSec)) * delta;
   }
 }
 
@@ -203,21 +204,11 @@ void CameraIntegrator::setAltitude(double altitudeMeters) {
   }
 
   altitudeMeters = std::min(altitudeMeters, kMaxAltMeters);
-  
-  // Adaptive alpha based on altitude error magnitude:
-  // - Large changes (pinch gesture, cliffs) → fast (α ≈ 0.7)
-  // - Small changes (gentle terrain) → smooth (α ≈ 0.3)
-  const double error = std::abs(altitudeMeters - alt_.value);
-  constexpr double kMinAlpha = 0.3;   // Smooth for small changes
-  constexpr double kMaxAlpha = 0.7;   // Fast for large changes
-  constexpr double kErrorScale = 20.0; // 20m error → max alpha
-  
-  const double adaptiveAlpha = kMinAlpha + (kMaxAlpha - kMinAlpha) * 
-                               std::min(error / kErrorScale, 1.0);
-  
+
   updateAlphaBeta(alt_, altitudeMeters, now,
-                  adaptiveAlpha, tunables::kBetaAlt, false);
+                  tunables::kAlphaAlt, tunables::kBetaAlt, false);
   demand_.altitude = altitudeMeters;
+  enforceTerrainFloor();
 }
 
 void CameraIntegrator::setHeading(double headingDeg) {
@@ -261,13 +252,8 @@ void CameraIntegrator::setViewCorrection(const glm::dquat& q) {
 }
 
 void CameraIntegrator::setVerticalFov(double degrees) {
-  const auto now = Clock::now();
   std::lock_guard<std::mutex> g(mutex_);
-
-  const double residual = degrees - vfov_.value;
-  vfov_.value   += tunables::kAlphaVfov * residual;
-  vfov_.velocity = 0.0;
-  vfov_.tState   = now;
+  demand_.verticalFov = degrees;
 }
 
 void CameraIntegrator::teleport(const CameraParams& target) {
@@ -305,6 +291,12 @@ void CameraIntegrator::teleport(const CameraParams& target) {
   if (demand_.verticalFov <= 0.0) {
     demand_.verticalFov = vfov_.value;
   }
+
+  // A slew lands on the requested altitude. The next rendered frame samples
+  // the terrain at the new position and establishes a new floor.
+  terrainFloorActive_ = false;
+  terrainFloorMsl_    = 0.0;
+  lastStep_           = now;
 }
 
 CameraParams CameraIntegrator::step() {
@@ -328,13 +320,27 @@ CameraParams CameraIntegrator::step() {
     latLonCapDegSec = glm::degrees(groundCap / kEarthMeanRadiusM);
   }
 
-  extrapolate(lat_,   now, latLonCapDegSec, demand_.latitude);
-  extrapolate(lon_,   now, latLonCapDegSec, demand_.longitude);
-  extrapolate(alt_,   now, climbCap,        demand_.altitude);
-  extrapolate(hdg_,   now, yawCap,          demand_.heading);
-  extrapolate(pitch_, now, pitchCap,        demand_.pitch);
-  extrapolate(roll_,  now, rollCap,         demand_.roll);
-  extrapolate(vfov_,  now, 0.0,             demand_.verticalFov);
+  extrapolate(lat_,   now, latLonCapDegSec, demand_.latitude,  false);
+  extrapolate(lon_,   now, latLonCapDegSec, demand_.longitude, true);
+  extrapolate(alt_,   now, climbCap,        demand_.altitude,  false);
+  extrapolate(hdg_,   now, yawCap,          demand_.heading,   true);
+  extrapolate(pitch_, now, pitchCap,        demand_.pitch,     true);
+  extrapolate(roll_,  now, rollCap,         demand_.roll,      true);
+
+  double frameDt = 0.0;
+  if (lastStep_.time_since_epoch().count() > 0) {
+    frameDt = std::chrono::duration<double>(now - lastStep_).count();
+    if (frameDt < 0.0) frameDt = 0.0;
+    if (frameDt > tunables::kMaxFrameDtSec) frameDt = tunables::kMaxFrameDtSec;
+  }
+  lastStep_ = now;
+
+  if (frameDt > 0.0 && tunables::kVfovTauSec > 1.0e-6) {
+    const double blend = 1.0 - std::exp(-frameDt / tunables::kVfovTauSec);
+    vfov_.value += blend * (demand_.verticalFov - vfov_.value);
+    vfov_.velocity = 0.0;
+    vfov_.tState = now;
+  }
 
   hdg_.value = wrap360(hdg_.value);
   lat_.value = std::clamp(lat_.value, -90.0, 90.0);
@@ -343,12 +349,19 @@ CameraParams CameraIntegrator::step() {
   // continuous value for short-arc maths and the camera transform doesn't
   // care.
 
-  // viewCorrection: SLERP toward the latest target.
+  // viewCorrection: time-based SLERP toward the latest target.
   glm::dquat cur = glm::normalize(viewCorrActual_);
   glm::dquat tgt = glm::normalize(viewCorrTarget_);
   if (glm::dot(cur, tgt) < 0.0) tgt = -tgt;
-  viewCorrActual_ = glm::normalize(
-      glm::slerp(cur, tgt, tunables::kAlphaViewCorr));
+  double slerpT = 1.0;
+  if (tunables::kViewCorrTauSec > 1.0e-6) {
+    slerpT = (frameDt > 0.0)
+                 ? (1.0 - std::exp(-frameDt / tunables::kViewCorrTauSec))
+                 : 0.0;
+  }
+  viewCorrActual_ = glm::normalize(glm::slerp(cur, tgt, slerpT));
+
+  enforceTerrainFloor();
 
   CameraParams out;
   out.latitude       = lat_.value;
@@ -362,23 +375,40 @@ CameraParams CameraIntegrator::step() {
   return out;
 }
 
-void CameraIntegrator::clampActualAltitude(double newAltMsl) {
-  const auto now = Clock::now();
+void CameraIntegrator::setTerrainFloor(double floorMsl) {
   std::lock_guard<std::mutex> g(mutex_);
-  
-  // Instead of snapping, feed the clamped altitude through the alpha-beta
-  // tracker for smooth interpolation. This matches how heading/pitch/roll work.
-  updateAlphaBeta(alt_, newAltMsl, now,
-                  tunables::kAlphaAlt, tunables::kBetaAlt, false);
-  
-  // Only clamp DOWNWARD velocity to prevent descending through terrain.
-  // Allow upward velocity for smooth ascents over rising terrain.
-  if (alt_.velocity < 0.0) {
+  if (!std::isfinite(floorMsl)) return;
+  terrainFloorActive_ = true;
+  terrainFloorMsl_ = std::min(floorMsl, kMaxAltMeters);
+  enforceTerrainFloor();
+}
+
+void CameraIntegrator::clearTerrainFloor() {
+  std::lock_guard<std::mutex> g(mutex_);
+  terrainFloorActive_ = false;
+  terrainFloorMsl_ = 0.0;
+}
+
+void CameraIntegrator::clampActualAltitude(double newAltMsl) {
+  setTerrainFloor(newAltMsl);
+}
+
+void CameraIntegrator::enforceTerrainFloor() {
+  if (!terrainFloorActive_) return;
+
+  const bool inContact =
+      demand_.altitude <= terrainFloorMsl_ + tunables::kEpsAltitudeMeters;
+  if (inContact) {
+    // Contour contact: the floor sample owns altitude, both directions.
+    // Residual vertical velocity would carry the camera into the next face.
+    alt_.value = terrainFloorMsl_;
     alt_.velocity = 0.0;
+    return;
   }
-  
-  // Do not touch demand_.altitude — getDemand() should still report what the
-  // user asked for.
+  if (alt_.value < terrainFloorMsl_) {
+    alt_.value = terrainFloorMsl_;
+    if (alt_.velocity < 0.0) alt_.velocity = 0.0;
+  }
 }
 
 void CameraIntegrator::setRateCaps(const CameraRateCaps& caps) {
@@ -410,7 +440,12 @@ bool CameraIntegrator::isActive() const {
   if (std::abs(demand_.latitude  - lat_.value)  > tunables::kEpsLatLon)         return true;
   if (std::abs(shortAngleDeltaDeg(lon_.value, demand_.longitude))
         > tunables::kEpsLatLon)                                                  return true;
-  if (std::abs(demand_.altitude  - alt_.value)  > tunables::kEpsAltitudeMeters) return true;
+  if (terrainFloorActive_ &&
+      demand_.altitude <= terrainFloorMsl_ + tunables::kEpsAltitudeMeters) {
+    if (std::abs(alt_.value - terrainFloorMsl_) > tunables::kEpsAltitudeMeters) return true;
+  } else if (std::abs(demand_.altitude - alt_.value) > tunables::kEpsAltitudeMeters) {
+    return true;
+  }
   if (angleAbsDeltaDeg(demand_.heading, hdg_.value) > tunables::kEpsAngleDeg)   return true;
   if (angleAbsDeltaDeg(demand_.pitch,   pitch_.value) > tunables::kEpsAngleDeg) return true;
   if (angleAbsDeltaDeg(demand_.roll,    roll_.value)  > tunables::kEpsAngleDeg) return true;

@@ -12,8 +12,10 @@
 #include <CesiumUtility/IntrusivePointer.h>
 
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace Cesium3DTilesSelection {
 class Tileset;
@@ -103,8 +105,9 @@ struct EngineConfig {
   int32_t taskProcessorThreads = 0;
 
   // ── Camera constraints ───────────────────────────────────────────────
-  // Minimum altitude above the loaded terrain surface (metres MSL).
-  // 0 = no constraint (default). Typical use: 2.0 to prevent going underground.
+  // Clearance above the rendered terrain surface, in metres. The floor is
+  // always enforced. 0 means the camera may sit on the surface and may not
+  // go below it.
   float minAltitudeAboveTerrain = 0.0f;
 };
 
@@ -142,11 +145,13 @@ public:
 
   const EngineConfig& getConfig() const { return config_; }
 
-  // Ellipsoid height (metres) of the terrain surface under the camera nadir,
-  // sampled from loaded tile meshes. Meaningless until terrainFloorKnown().
-  float terrainFloorEllipsoidMeters() const { return terrainFloorEllipsoidM_; }
-  // True after at least one frame has sampled the floor from real terrain tiles.
-  bool terrainFloorKnown() const { return terrainFloorValid_; }
+  // Ellipsoid height (metres) of the rendered terrain surface at lat/lon,
+  // interpolated from the finest resident tile. False when no triangle
+  // contains the point (tiles not loaded yet, or the point is off the mesh).
+  // Uses the tiles captured by the previous updateFrame.
+  bool sampleTerrainEllipsoidMeters(double latitudeDeg,
+                                    double longitudeDeg,
+                                    float& outEllipsoidMeters);
 
 private:
   void createTileset();
@@ -185,11 +190,6 @@ private:
   GlobeCamera          camera_;
   TileLifecycleManager lifecycle_;
 
-  // Ellipsoid height of the terrain surface at the camera nadir (horizontal
-  // nearest-neighbour sample). Only written after a successful tile scan.
-  float terrainFloorEllipsoidM_ = 0.0f;
-  bool  terrainFloorValid_      = false;
-
   // Wall-clock timestamp of the previous updateFrame call. Used to compute
   // deltaTime for Tileset::updateViewGroup, which drives LOD transition fading.
   // Zero-initialised "not yet set" state — first frame passes 0 deltaTime.
@@ -224,22 +224,32 @@ private:
   // is guaranteed to contain the right bytes — fast path becomes legal.
   int                     stableSigFrames_      = 0;
 
-  // ── terrain-floor scan cache ──────────────────────────────────────
-  // The minAltitudeAboveTerrain clamp scans every vertex of every tile whose
-  // bounding region contains the camera lon/lat and picks the altitude of
-  // the vertex with the smallest horizontal (ENU) distance to the camera
-  // nadir (tie-break: lower ellipsoid height). That's an O(NV)
-  // scan over the visible primitives — dominant CPU cost when the camera
-  // sits over a dense LOD chain. Result depends only on the camera lon/lat
-  // and the set of visible primitives, so we cache it keyed on
-  // (camLon, camLat, geometrySignature). Threshold of ~1e-6 degrees (~10 cm)
-  // is far below the inter-vertex spacing of the densest tiles served by
-  // Cesium Ion world terrain, so the cached nearest vertex stays correct.
-  bool     floorCacheValid_      = false;
-  double   floorCacheCamLonDeg_  = 0.0;
-  double   floorCacheCamLatDeg_  = 0.0;
-  uint64_t floorCacheSignature_  = 0;
-  float    floorCacheValue_      = 0.0f;
+  // Tiles drawn by the last updateFrame. The next frame's terrain query
+  // reads this list before updateViewGroup can free the previous selection.
+  struct ResidentTerrainTile {
+    const TileGPUResources* res = nullptr;
+    double geometricError = 0.0;
+    double west = 0.0;
+    double south = 0.0;
+    double east = 0.0;
+    double north = 0.0;
+  };
+  std::vector<ResidentTerrainTile> residentTiles_;
+  uint64_t                         residentSignature_ = 0;
+
+  // One-entry hover cache. Keyed by resident signature, finest-tile identity,
+  // and a sub-metre lat/lon cell. A miss scans that one tile's triangles.
+  struct TerrainHeightCache {
+    bool valid = false;
+    const TileGPUResources* tile = nullptr;
+    int latCell = 0;
+    int lonCell = 0;
+    uint64_t signature = 0;
+    float height = 0.0f;
+  };
+  TerrainHeightCache heightCache_;
+
+  void clearResidentTerrain();
 };
 
 } // namespace reactnativecesium

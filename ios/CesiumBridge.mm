@@ -4,8 +4,8 @@
 #include "engine/CameraIntegrator.hpp"
 #include "engine/CesiumEngine.hpp"
 #include "engine/EngineTunables.hpp"
-#include "engine/GeoidConverter.hpp"
 #include "engine/MetricsAggregator.hpp"
+#include "engine/TerrainFloor.hpp"
 #include "metal/MetalBackend.h"
 
 #include <glm/gtc/quaternion.hpp>
@@ -47,6 +47,8 @@
   // level — preventing the cascade of 5-second idle gaps between load phases.
   // Sentinel (epoch) means "no loading seen yet".
   std::chrono::steady_clock::time_point _lastLoadingTime;
+
+  reactnativecesium::TerrainLeadState _terrainLead;
 
   NSString* _cacheDir;
 }
@@ -230,6 +232,7 @@
   // jump, not a boresight reset. Use setViewCorrection(identity) to clear it.
   p.viewCorrection = _integrator->getActual().viewCorrection;
   _integrator->teleport(p);
+  reactnativecesium::noteTerrainSlew(*_integrator, _terrainLead);
   // Apply directly to the engine so the next render uses the teleported value
   // without one frame of "almost there" interpolation.
   _engine->camera().setParams(p);
@@ -382,32 +385,9 @@
     // The integrator owns its own clock now — see CameraIntegrator::step().
     // `nowSeconds` is still used below for the FPS-EMA dt only.
     auto actual = _integrator->step();
-
-    // ── Terrain floor following using integrator's alpha-beta smoothing ───
-    // Set demand altitude to terrain floor, let the integrator's alpha-beta
-    // tracker smoothly interpolate. The tracker already provides adaptive
-    // exponential easing (alpha=0.6, beta=0.05 in EngineTunables.hpp).
-    const float minAbove = _engine->getConfig().minAltitudeAboveTerrain;
-    if (minAbove > 0.0f && _engine->terrainFloorKnown()) {
-      const double geoidN =
-          reactnativecesium::mslToEllipsoidMeters(actual.latitude, actual.longitude, 0.0);
-      const double floorEllipsoid = static_cast<double>(_engine->terrainFloorEllipsoidMeters());
-      const double floorMsl = floorEllipsoid - geoidN;
-      const double minMsl = floorMsl + static_cast<double>(minAbove);
-
-      // Continuously update demand to follow terrain
-      const double demandAlt = _integrator->getDemand().altitude;
-      if (demandAlt <= 0.0) {
-        _integrator->setAltitude(minMsl);
-        actual = _integrator->getActual();
-      }
-      
-      // Safety floor: hard clamp if already below terrain (shouldn't happen with look-ahead)
-      if (actual.altitude < minMsl) {
-        _integrator->clampActualAltitude(minMsl);
-        actual = _integrator->getActual();
-      }
-    }
+    actual = reactnativecesium::applyTerrainFloor(
+        *_engine, *_integrator, actual, _terrainLead,
+        static_cast<double>(_engine->getConfig().minAltitudeAboveTerrain));
 
     _engine->camera().setParams(actual);
 

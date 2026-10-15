@@ -63,16 +63,17 @@ inline constexpr int32_t kDefaultLoadingDescendantLimit       = 20;
 // steady-state lag at constant motion) while remaining instant under a
 // 60 Hz gesture-driven worklet.
 //
-// `viewCorrection` (a unit quaternion) uses a single-coefficient SLERP toward
-// the latest demand each frame — there is no useful velocity concept for it.
-// `verticalFovDeg` is a 1-D scalar with α only (no velocity term).
+// `viewCorrection` (a unit quaternion) slerps toward the latest demand with a
+// time constant, so a single long frame does not close half the error.
+// `verticalFovDeg` eases toward its demand with the same kind of time constant
+// (no velocity term).
 inline constexpr double kAlphaPos    = 0.6;   inline constexpr double kBetaPos    = 0.05;
 inline constexpr double kAlphaAlt    = 0.6;   inline constexpr double kBetaAlt    = 0.05;
 inline constexpr double kAlphaHdg    = 0.55;  inline constexpr double kBetaHdg    = 0.05;
 inline constexpr double kAlphaPitch  = 0.75;  inline constexpr double kBetaPitch  = 0.05;
 inline constexpr double kAlphaRoll   = 0.75;  inline constexpr double kBetaRoll   = 0.05;
-inline constexpr double kAlphaVfov     = 0.4;   // no velocity term
-inline constexpr double kAlphaViewCorr = 0.5;   // SLERP toward target
+inline constexpr double kVfovTauSec      = 0.12; // seconds, dt-based blend
+inline constexpr double kViewCorrTauSec  = 0.08; // seconds, dt-based slerp
 
 // Convergence epsilons (used to decide when the integrator has settled and
 // the render loop can drop back to idle).
