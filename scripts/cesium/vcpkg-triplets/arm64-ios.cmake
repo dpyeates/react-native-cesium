@@ -11,4 +11,8 @@ set(VCPKG_CMAKE_SYSTEM_NAME iOS)
 # CMake defaults CMAKE_OSX_SYSROOT to the host MacOSX SDK and Clang builds with an invalid
 # --target=…-macabi mix (breaks ktx/astc-encoder on newer Xcode).
 set(VCPKG_OSX_SYSROOT iphoneos)
+# Xcode 27 libc++ warns (and ktx/astc-encoder builds with -Werror) when the
+# deployment target is below iOS 15. CMake's iOS default is 12.0. Match the
+# Cesium Native iOS build (CMAKE_OSX_DEPLOYMENT_TARGET=15.1).
+set(VCPKG_OSX_DEPLOYMENT_TARGET 15.1)
 set(VCPKG_CMAKE_CONFIGURE_OPTIONS "-DHAVE_PIPE2=OFF;-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY")

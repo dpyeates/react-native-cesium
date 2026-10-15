@@ -17,7 +17,7 @@ namespace margelo::nitro::reactnativecesium {
   using namespace facebook;
 
   /**
-   * The C++ JNI bridge between the C++ struct "CesiumMetrics" and the the Kotlin data class "CesiumMetrics".
+   * The C++ JNI bridge between the C++ struct "CesiumMetrics" and the Kotlin data class "CesiumMetrics".
    */
   struct JCesiumMetrics final: public jni::JavaClass<JCesiumMetrics> {
   public:

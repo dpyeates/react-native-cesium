@@ -15,153 +15,199 @@ namespace margelo::nitro::reactnativecesium::views {
 using namespace facebook;
 using ConcreteStateData = react::ConcreteState<HybridCesiumViewState>;
 
-void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> /* class */,
-                                           jni::alias_ref<JHybridCesiumViewSpec::JavaPart> javaView,
-                                           jni::alias_ref<JStateWrapper::javaobject> stateWrapperInterface) {
-  std::shared_ptr<JHybridCesiumViewSpec> hybridView = javaView->getJHybridCesiumViewSpec();
-
-  // Get concrete StateWrapperImpl from passed StateWrapper interface object
-  jobject rawStateWrapper = stateWrapperInterface.get();
-  if (!stateWrapperInterface->isInstanceOf(react::StateWrapperImpl::javaClassStatic())) [[unlikely]] {
-      throw std::runtime_error("StateWrapper is not a StateWrapperImpl");
+std::shared_ptr<const HybridCesiumViewProps> JHybridCesiumViewStateUpdater::getPropsFromStateWrapper(
+    jni::alias_ref<JStateWrapper::javaobject> stateWrapper) {
+  if (stateWrapper.get() == nullptr) {
+    return nullptr;
   }
-  auto stateWrapper = jni::alias_ref<react::StateWrapperImpl::javaobject>{
-            static_cast<react::StateWrapperImpl::javaobject>(rawStateWrapper)};
-  std::shared_ptr<const react::State> state = stateWrapper->cthis()->getState();
+  // Get concrete StateWrapperImpl from passed StateWrapper interface object
+  jobject rawStateWrapper = stateWrapper.get();
+  if (!stateWrapper->isInstanceOf(react::StateWrapperImpl::javaClassStatic())) [[unlikely]] {
+    throw std::runtime_error("StateWrapper is not a StateWrapperImpl");
+  }
+  auto stateWrapperImpl = jni::alias_ref<react::StateWrapperImpl::javaobject>{
+    static_cast<react::StateWrapperImpl::javaobject>(rawStateWrapper)
+  };
+  std::shared_ptr<const react::State> state = stateWrapperImpl->cthis()->getState();
+  if (state == nullptr) {
+    return nullptr;
+  }
   auto concreteState = std::static_pointer_cast<const ConcreteStateData>(state);
   const HybridCesiumViewState& data = concreteState->getData();
-  const std::shared_ptr<HybridCesiumViewProps>& props = data.getProps();
+  const std::shared_ptr<const HybridCesiumViewProps>& props = data.getProps();
   if (props == nullptr) [[unlikely]] {
-    // Props aren't set yet!
     throw std::runtime_error("HybridCesiumViewState's data doesn't contain any props!");
   }
+  return props;
+}
 
-  // Update all props if they are dirty
-  if (props->ionAccessToken.isDirty) {
-    hybridView->setIonAccessToken(props->ionAccessToken.value);
-    props->ionAccessToken.isDirty = false;
+void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> /* class */,
+                                           jni::alias_ref<JHybridCesiumViewSpec::JavaPart> javaView,
+                                           jni::alias_ref<JStateWrapper::javaobject> newState,
+                                           jni::alias_ref<JStateWrapper::javaobject> oldState) {
+  std::shared_ptr<JHybridCesiumViewSpec> hybridView = javaView->getJHybridCesiumViewSpec();
+  std::shared_ptr<const HybridCesiumViewProps> newProps = getPropsFromStateWrapper(newState);
+  std::shared_ptr<const HybridCesiumViewProps> oldProps = getPropsFromStateWrapper(oldState);
+  if (newProps == nullptr) [[unlikely]] {
+    throw std::runtime_error("Current StateWrapper doesn't contain any props!");
   }
-  if (props->ionAssetId.isDirty) {
-    hybridView->setIonAssetId(props->ionAssetId.value);
-    props->ionAssetId.isDirty = false;
+
+  // Update only props that differ from the previous State snapshot.
+  if (oldProps == nullptr
+        ? newProps->ionAccessToken.isProvided()
+        : !newProps->ionAccessToken.hasSameValue(oldProps->ionAccessToken)) {
+    hybridView->setIonAccessToken(newProps->ionAccessToken.get());
   }
-  if (props->initialCamera.isDirty) {
-    hybridView->setInitialCamera(props->initialCamera.value);
-    props->initialCamera.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->ionAssetId.isProvided()
+        : !newProps->ionAssetId.hasSameValue(oldProps->ionAssetId)) {
+    hybridView->setIonAssetId(newProps->ionAssetId.get());
   }
-  if (props->pauseRendering.isDirty) {
-    hybridView->setPauseRendering(props->pauseRendering.value);
-    props->pauseRendering.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->initialCamera.isProvided()
+        : !newProps->initialCamera.hasSameValue(oldProps->initialCamera)) {
+    hybridView->setInitialCamera(newProps->initialCamera.get());
   }
-  if (props->maximumScreenSpaceError.isDirty) {
-    hybridView->setMaximumScreenSpaceError(props->maximumScreenSpaceError.value);
-    props->maximumScreenSpaceError.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->pauseRendering.isProvided()
+        : !newProps->pauseRendering.hasSameValue(oldProps->pauseRendering)) {
+    hybridView->setPauseRendering(newProps->pauseRendering.get());
   }
-  if (props->maximumSimultaneousTileLoads.isDirty) {
-    hybridView->setMaximumSimultaneousTileLoads(props->maximumSimultaneousTileLoads.value);
-    props->maximumSimultaneousTileLoads.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->maximumScreenSpaceError.isProvided()
+        : !newProps->maximumScreenSpaceError.hasSameValue(oldProps->maximumScreenSpaceError)) {
+    hybridView->setMaximumScreenSpaceError(newProps->maximumScreenSpaceError.get());
   }
-  if (props->loadingDescendantLimit.isDirty) {
-    hybridView->setLoadingDescendantLimit(props->loadingDescendantLimit.value);
-    props->loadingDescendantLimit.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->maximumSimultaneousTileLoads.isProvided()
+        : !newProps->maximumSimultaneousTileLoads.hasSameValue(oldProps->maximumSimultaneousTileLoads)) {
+    hybridView->setMaximumSimultaneousTileLoads(newProps->maximumSimultaneousTileLoads.get());
   }
-  if (props->msaaSampleCount.isDirty) {
-    hybridView->setMsaaSampleCount(props->msaaSampleCount.value);
-    props->msaaSampleCount.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->loadingDescendantLimit.isProvided()
+        : !newProps->loadingDescendantLimit.hasSameValue(oldProps->loadingDescendantLimit)) {
+    hybridView->setLoadingDescendantLimit(newProps->loadingDescendantLimit.get());
   }
-  if (props->ionImageryAssetId.isDirty) {
-    hybridView->setIonImageryAssetId(props->ionImageryAssetId.value);
-    props->ionImageryAssetId.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->msaaSampleCount.isProvided()
+        : !newProps->msaaSampleCount.hasSameValue(oldProps->msaaSampleCount)) {
+    hybridView->setMsaaSampleCount(newProps->msaaSampleCount.get());
   }
-  if (props->maximumCachedMiB.isDirty) {
-    hybridView->setMaximumCachedMiB(props->maximumCachedMiB.value);
-    props->maximumCachedMiB.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->ionImageryAssetId.isProvided()
+        : !newProps->ionImageryAssetId.hasSameValue(oldProps->ionImageryAssetId)) {
+    hybridView->setIonImageryAssetId(newProps->ionImageryAssetId.get());
   }
-  if (props->preloadAncestors.isDirty) {
-    hybridView->setPreloadAncestors(props->preloadAncestors.value);
-    props->preloadAncestors.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->maximumCachedMiB.isProvided()
+        : !newProps->maximumCachedMiB.hasSameValue(oldProps->maximumCachedMiB)) {
+    hybridView->setMaximumCachedMiB(newProps->maximumCachedMiB.get());
   }
-  if (props->preloadSiblings.isDirty) {
-    hybridView->setPreloadSiblings(props->preloadSiblings.value);
-    props->preloadSiblings.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->preloadAncestors.isProvided()
+        : !newProps->preloadAncestors.hasSameValue(oldProps->preloadAncestors)) {
+    hybridView->setPreloadAncestors(newProps->preloadAncestors.get());
   }
-  if (props->forbidHoles.isDirty) {
-    hybridView->setForbidHoles(props->forbidHoles.value);
-    props->forbidHoles.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->preloadSiblings.isProvided()
+        : !newProps->preloadSiblings.hasSameValue(oldProps->preloadSiblings)) {
+    hybridView->setPreloadSiblings(newProps->preloadSiblings.get());
   }
-  if (props->enableWaterMask.isDirty) {
-    hybridView->setEnableWaterMask(props->enableWaterMask.value);
-    props->enableWaterMask.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->forbidHoles.isProvided()
+        : !newProps->forbidHoles.hasSameValue(oldProps->forbidHoles)) {
+    hybridView->setForbidHoles(newProps->forbidHoles.get());
   }
-  if (props->enableFogCulling.isDirty) {
-    hybridView->setEnableFogCulling(props->enableFogCulling.value);
-    props->enableFogCulling.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->enableWaterMask.isProvided()
+        : !newProps->enableWaterMask.hasSameValue(oldProps->enableWaterMask)) {
+    hybridView->setEnableWaterMask(newProps->enableWaterMask.get());
   }
-  if (props->enforceCulledScreenSpaceError.isDirty) {
-    hybridView->setEnforceCulledScreenSpaceError(props->enforceCulledScreenSpaceError.value);
-    props->enforceCulledScreenSpaceError.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->enableFogCulling.isProvided()
+        : !newProps->enableFogCulling.hasSameValue(oldProps->enableFogCulling)) {
+    hybridView->setEnableFogCulling(newProps->enableFogCulling.get());
   }
-  if (props->culledScreenSpaceError.isDirty) {
-    hybridView->setCulledScreenSpaceError(props->culledScreenSpaceError.value);
-    props->culledScreenSpaceError.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->enforceCulledScreenSpaceError.isProvided()
+        : !newProps->enforceCulledScreenSpaceError.hasSameValue(oldProps->enforceCulledScreenSpaceError)) {
+    hybridView->setEnforceCulledScreenSpaceError(newProps->enforceCulledScreenSpaceError.get());
   }
-  if (props->enableLodTransitionPeriod.isDirty) {
-    hybridView->setEnableLodTransitionPeriod(props->enableLodTransitionPeriod.value);
-    props->enableLodTransitionPeriod.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->culledScreenSpaceError.isProvided()
+        : !newProps->culledScreenSpaceError.hasSameValue(oldProps->culledScreenSpaceError)) {
+    hybridView->setCulledScreenSpaceError(newProps->culledScreenSpaceError.get());
   }
-  if (props->lodTransitionLength.isDirty) {
-    hybridView->setLodTransitionLength(props->lodTransitionLength.value);
-    props->lodTransitionLength.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->enableLodTransitionPeriod.isProvided()
+        : !newProps->enableLodTransitionPeriod.hasSameValue(oldProps->enableLodTransitionPeriod)) {
+    hybridView->setEnableLodTransitionPeriod(newProps->enableLodTransitionPeriod.get());
   }
-  if (props->sqliteCacheMaxRows.isDirty) {
-    hybridView->setSqliteCacheMaxRows(props->sqliteCacheMaxRows.value);
-    props->sqliteCacheMaxRows.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->lodTransitionLength.isProvided()
+        : !newProps->lodTransitionLength.hasSameValue(oldProps->lodTransitionLength)) {
+    hybridView->setLodTransitionLength(newProps->lodTransitionLength.get());
   }
-  if (props->taskProcessorThreads.isDirty) {
-    hybridView->setTaskProcessorThreads(props->taskProcessorThreads.value);
-    props->taskProcessorThreads.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->sqliteCacheMaxRows.isProvided()
+        : !newProps->sqliteCacheMaxRows.hasSameValue(oldProps->sqliteCacheMaxRows)) {
+    hybridView->setSqliteCacheMaxRows(newProps->sqliteCacheMaxRows.get());
   }
-  if (props->minAltitudeAboveTerrain.isDirty) {
-    hybridView->setMinAltitudeAboveTerrain(props->minAltitudeAboveTerrain.value);
-    props->minAltitudeAboveTerrain.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->taskProcessorThreads.isProvided()
+        : !newProps->taskProcessorThreads.hasSameValue(oldProps->taskProcessorThreads)) {
+    hybridView->setTaskProcessorThreads(newProps->taskProcessorThreads.get());
   }
-  if (props->maxYawRateDegSec.isDirty) {
-    hybridView->setMaxYawRateDegSec(props->maxYawRateDegSec.value);
-    props->maxYawRateDegSec.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->minAltitudeAboveTerrain.isProvided()
+        : !newProps->minAltitudeAboveTerrain.hasSameValue(oldProps->minAltitudeAboveTerrain)) {
+    hybridView->setMinAltitudeAboveTerrain(newProps->minAltitudeAboveTerrain.get());
   }
-  if (props->maxPitchRateDegSec.isDirty) {
-    hybridView->setMaxPitchRateDegSec(props->maxPitchRateDegSec.value);
-    props->maxPitchRateDegSec.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->maxYawRateDegSec.isProvided()
+        : !newProps->maxYawRateDegSec.hasSameValue(oldProps->maxYawRateDegSec)) {
+    hybridView->setMaxYawRateDegSec(newProps->maxYawRateDegSec.get());
   }
-  if (props->maxRollRateDegSec.isDirty) {
-    hybridView->setMaxRollRateDegSec(props->maxRollRateDegSec.value);
-    props->maxRollRateDegSec.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->maxPitchRateDegSec.isProvided()
+        : !newProps->maxPitchRateDegSec.hasSameValue(oldProps->maxPitchRateDegSec)) {
+    hybridView->setMaxPitchRateDegSec(newProps->maxPitchRateDegSec.get());
   }
-  if (props->maxClimbRateMps.isDirty) {
-    hybridView->setMaxClimbRateMps(props->maxClimbRateMps.value);
-    props->maxClimbRateMps.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->maxRollRateDegSec.isProvided()
+        : !newProps->maxRollRateDegSec.hasSameValue(oldProps->maxRollRateDegSec)) {
+    hybridView->setMaxRollRateDegSec(newProps->maxRollRateDegSec.get());
   }
-  if (props->maxGroundSpeedMps.isDirty) {
-    hybridView->setMaxGroundSpeedMps(props->maxGroundSpeedMps.value);
-    props->maxGroundSpeedMps.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->maxClimbRateMps.isProvided()
+        : !newProps->maxClimbRateMps.hasSameValue(oldProps->maxClimbRateMps)) {
+    hybridView->setMaxClimbRateMps(newProps->maxClimbRateMps.get());
   }
-  if (props->onMetrics.isDirty) {
-    hybridView->setOnMetrics(props->onMetrics.value);
-    props->onMetrics.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->maxGroundSpeedMps.isProvided()
+        : !newProps->maxGroundSpeedMps.hasSameValue(oldProps->maxGroundSpeedMps)) {
+    hybridView->setMaxGroundSpeedMps(newProps->maxGroundSpeedMps.get());
   }
-  if (props->onActualCamera.isDirty) {
-    hybridView->setOnActualCamera(props->onActualCamera.value);
-    props->onActualCamera.isDirty = false;
+  if (oldProps == nullptr
+        ? newProps->onMetrics.isProvided()
+        : !newProps->onMetrics.hasSameValue(oldProps->onMetrics)) {
+    hybridView->setOnMetrics(newProps->onMetrics.get());
+  }
+  if (oldProps == nullptr
+        ? newProps->onActualCamera.isProvided()
+        : !newProps->onActualCamera.hasSameValue(oldProps->onActualCamera)) {
+    hybridView->setOnActualCamera(newProps->onActualCamera.get());
   }
 
   // Update hybridRef if it changed
-  if (props->hybridRef.isDirty) {
+  if (oldProps == nullptr
+        ? newProps->hybridRef.isProvided()
+        : !newProps->hybridRef.hasSameValue(oldProps->hybridRef)) {
     // hybridRef changed - call it with new this
-    const auto& maybeFunc = props->hybridRef.value;
+    const auto& maybeFunc = newProps->hybridRef.get();
     if (maybeFunc.has_value()) {
       maybeFunc.value()(hybridView);
     }
-    props->hybridRef.isDirty = false;
   }
 }
 

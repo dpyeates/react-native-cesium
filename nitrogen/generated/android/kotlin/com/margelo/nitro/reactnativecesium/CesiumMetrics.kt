@@ -59,7 +59,7 @@ data class CesiumMetrics(
   }
 
   override fun hashCode(): Int {
-    return arrayOf(
+    return arrayOf<Any?>(
       fps,
       tilesRendered,
       tilesLoading,

@@ -17,7 +17,7 @@ namespace margelo::nitro::reactnativecesium {
   using namespace facebook;
 
   /**
-   * The C++ JNI bridge between the C++ struct "CameraState" and the the Kotlin data class "CameraState".
+   * The C++ JNI bridge between the C++ struct "CameraState" and the Kotlin data class "CameraState".
    */
   struct JCameraState final: public jni::JavaClass<JCameraState> {
   public:

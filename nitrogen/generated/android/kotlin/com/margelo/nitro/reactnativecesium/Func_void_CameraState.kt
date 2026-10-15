@@ -10,7 +10,6 @@ package com.margelo.nitro.reactnativecesium
 import androidx.annotation.Keep
 import com.facebook.jni.HybridData
 import com.facebook.proguard.annotations.DoNotStrip
-import dalvik.annotation.optimization.FastNative
 
 
 /**
@@ -59,7 +58,6 @@ class Func_void_CameraState_cxx: Func_void_CameraState {
   override fun invoke(camera: CameraState): Unit
     = invoke_cxx(camera)
 
-  @FastNative
   private external fun invoke_cxx(camera: CameraState): Unit
 }
 

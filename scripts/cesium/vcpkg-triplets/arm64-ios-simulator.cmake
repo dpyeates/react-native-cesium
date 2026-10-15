@@ -7,4 +7,7 @@ set(VCPKG_CRT_LINKAGE dynamic)
 set(VCPKG_LIBRARY_LINKAGE static)
 set(VCPKG_CMAKE_SYSTEM_NAME iOS)
 set(VCPKG_OSX_SYSROOT iphonesimulator)
+# Same iOS 15.1 floor as arm64-ios: Xcode 27 libc++ rejects older deployment
+# targets under -Werror (ktx/astc-encoder).
+set(VCPKG_OSX_DEPLOYMENT_TARGET 15.1)
 set(VCPKG_CMAKE_CONFIGURE_OPTIONS "-DHAVE_PIPE2=OFF;-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY")

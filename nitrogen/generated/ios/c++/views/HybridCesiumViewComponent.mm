@@ -37,6 +37,7 @@ using namespace margelo::nitro::reactnativecesium::views;
 
 @implementation HybridCesiumViewComponent {
   std::shared_ptr<HybridCesiumViewSpecSwift> _hybridView;
+  BOOL _didDropView;
 }
 
 + (void) load {
@@ -50,6 +51,7 @@ using namespace margelo::nitro::reactnativecesium::views;
 
 - (instancetype) init {
   if (self = [super init]) {
+    _props = HybridCesiumViewShadowNode::defaultSharedProps();
     std::shared_ptr<HybridCesiumViewSpec> hybridView = ReactNativeCesium::ReactNativeCesiumAutolinking::createCesiumView();
     _hybridView = std::dynamic_pointer_cast<HybridCesiumViewSpecSwift>(hybridView);
     [self updateView];
@@ -69,175 +71,223 @@ using namespace margelo::nitro::reactnativecesium::views;
   [self setContentView:view];
 }
 
+- (void) notifyOnDropView {
+  // A recycled component can later be invalidated. Notify only once per mount.
+  if (_didDropView) {
+    return;
+  }
+  ReactNativeCesium::HybridCesiumViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
+  swiftPart.onDropView();
+  _didDropView = YES;
+}
+
 - (void) updateProps:(const std::shared_ptr<const react::Props>&)props
             oldProps:(const std::shared_ptr<const react::Props>&)oldProps {
+  // A props update marks a newly mounted or still-active component.
+  _didDropView = NO;
+
   // 1. Downcast props
-  const auto& newViewPropsConst = *std::static_pointer_cast<HybridCesiumViewProps const>(props);
-  auto& newViewProps = const_cast<HybridCesiumViewProps&>(newViewPropsConst);
+  const auto& newViewProps = *std::static_pointer_cast<const HybridCesiumViewProps>(props);
+  const auto* oldViewProps = static_cast<const HybridCesiumViewProps*>(oldProps.get());
   ReactNativeCesium::HybridCesiumViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
 
-  // 2. Update each prop individually
-  swiftPart.beforeUpdate();
+  // 2. Update only props that differ from the previous Props snapshot.
+  const bool hasTransactionPropChanges = oldViewProps == nullptr
+      ? newViewProps.hasAnyProvidedProps()
+      : !newViewProps.hasSameProps(*oldViewProps);
+  if (hasTransactionPropChanges) {
+    swiftPart.beforeUpdate();
 
-  // ionAccessToken: string
-  if (newViewProps.ionAccessToken.isDirty) {
-    swiftPart.setIonAccessToken(newViewProps.ionAccessToken.value);
-    newViewProps.ionAccessToken.isDirty = false;
-  }
-  // ionAssetId: number
-  if (newViewProps.ionAssetId.isDirty) {
-    swiftPart.setIonAssetId(newViewProps.ionAssetId.value);
-    newViewProps.ionAssetId.isDirty = false;
-  }
-  // initialCamera: struct
-  if (newViewProps.initialCamera.isDirty) {
-    swiftPart.setInitialCamera(newViewProps.initialCamera.value);
-    newViewProps.initialCamera.isDirty = false;
-  }
-  // pauseRendering: boolean
-  if (newViewProps.pauseRendering.isDirty) {
-    swiftPart.setPauseRendering(newViewProps.pauseRendering.value);
-    newViewProps.pauseRendering.isDirty = false;
-  }
-  // maximumScreenSpaceError: number
-  if (newViewProps.maximumScreenSpaceError.isDirty) {
-    swiftPart.setMaximumScreenSpaceError(newViewProps.maximumScreenSpaceError.value);
-    newViewProps.maximumScreenSpaceError.isDirty = false;
-  }
-  // maximumSimultaneousTileLoads: number
-  if (newViewProps.maximumSimultaneousTileLoads.isDirty) {
-    swiftPart.setMaximumSimultaneousTileLoads(newViewProps.maximumSimultaneousTileLoads.value);
-    newViewProps.maximumSimultaneousTileLoads.isDirty = false;
-  }
-  // loadingDescendantLimit: number
-  if (newViewProps.loadingDescendantLimit.isDirty) {
-    swiftPart.setLoadingDescendantLimit(newViewProps.loadingDescendantLimit.value);
-    newViewProps.loadingDescendantLimit.isDirty = false;
-  }
-  // msaaSampleCount: number
-  if (newViewProps.msaaSampleCount.isDirty) {
-    swiftPart.setMsaaSampleCount(newViewProps.msaaSampleCount.value);
-    newViewProps.msaaSampleCount.isDirty = false;
-  }
-  // ionImageryAssetId: number
-  if (newViewProps.ionImageryAssetId.isDirty) {
-    swiftPart.setIonImageryAssetId(newViewProps.ionImageryAssetId.value);
-    newViewProps.ionImageryAssetId.isDirty = false;
-  }
-  // maximumCachedMiB: optional
-  if (newViewProps.maximumCachedMiB.isDirty) {
-    swiftPart.setMaximumCachedMiB(newViewProps.maximumCachedMiB.value);
-    newViewProps.maximumCachedMiB.isDirty = false;
-  }
-  // preloadAncestors: optional
-  if (newViewProps.preloadAncestors.isDirty) {
-    swiftPart.setPreloadAncestors(newViewProps.preloadAncestors.value);
-    newViewProps.preloadAncestors.isDirty = false;
-  }
-  // preloadSiblings: optional
-  if (newViewProps.preloadSiblings.isDirty) {
-    swiftPart.setPreloadSiblings(newViewProps.preloadSiblings.value);
-    newViewProps.preloadSiblings.isDirty = false;
-  }
-  // forbidHoles: optional
-  if (newViewProps.forbidHoles.isDirty) {
-    swiftPart.setForbidHoles(newViewProps.forbidHoles.value);
-    newViewProps.forbidHoles.isDirty = false;
-  }
-  // enableWaterMask: optional
-  if (newViewProps.enableWaterMask.isDirty) {
-    swiftPart.setEnableWaterMask(newViewProps.enableWaterMask.value);
-    newViewProps.enableWaterMask.isDirty = false;
-  }
-  // enableFogCulling: optional
-  if (newViewProps.enableFogCulling.isDirty) {
-    swiftPart.setEnableFogCulling(newViewProps.enableFogCulling.value);
-    newViewProps.enableFogCulling.isDirty = false;
-  }
-  // enforceCulledScreenSpaceError: optional
-  if (newViewProps.enforceCulledScreenSpaceError.isDirty) {
-    swiftPart.setEnforceCulledScreenSpaceError(newViewProps.enforceCulledScreenSpaceError.value);
-    newViewProps.enforceCulledScreenSpaceError.isDirty = false;
-  }
-  // culledScreenSpaceError: optional
-  if (newViewProps.culledScreenSpaceError.isDirty) {
-    swiftPart.setCulledScreenSpaceError(newViewProps.culledScreenSpaceError.value);
-    newViewProps.culledScreenSpaceError.isDirty = false;
-  }
-  // enableLodTransitionPeriod: optional
-  if (newViewProps.enableLodTransitionPeriod.isDirty) {
-    swiftPart.setEnableLodTransitionPeriod(newViewProps.enableLodTransitionPeriod.value);
-    newViewProps.enableLodTransitionPeriod.isDirty = false;
-  }
-  // lodTransitionLength: optional
-  if (newViewProps.lodTransitionLength.isDirty) {
-    swiftPart.setLodTransitionLength(newViewProps.lodTransitionLength.value);
-    newViewProps.lodTransitionLength.isDirty = false;
-  }
-  // sqliteCacheMaxRows: optional
-  if (newViewProps.sqliteCacheMaxRows.isDirty) {
-    swiftPart.setSqliteCacheMaxRows(newViewProps.sqliteCacheMaxRows.value);
-    newViewProps.sqliteCacheMaxRows.isDirty = false;
-  }
-  // taskProcessorThreads: optional
-  if (newViewProps.taskProcessorThreads.isDirty) {
-    swiftPart.setTaskProcessorThreads(newViewProps.taskProcessorThreads.value);
-    newViewProps.taskProcessorThreads.isDirty = false;
-  }
-  // minAltitudeAboveTerrain: optional
-  if (newViewProps.minAltitudeAboveTerrain.isDirty) {
-    swiftPart.setMinAltitudeAboveTerrain(newViewProps.minAltitudeAboveTerrain.value);
-    newViewProps.minAltitudeAboveTerrain.isDirty = false;
-  }
-  // maxYawRateDegSec: optional
-  if (newViewProps.maxYawRateDegSec.isDirty) {
-    swiftPart.setMaxYawRateDegSec(newViewProps.maxYawRateDegSec.value);
-    newViewProps.maxYawRateDegSec.isDirty = false;
-  }
-  // maxPitchRateDegSec: optional
-  if (newViewProps.maxPitchRateDegSec.isDirty) {
-    swiftPart.setMaxPitchRateDegSec(newViewProps.maxPitchRateDegSec.value);
-    newViewProps.maxPitchRateDegSec.isDirty = false;
-  }
-  // maxRollRateDegSec: optional
-  if (newViewProps.maxRollRateDegSec.isDirty) {
-    swiftPart.setMaxRollRateDegSec(newViewProps.maxRollRateDegSec.value);
-    newViewProps.maxRollRateDegSec.isDirty = false;
-  }
-  // maxClimbRateMps: optional
-  if (newViewProps.maxClimbRateMps.isDirty) {
-    swiftPart.setMaxClimbRateMps(newViewProps.maxClimbRateMps.value);
-    newViewProps.maxClimbRateMps.isDirty = false;
-  }
-  // maxGroundSpeedMps: optional
-  if (newViewProps.maxGroundSpeedMps.isDirty) {
-    swiftPart.setMaxGroundSpeedMps(newViewProps.maxGroundSpeedMps.value);
-    newViewProps.maxGroundSpeedMps.isDirty = false;
-  }
-  // onMetrics: optional
-  if (newViewProps.onMetrics.isDirty) {
-    swiftPart.setOnMetrics(newViewProps.onMetrics.value);
-    newViewProps.onMetrics.isDirty = false;
-  }
-  // onActualCamera: optional
-  if (newViewProps.onActualCamera.isDirty) {
-    swiftPart.setOnActualCamera(newViewProps.onActualCamera.value);
-    newViewProps.onActualCamera.isDirty = false;
-  }
-
-  swiftPart.afterUpdate();
-
-  // 3. Update hybridRef if it changed
-  if (newViewProps.hybridRef.isDirty) {
-    // hybridRef changed - call it with new this
-    const auto& maybeFunc = newViewProps.hybridRef.value;
-    if (maybeFunc.has_value()) {
-      maybeFunc.value()(_hybridView);
+    // ionAccessToken: string
+    if (oldViewProps == nullptr
+          ? newViewProps.ionAccessToken.isProvided()
+          : !newViewProps.ionAccessToken.hasSameValue(oldViewProps->ionAccessToken)) {
+      swiftPart.setIonAccessToken(newViewProps.ionAccessToken.get());
     }
-    newViewProps.hybridRef.isDirty = false;
+    // ionAssetId: number
+    if (oldViewProps == nullptr
+          ? newViewProps.ionAssetId.isProvided()
+          : !newViewProps.ionAssetId.hasSameValue(oldViewProps->ionAssetId)) {
+      swiftPart.setIonAssetId(newViewProps.ionAssetId.get());
+    }
+    // initialCamera: struct
+    if (oldViewProps == nullptr
+          ? newViewProps.initialCamera.isProvided()
+          : !newViewProps.initialCamera.hasSameValue(oldViewProps->initialCamera)) {
+      swiftPart.setInitialCamera(newViewProps.initialCamera.get());
+    }
+    // pauseRendering: boolean
+    if (oldViewProps == nullptr
+          ? newViewProps.pauseRendering.isProvided()
+          : !newViewProps.pauseRendering.hasSameValue(oldViewProps->pauseRendering)) {
+      swiftPart.setPauseRendering(newViewProps.pauseRendering.get());
+    }
+    // maximumScreenSpaceError: number
+    if (oldViewProps == nullptr
+          ? newViewProps.maximumScreenSpaceError.isProvided()
+          : !newViewProps.maximumScreenSpaceError.hasSameValue(oldViewProps->maximumScreenSpaceError)) {
+      swiftPart.setMaximumScreenSpaceError(newViewProps.maximumScreenSpaceError.get());
+    }
+    // maximumSimultaneousTileLoads: number
+    if (oldViewProps == nullptr
+          ? newViewProps.maximumSimultaneousTileLoads.isProvided()
+          : !newViewProps.maximumSimultaneousTileLoads.hasSameValue(oldViewProps->maximumSimultaneousTileLoads)) {
+      swiftPart.setMaximumSimultaneousTileLoads(newViewProps.maximumSimultaneousTileLoads.get());
+    }
+    // loadingDescendantLimit: number
+    if (oldViewProps == nullptr
+          ? newViewProps.loadingDescendantLimit.isProvided()
+          : !newViewProps.loadingDescendantLimit.hasSameValue(oldViewProps->loadingDescendantLimit)) {
+      swiftPart.setLoadingDescendantLimit(newViewProps.loadingDescendantLimit.get());
+    }
+    // msaaSampleCount: number
+    if (oldViewProps == nullptr
+          ? newViewProps.msaaSampleCount.isProvided()
+          : !newViewProps.msaaSampleCount.hasSameValue(oldViewProps->msaaSampleCount)) {
+      swiftPart.setMsaaSampleCount(newViewProps.msaaSampleCount.get());
+    }
+    // ionImageryAssetId: number
+    if (oldViewProps == nullptr
+          ? newViewProps.ionImageryAssetId.isProvided()
+          : !newViewProps.ionImageryAssetId.hasSameValue(oldViewProps->ionImageryAssetId)) {
+      swiftPart.setIonImageryAssetId(newViewProps.ionImageryAssetId.get());
+    }
+    // maximumCachedMiB: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.maximumCachedMiB.isProvided()
+          : !newViewProps.maximumCachedMiB.hasSameValue(oldViewProps->maximumCachedMiB)) {
+      swiftPart.setMaximumCachedMiB(newViewProps.maximumCachedMiB.get());
+    }
+    // preloadAncestors: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.preloadAncestors.isProvided()
+          : !newViewProps.preloadAncestors.hasSameValue(oldViewProps->preloadAncestors)) {
+      swiftPart.setPreloadAncestors(newViewProps.preloadAncestors.get());
+    }
+    // preloadSiblings: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.preloadSiblings.isProvided()
+          : !newViewProps.preloadSiblings.hasSameValue(oldViewProps->preloadSiblings)) {
+      swiftPart.setPreloadSiblings(newViewProps.preloadSiblings.get());
+    }
+    // forbidHoles: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.forbidHoles.isProvided()
+          : !newViewProps.forbidHoles.hasSameValue(oldViewProps->forbidHoles)) {
+      swiftPart.setForbidHoles(newViewProps.forbidHoles.get());
+    }
+    // enableWaterMask: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.enableWaterMask.isProvided()
+          : !newViewProps.enableWaterMask.hasSameValue(oldViewProps->enableWaterMask)) {
+      swiftPart.setEnableWaterMask(newViewProps.enableWaterMask.get());
+    }
+    // enableFogCulling: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.enableFogCulling.isProvided()
+          : !newViewProps.enableFogCulling.hasSameValue(oldViewProps->enableFogCulling)) {
+      swiftPart.setEnableFogCulling(newViewProps.enableFogCulling.get());
+    }
+    // enforceCulledScreenSpaceError: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.enforceCulledScreenSpaceError.isProvided()
+          : !newViewProps.enforceCulledScreenSpaceError.hasSameValue(oldViewProps->enforceCulledScreenSpaceError)) {
+      swiftPart.setEnforceCulledScreenSpaceError(newViewProps.enforceCulledScreenSpaceError.get());
+    }
+    // culledScreenSpaceError: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.culledScreenSpaceError.isProvided()
+          : !newViewProps.culledScreenSpaceError.hasSameValue(oldViewProps->culledScreenSpaceError)) {
+      swiftPart.setCulledScreenSpaceError(newViewProps.culledScreenSpaceError.get());
+    }
+    // enableLodTransitionPeriod: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.enableLodTransitionPeriod.isProvided()
+          : !newViewProps.enableLodTransitionPeriod.hasSameValue(oldViewProps->enableLodTransitionPeriod)) {
+      swiftPart.setEnableLodTransitionPeriod(newViewProps.enableLodTransitionPeriod.get());
+    }
+    // lodTransitionLength: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.lodTransitionLength.isProvided()
+          : !newViewProps.lodTransitionLength.hasSameValue(oldViewProps->lodTransitionLength)) {
+      swiftPart.setLodTransitionLength(newViewProps.lodTransitionLength.get());
+    }
+    // sqliteCacheMaxRows: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.sqliteCacheMaxRows.isProvided()
+          : !newViewProps.sqliteCacheMaxRows.hasSameValue(oldViewProps->sqliteCacheMaxRows)) {
+      swiftPart.setSqliteCacheMaxRows(newViewProps.sqliteCacheMaxRows.get());
+    }
+    // taskProcessorThreads: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.taskProcessorThreads.isProvided()
+          : !newViewProps.taskProcessorThreads.hasSameValue(oldViewProps->taskProcessorThreads)) {
+      swiftPart.setTaskProcessorThreads(newViewProps.taskProcessorThreads.get());
+    }
+    // minAltitudeAboveTerrain: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.minAltitudeAboveTerrain.isProvided()
+          : !newViewProps.minAltitudeAboveTerrain.hasSameValue(oldViewProps->minAltitudeAboveTerrain)) {
+      swiftPart.setMinAltitudeAboveTerrain(newViewProps.minAltitudeAboveTerrain.get());
+    }
+    // maxYawRateDegSec: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.maxYawRateDegSec.isProvided()
+          : !newViewProps.maxYawRateDegSec.hasSameValue(oldViewProps->maxYawRateDegSec)) {
+      swiftPart.setMaxYawRateDegSec(newViewProps.maxYawRateDegSec.get());
+    }
+    // maxPitchRateDegSec: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.maxPitchRateDegSec.isProvided()
+          : !newViewProps.maxPitchRateDegSec.hasSameValue(oldViewProps->maxPitchRateDegSec)) {
+      swiftPart.setMaxPitchRateDegSec(newViewProps.maxPitchRateDegSec.get());
+    }
+    // maxRollRateDegSec: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.maxRollRateDegSec.isProvided()
+          : !newViewProps.maxRollRateDegSec.hasSameValue(oldViewProps->maxRollRateDegSec)) {
+      swiftPart.setMaxRollRateDegSec(newViewProps.maxRollRateDegSec.get());
+    }
+    // maxClimbRateMps: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.maxClimbRateMps.isProvided()
+          : !newViewProps.maxClimbRateMps.hasSameValue(oldViewProps->maxClimbRateMps)) {
+      swiftPart.setMaxClimbRateMps(newViewProps.maxClimbRateMps.get());
+    }
+    // maxGroundSpeedMps: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.maxGroundSpeedMps.isProvided()
+          : !newViewProps.maxGroundSpeedMps.hasSameValue(oldViewProps->maxGroundSpeedMps)) {
+      swiftPart.setMaxGroundSpeedMps(newViewProps.maxGroundSpeedMps.get());
+    }
+    // onMetrics: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.onMetrics.isProvided()
+          : !newViewProps.onMetrics.hasSameValue(oldViewProps->onMetrics)) {
+      swiftPart.setOnMetrics(newViewProps.onMetrics.get());
+    }
+    // onActualCamera: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.onActualCamera.isProvided()
+          : !newViewProps.onActualCamera.hasSameValue(oldViewProps->onActualCamera)) {
+      swiftPart.setOnActualCamera(newViewProps.onActualCamera.get());
+    }
+
+    // Update hybridRef if it changed
+    if (oldViewProps == nullptr
+          ? newViewProps.hybridRef.isProvided()
+          : !newViewProps.hybridRef.hasSameValue(oldViewProps->hybridRef)) {
+      // hybridRef changed - call it with new this
+      const auto& maybeFunc = newViewProps.hybridRef.get();
+      if (maybeFunc.has_value()) {
+        maybeFunc.value()(_hybridView);
+      }
+    }
+
+    swiftPart.afterUpdate();
   }
 
-  // 4. Continue in base class
+  // 3. Continue in base class
   [super updateProps:props oldProps:oldProps];
 }
 
@@ -246,6 +296,7 @@ using namespace margelo::nitro::reactnativecesium::views;
 }
 
 - (void)prepareForRecycle {
+  [self notifyOnDropView];
   [super prepareForRecycle];
   ReactNativeCesium::HybridCesiumViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
   swiftPart.maybePrepareForRecycle();
@@ -253,8 +304,7 @@ using namespace margelo::nitro::reactnativecesium::views;
 
 #ifdef ENABLE_RCT_COMPONENT_VIEW_INVALIDATE
 - (void)invalidate {
-  ReactNativeCesium::HybridCesiumViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
-  swiftPart.onDropView();
+  [self notifyOnDropView];
   [super invalidate];
 }
 #endif

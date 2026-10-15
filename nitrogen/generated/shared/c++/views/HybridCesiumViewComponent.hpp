@@ -7,14 +7,15 @@
 
 #pragma once
 
-#include <optional>
-#include <NitroModules/NitroDefines.hpp>
-#include <NitroModules/NitroHash.hpp>
-#include <NitroModules/CachedProp.hpp>
-#include <react/renderer/core/ConcreteComponentDescriptor.h>
-#include <react/renderer/core/PropsParserContext.h>
+#include <NitroModules/ReactProp.hpp>
+#include <NitroModules/ViewComponentDescriptor.hpp>
+#include <NitroModules/ViewPropsHolderState.hpp>
 #include <react/renderer/components/view/ConcreteViewShadowNode.h>
 #include <react/renderer/components/view/ViewProps.h>
+#include <react/renderer/core/PropsParserContext.h>
+#include <react/renderer/core/RawProps.h>
+
+#include <string>
 
 #include <string>
 #include "CameraState.hpp"
@@ -44,36 +45,104 @@ namespace margelo::nitro::reactnativecesium::views {
                           const react::RawProps& rawProps);
 
   public:
-    CachedProp<std::string> ionAccessToken;
-    CachedProp<double> ionAssetId;
-    CachedProp<CameraState> initialCamera;
-    CachedProp<bool> pauseRendering;
-    CachedProp<double> maximumScreenSpaceError;
-    CachedProp<double> maximumSimultaneousTileLoads;
-    CachedProp<double> loadingDescendantLimit;
-    CachedProp<double> msaaSampleCount;
-    CachedProp<double> ionImageryAssetId;
-    CachedProp<std::optional<double>> maximumCachedMiB;
-    CachedProp<std::optional<bool>> preloadAncestors;
-    CachedProp<std::optional<bool>> preloadSiblings;
-    CachedProp<std::optional<bool>> forbidHoles;
-    CachedProp<std::optional<bool>> enableWaterMask;
-    CachedProp<std::optional<bool>> enableFogCulling;
-    CachedProp<std::optional<bool>> enforceCulledScreenSpaceError;
-    CachedProp<std::optional<double>> culledScreenSpaceError;
-    CachedProp<std::optional<bool>> enableLodTransitionPeriod;
-    CachedProp<std::optional<double>> lodTransitionLength;
-    CachedProp<std::optional<double>> sqliteCacheMaxRows;
-    CachedProp<std::optional<double>> taskProcessorThreads;
-    CachedProp<std::optional<double>> minAltitudeAboveTerrain;
-    CachedProp<std::optional<double>> maxYawRateDegSec;
-    CachedProp<std::optional<double>> maxPitchRateDegSec;
-    CachedProp<std::optional<double>> maxRollRateDegSec;
-    CachedProp<std::optional<double>> maxClimbRateMps;
-    CachedProp<std::optional<double>> maxGroundSpeedMps;
-    CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> onMetrics;
-    CachedProp<std::optional<std::function<void(const CameraState& /* camera */)>>> onActualCamera;
-    CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>> hybridRef;
+    nitro::ReactProp<std::string> ionAccessToken;
+    nitro::ReactProp<double> ionAssetId;
+    nitro::ReactProp<CameraState> initialCamera;
+    nitro::ReactProp<bool> pauseRendering;
+    nitro::ReactProp<double> maximumScreenSpaceError;
+    nitro::ReactProp<double> maximumSimultaneousTileLoads;
+    nitro::ReactProp<double> loadingDescendantLimit;
+    nitro::ReactProp<double> msaaSampleCount;
+    nitro::ReactProp<double> ionImageryAssetId;
+    nitro::ReactProp<std::optional<double>> maximumCachedMiB;
+    nitro::ReactProp<std::optional<bool>> preloadAncestors;
+    nitro::ReactProp<std::optional<bool>> preloadSiblings;
+    nitro::ReactProp<std::optional<bool>> forbidHoles;
+    nitro::ReactProp<std::optional<bool>> enableWaterMask;
+    nitro::ReactProp<std::optional<bool>> enableFogCulling;
+    nitro::ReactProp<std::optional<bool>> enforceCulledScreenSpaceError;
+    nitro::ReactProp<std::optional<double>> culledScreenSpaceError;
+    nitro::ReactProp<std::optional<bool>> enableLodTransitionPeriod;
+    nitro::ReactProp<std::optional<double>> lodTransitionLength;
+    nitro::ReactProp<std::optional<double>> sqliteCacheMaxRows;
+    nitro::ReactProp<std::optional<double>> taskProcessorThreads;
+    nitro::ReactProp<std::optional<double>> minAltitudeAboveTerrain;
+    nitro::ReactProp<std::optional<double>> maxYawRateDegSec;
+    nitro::ReactProp<std::optional<double>> maxPitchRateDegSec;
+    nitro::ReactProp<std::optional<double>> maxRollRateDegSec;
+    nitro::ReactProp<std::optional<double>> maxClimbRateMps;
+    nitro::ReactProp<std::optional<double>> maxGroundSpeedMps;
+    nitro::ReactProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> onMetrics;
+    nitro::ReactProp<std::optional<std::function<void(const CameraState& /* camera */)>>> onActualCamera;
+    nitro::ReactProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>> hybridRef;
+
+    [[nodiscard]]
+    bool hasSameProps(const HybridCesiumViewProps& other) const noexcept {
+      return ionAccessToken.hasSameValue(other.ionAccessToken) &&
+             ionAssetId.hasSameValue(other.ionAssetId) &&
+             initialCamera.hasSameValue(other.initialCamera) &&
+             pauseRendering.hasSameValue(other.pauseRendering) &&
+             maximumScreenSpaceError.hasSameValue(other.maximumScreenSpaceError) &&
+             maximumSimultaneousTileLoads.hasSameValue(other.maximumSimultaneousTileLoads) &&
+             loadingDescendantLimit.hasSameValue(other.loadingDescendantLimit) &&
+             msaaSampleCount.hasSameValue(other.msaaSampleCount) &&
+             ionImageryAssetId.hasSameValue(other.ionImageryAssetId) &&
+             maximumCachedMiB.hasSameValue(other.maximumCachedMiB) &&
+             preloadAncestors.hasSameValue(other.preloadAncestors) &&
+             preloadSiblings.hasSameValue(other.preloadSiblings) &&
+             forbidHoles.hasSameValue(other.forbidHoles) &&
+             enableWaterMask.hasSameValue(other.enableWaterMask) &&
+             enableFogCulling.hasSameValue(other.enableFogCulling) &&
+             enforceCulledScreenSpaceError.hasSameValue(other.enforceCulledScreenSpaceError) &&
+             culledScreenSpaceError.hasSameValue(other.culledScreenSpaceError) &&
+             enableLodTransitionPeriod.hasSameValue(other.enableLodTransitionPeriod) &&
+             lodTransitionLength.hasSameValue(other.lodTransitionLength) &&
+             sqliteCacheMaxRows.hasSameValue(other.sqliteCacheMaxRows) &&
+             taskProcessorThreads.hasSameValue(other.taskProcessorThreads) &&
+             minAltitudeAboveTerrain.hasSameValue(other.minAltitudeAboveTerrain) &&
+             maxYawRateDegSec.hasSameValue(other.maxYawRateDegSec) &&
+             maxPitchRateDegSec.hasSameValue(other.maxPitchRateDegSec) &&
+             maxRollRateDegSec.hasSameValue(other.maxRollRateDegSec) &&
+             maxClimbRateMps.hasSameValue(other.maxClimbRateMps) &&
+             maxGroundSpeedMps.hasSameValue(other.maxGroundSpeedMps) &&
+             onMetrics.hasSameValue(other.onMetrics) &&
+             onActualCamera.hasSameValue(other.onActualCamera) &&
+             hybridRef.hasSameValue(other.hybridRef);
+    }
+
+    [[nodiscard]]
+    bool hasAnyProvidedProps() const noexcept {
+      return ionAccessToken.isProvided() ||
+             ionAssetId.isProvided() ||
+             initialCamera.isProvided() ||
+             pauseRendering.isProvided() ||
+             maximumScreenSpaceError.isProvided() ||
+             maximumSimultaneousTileLoads.isProvided() ||
+             loadingDescendantLimit.isProvided() ||
+             msaaSampleCount.isProvided() ||
+             ionImageryAssetId.isProvided() ||
+             maximumCachedMiB.isProvided() ||
+             preloadAncestors.isProvided() ||
+             preloadSiblings.isProvided() ||
+             forbidHoles.isProvided() ||
+             enableWaterMask.isProvided() ||
+             enableFogCulling.isProvided() ||
+             enforceCulledScreenSpaceError.isProvided() ||
+             culledScreenSpaceError.isProvided() ||
+             enableLodTransitionPeriod.isProvided() ||
+             lodTransitionLength.isProvided() ||
+             sqliteCacheMaxRows.isProvided() ||
+             taskProcessorThreads.isProvided() ||
+             minAltitudeAboveTerrain.isProvided() ||
+             maxYawRateDegSec.isProvided() ||
+             maxPitchRateDegSec.isProvided() ||
+             maxRollRateDegSec.isProvided() ||
+             maxClimbRateMps.isProvided() ||
+             maxGroundSpeedMps.isProvided() ||
+             onMetrics.isProvided() ||
+             onActualCamera.isProvided() ||
+             hybridRef.isProvided();
+    }
 
   private:
     static bool filterObjectKeys(const std::string& propName);
@@ -82,32 +151,7 @@ namespace margelo::nitro::reactnativecesium::views {
   /**
    * State for the "CesiumView" View.
    */
-  class HybridCesiumViewState final {
-  public:
-    HybridCesiumViewState() = default;
-    explicit HybridCesiumViewState(const std::shared_ptr<HybridCesiumViewProps>& props):
-      _props(props) {}
-
-  public:
-    [[nodiscard]]
-    const std::shared_ptr<HybridCesiumViewProps>& getProps() const {
-      return _props;
-    }
-
-  public:
-#ifdef ANDROID
-  HybridCesiumViewState(const HybridCesiumViewState& /* previousState */, folly::dynamic /* data */) {}
-  folly::dynamic getDynamic() const {
-    throw std::runtime_error("HybridCesiumViewState does not support folly!");
-  }
-  react::MapBuffer getMapBuffer() const {
-    throw std::runtime_error("HybridCesiumViewState does not support MapBuffer!");
-  };
-#endif
-
-  private:
-    std::shared_ptr<HybridCesiumViewProps> _props;
-  };
+  using HybridCesiumViewState = nitro::ViewPropsHolderState<HybridCesiumViewProps>;
 
   /**
    * The Shadow Node for the "CesiumView" View.
@@ -120,21 +164,7 @@ namespace margelo::nitro::reactnativecesium::views {
   /**
    * The Component Descriptor for the "CesiumView" View.
    */
-  class HybridCesiumViewComponentDescriptor final: public react::ConcreteComponentDescriptor<HybridCesiumViewShadowNode> {
-  public:
-    explicit HybridCesiumViewComponentDescriptor(const react::ComponentDescriptorParameters& parameters);
-
-  public:
-    /**
-     * A faster path for cloning props - reuses the caching logic from `HybridCesiumViewProps`.
-     */
-    std::shared_ptr<const react::Props> cloneProps(const react::PropsParserContext& context,
-                                                   const std::shared_ptr<const react::Props>& props,
-                                                   react::RawProps rawProps) const override;
-#ifdef ANDROID
-    void adopt(react::ShadowNode& shadowNode) const override;
-#endif
-  };
+  using HybridCesiumViewComponentDescriptor = nitro::ViewComponentDescriptor<HybridCesiumViewShadowNode>;
 
   /* The actual view for "CesiumView" needs to be implemented in platform-specific code. */
 

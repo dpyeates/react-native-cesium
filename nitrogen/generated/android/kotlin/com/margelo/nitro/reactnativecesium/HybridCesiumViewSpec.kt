@@ -10,6 +10,7 @@ package com.margelo.nitro.reactnativecesium
 import androidx.annotation.Keep
 import com.facebook.jni.HybridData
 import com.facebook.proguard.annotations.DoNotStrip
+import dalvik.annotation.optimization.FastNative
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.core.HybridObject
 import com.margelo.nitro.views.HybridView
@@ -268,6 +269,7 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @Keep
   protected open class CxxPart(javaPart: HybridCesiumViewSpec): HybridObject.CxxPart(javaPart) {
     // C++ JHybridCesiumViewSpec::CxxPart::initHybrid(...)
+    @FastNative
     external override fun initHybrid(): HybridData
   }
   override fun createCxxPart(): CxxPart {

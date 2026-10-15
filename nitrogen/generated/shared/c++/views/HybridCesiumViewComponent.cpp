@@ -7,18 +7,12 @@
 
 #include "HybridCesiumViewComponent.hpp"
 
-#include <string>
-#include <exception>
-#include <utility>
-#include <NitroModules/NitroDefines.hpp>
-#include <NitroModules/JSIConverter.hpp>
-#include <NitroModules/PropNameIDCache.hpp>
-#include <react/renderer/core/RawValue.h>
-#include <react/renderer/core/ShadowNode.h>
-#include <react/renderer/core/ComponentDescriptor.h>
-#include <react/renderer/components/view/ViewProps.h>
+#include <NitroModules/NitroHash.hpp>
+#include <NitroModules/ReactProp.hpp>
 
 namespace margelo::nitro::reactnativecesium::views {
+
+  using namespace facebook;
 
   extern const char HybridCesiumViewComponentName[] = "CesiumView";
 
@@ -26,306 +20,36 @@ namespace margelo::nitro::reactnativecesium::views {
                                                const HybridCesiumViewProps& sourceProps,
                                                const react::RawProps& rawProps):
     react::ViewProps(context, sourceProps, rawProps, filterObjectKeys),
-    ionAccessToken([&]() -> CachedProp<std::string> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("ionAccessToken", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.ionAccessToken;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::string>::fromRawValue(*runtime, value, sourceProps.ionAccessToken);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.ionAccessToken: ") + exc.what());
-      }
-    }()),
-    ionAssetId([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("ionAssetId", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.ionAssetId;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.ionAssetId);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.ionAssetId: ") + exc.what());
-      }
-    }()),
-    initialCamera([&]() -> CachedProp<CameraState> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("initialCamera", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.initialCamera;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<CameraState>::fromRawValue(*runtime, value, sourceProps.initialCamera);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.initialCamera: ") + exc.what());
-      }
-    }()),
-    pauseRendering([&]() -> CachedProp<bool> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("pauseRendering", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.pauseRendering;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<bool>::fromRawValue(*runtime, value, sourceProps.pauseRendering);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.pauseRendering: ") + exc.what());
-      }
-    }()),
-    maximumScreenSpaceError([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("maximumScreenSpaceError", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.maximumScreenSpaceError;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.maximumScreenSpaceError);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.maximumScreenSpaceError: ") + exc.what());
-      }
-    }()),
-    maximumSimultaneousTileLoads([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("maximumSimultaneousTileLoads", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.maximumSimultaneousTileLoads;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.maximumSimultaneousTileLoads);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.maximumSimultaneousTileLoads: ") + exc.what());
-      }
-    }()),
-    loadingDescendantLimit([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("loadingDescendantLimit", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.loadingDescendantLimit;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.loadingDescendantLimit);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.loadingDescendantLimit: ") + exc.what());
-      }
-    }()),
-    msaaSampleCount([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("msaaSampleCount", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.msaaSampleCount;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.msaaSampleCount);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.msaaSampleCount: ") + exc.what());
-      }
-    }()),
-    ionImageryAssetId([&]() -> CachedProp<double> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("ionImageryAssetId", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.ionImageryAssetId;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<double>::fromRawValue(*runtime, value, sourceProps.ionImageryAssetId);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.ionImageryAssetId: ") + exc.what());
-      }
-    }()),
-    maximumCachedMiB([&]() -> CachedProp<std::optional<double>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("maximumCachedMiB", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.maximumCachedMiB;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maximumCachedMiB);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.maximumCachedMiB: ") + exc.what());
-      }
-    }()),
-    preloadAncestors([&]() -> CachedProp<std::optional<bool>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("preloadAncestors", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.preloadAncestors;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.preloadAncestors);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.preloadAncestors: ") + exc.what());
-      }
-    }()),
-    preloadSiblings([&]() -> CachedProp<std::optional<bool>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("preloadSiblings", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.preloadSiblings;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.preloadSiblings);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.preloadSiblings: ") + exc.what());
-      }
-    }()),
-    forbidHoles([&]() -> CachedProp<std::optional<bool>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("forbidHoles", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.forbidHoles;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.forbidHoles);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.forbidHoles: ") + exc.what());
-      }
-    }()),
-    enableWaterMask([&]() -> CachedProp<std::optional<bool>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("enableWaterMask", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.enableWaterMask;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.enableWaterMask);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.enableWaterMask: ") + exc.what());
-      }
-    }()),
-    enableFogCulling([&]() -> CachedProp<std::optional<bool>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("enableFogCulling", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.enableFogCulling;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.enableFogCulling);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.enableFogCulling: ") + exc.what());
-      }
-    }()),
-    enforceCulledScreenSpaceError([&]() -> CachedProp<std::optional<bool>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("enforceCulledScreenSpaceError", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.enforceCulledScreenSpaceError;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.enforceCulledScreenSpaceError);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.enforceCulledScreenSpaceError: ") + exc.what());
-      }
-    }()),
-    culledScreenSpaceError([&]() -> CachedProp<std::optional<double>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("culledScreenSpaceError", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.culledScreenSpaceError;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.culledScreenSpaceError);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.culledScreenSpaceError: ") + exc.what());
-      }
-    }()),
-    enableLodTransitionPeriod([&]() -> CachedProp<std::optional<bool>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("enableLodTransitionPeriod", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.enableLodTransitionPeriod;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.enableLodTransitionPeriod);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.enableLodTransitionPeriod: ") + exc.what());
-      }
-    }()),
-    lodTransitionLength([&]() -> CachedProp<std::optional<double>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("lodTransitionLength", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.lodTransitionLength;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.lodTransitionLength);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.lodTransitionLength: ") + exc.what());
-      }
-    }()),
-    sqliteCacheMaxRows([&]() -> CachedProp<std::optional<double>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("sqliteCacheMaxRows", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.sqliteCacheMaxRows;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.sqliteCacheMaxRows);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.sqliteCacheMaxRows: ") + exc.what());
-      }
-    }()),
-    taskProcessorThreads([&]() -> CachedProp<std::optional<double>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("taskProcessorThreads", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.taskProcessorThreads;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.taskProcessorThreads);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.taskProcessorThreads: ") + exc.what());
-      }
-    }()),
-    minAltitudeAboveTerrain([&]() -> CachedProp<std::optional<double>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("minAltitudeAboveTerrain", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.minAltitudeAboveTerrain;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.minAltitudeAboveTerrain);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.minAltitudeAboveTerrain: ") + exc.what());
-      }
-    }()),
-    maxYawRateDegSec([&]() -> CachedProp<std::optional<double>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("maxYawRateDegSec", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.maxYawRateDegSec;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maxYawRateDegSec);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.maxYawRateDegSec: ") + exc.what());
-      }
-    }()),
-    maxPitchRateDegSec([&]() -> CachedProp<std::optional<double>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("maxPitchRateDegSec", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.maxPitchRateDegSec;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maxPitchRateDegSec);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.maxPitchRateDegSec: ") + exc.what());
-      }
-    }()),
-    maxRollRateDegSec([&]() -> CachedProp<std::optional<double>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("maxRollRateDegSec", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.maxRollRateDegSec;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maxRollRateDegSec);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.maxRollRateDegSec: ") + exc.what());
-      }
-    }()),
-    maxClimbRateMps([&]() -> CachedProp<std::optional<double>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("maxClimbRateMps", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.maxClimbRateMps;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maxClimbRateMps);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.maxClimbRateMps: ") + exc.what());
-      }
-    }()),
-    maxGroundSpeedMps([&]() -> CachedProp<std::optional<double>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("maxGroundSpeedMps", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.maxGroundSpeedMps;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<double>>::fromRawValue(*runtime, value, sourceProps.maxGroundSpeedMps);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.maxGroundSpeedMps: ") + exc.what());
-      }
-    }()),
-    onMetrics([&]() -> CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("onMetrics", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.onMetrics;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>>::fromRawValue(*runtime, value.asObject(*runtime).getProperty(*runtime, PropNameIDCache::get(*runtime, "f")), sourceProps.onMetrics);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.onMetrics: ") + exc.what());
-      }
-    }()),
-    onActualCamera([&]() -> CachedProp<std::optional<std::function<void(const CameraState& /* camera */)>>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("onActualCamera", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.onActualCamera;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<std::function<void(const CameraState& /* camera */)>>>::fromRawValue(*runtime, value.asObject(*runtime).getProperty(*runtime, PropNameIDCache::get(*runtime, "f")), sourceProps.onActualCamera);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.onActualCamera: ") + exc.what());
-      }
-    }()),
-    hybridRef([&]() -> CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>> {
-      try {
-        const react::RawValue* rawValue = rawProps.at("hybridRef", nullptr, nullptr);
-        if (rawValue == nullptr) return sourceProps.hybridRef;
-        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
-        return CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>>::fromRawValue(*runtime, value.asObject(*runtime).getProperty(*runtime, PropNameIDCache::get(*runtime, "f")), sourceProps.hybridRef);
-      } catch (const std::exception& exc) {
-        throw std::runtime_error(std::string("CesiumView.hybridRef: ") + exc.what());
-      }
-    }()) { }
+    ionAccessToken(nitro::ReactProp<std::string>::fromRawValue("CesiumView", "ionAccessToken", rawProps, sourceProps.ionAccessToken)),
+    ionAssetId(nitro::ReactProp<double>::fromRawValue("CesiumView", "ionAssetId", rawProps, sourceProps.ionAssetId)),
+    initialCamera(nitro::ReactProp<CameraState>::fromRawValue("CesiumView", "initialCamera", rawProps, sourceProps.initialCamera)),
+    pauseRendering(nitro::ReactProp<bool>::fromRawValue("CesiumView", "pauseRendering", rawProps, sourceProps.pauseRendering)),
+    maximumScreenSpaceError(nitro::ReactProp<double>::fromRawValue("CesiumView", "maximumScreenSpaceError", rawProps, sourceProps.maximumScreenSpaceError)),
+    maximumSimultaneousTileLoads(nitro::ReactProp<double>::fromRawValue("CesiumView", "maximumSimultaneousTileLoads", rawProps, sourceProps.maximumSimultaneousTileLoads)),
+    loadingDescendantLimit(nitro::ReactProp<double>::fromRawValue("CesiumView", "loadingDescendantLimit", rawProps, sourceProps.loadingDescendantLimit)),
+    msaaSampleCount(nitro::ReactProp<double>::fromRawValue("CesiumView", "msaaSampleCount", rawProps, sourceProps.msaaSampleCount)),
+    ionImageryAssetId(nitro::ReactProp<double>::fromRawValue("CesiumView", "ionImageryAssetId", rawProps, sourceProps.ionImageryAssetId)),
+    maximumCachedMiB(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "maximumCachedMiB", rawProps, sourceProps.maximumCachedMiB)),
+    preloadAncestors(nitro::ReactProp<std::optional<bool>>::fromRawValue("CesiumView", "preloadAncestors", rawProps, sourceProps.preloadAncestors)),
+    preloadSiblings(nitro::ReactProp<std::optional<bool>>::fromRawValue("CesiumView", "preloadSiblings", rawProps, sourceProps.preloadSiblings)),
+    forbidHoles(nitro::ReactProp<std::optional<bool>>::fromRawValue("CesiumView", "forbidHoles", rawProps, sourceProps.forbidHoles)),
+    enableWaterMask(nitro::ReactProp<std::optional<bool>>::fromRawValue("CesiumView", "enableWaterMask", rawProps, sourceProps.enableWaterMask)),
+    enableFogCulling(nitro::ReactProp<std::optional<bool>>::fromRawValue("CesiumView", "enableFogCulling", rawProps, sourceProps.enableFogCulling)),
+    enforceCulledScreenSpaceError(nitro::ReactProp<std::optional<bool>>::fromRawValue("CesiumView", "enforceCulledScreenSpaceError", rawProps, sourceProps.enforceCulledScreenSpaceError)),
+    culledScreenSpaceError(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "culledScreenSpaceError", rawProps, sourceProps.culledScreenSpaceError)),
+    enableLodTransitionPeriod(nitro::ReactProp<std::optional<bool>>::fromRawValue("CesiumView", "enableLodTransitionPeriod", rawProps, sourceProps.enableLodTransitionPeriod)),
+    lodTransitionLength(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "lodTransitionLength", rawProps, sourceProps.lodTransitionLength)),
+    sqliteCacheMaxRows(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "sqliteCacheMaxRows", rawProps, sourceProps.sqliteCacheMaxRows)),
+    taskProcessorThreads(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "taskProcessorThreads", rawProps, sourceProps.taskProcessorThreads)),
+    minAltitudeAboveTerrain(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "minAltitudeAboveTerrain", rawProps, sourceProps.minAltitudeAboveTerrain)),
+    maxYawRateDegSec(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "maxYawRateDegSec", rawProps, sourceProps.maxYawRateDegSec)),
+    maxPitchRateDegSec(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "maxPitchRateDegSec", rawProps, sourceProps.maxPitchRateDegSec)),
+    maxRollRateDegSec(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "maxRollRateDegSec", rawProps, sourceProps.maxRollRateDegSec)),
+    maxClimbRateMps(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "maxClimbRateMps", rawProps, sourceProps.maxClimbRateMps)),
+    maxGroundSpeedMps(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "maxGroundSpeedMps", rawProps, sourceProps.maxGroundSpeedMps)),
+    onMetrics(nitro::ReactProp<std::optional<std::function<void(const CesiumMetrics& /* metrics */)>>>::fromRawValue("CesiumView", "onMetrics", rawProps, sourceProps.onMetrics)),
+    onActualCamera(nitro::ReactProp<std::optional<std::function<void(const CameraState& /* camera */)>>>::fromRawValue("CesiumView", "onActualCamera", rawProps, sourceProps.onActualCamera)),
+    hybridRef(nitro::ReactProp<std::optional<std::function<void(const std::shared_ptr<HybridCesiumViewSpec>& /* ref */)>>>::fromRawValue("CesiumView", "hybridRef", rawProps, sourceProps.hybridRef)) { }
 
   bool HybridCesiumViewProps::filterObjectKeys(const std::string& propName) {
     switch (hashString(propName)) {
@@ -362,30 +86,5 @@ namespace margelo::nitro::reactnativecesium::views {
       default: return false;
     }
   }
-
-  HybridCesiumViewComponentDescriptor::HybridCesiumViewComponentDescriptor(const react::ComponentDescriptorParameters& parameters)
-    : ConcreteComponentDescriptor(parameters,
-                                  react::RawPropsParser(/* enableJsiParser */ true)) {}
-
-  std::shared_ptr<const react::Props> HybridCesiumViewComponentDescriptor::cloneProps(const react::PropsParserContext& context,
-                                                                                      const std::shared_ptr<const react::Props>& props,
-                                                                                      react::RawProps rawProps) const {
-    // 1. Prepare raw props parser
-    rawProps.parse(rawPropsParser_);
-    // 2. Copy props with Nitro's cached copy constructor
-    return HybridCesiumViewShadowNode::Props(context, /* & */ rawProps, props);
-  }
-
-#ifdef ANDROID
-  void HybridCesiumViewComponentDescriptor::adopt(react::ShadowNode& shadowNode) const {
-    // This is called immediately after `ShadowNode` is created, cloned or in progress.
-    // On Android, we need to wrap props in our state, which gets routed through Java and later unwrapped in JNI/C++.
-    auto& concreteShadowNode = static_cast<HybridCesiumViewShadowNode&>(shadowNode);
-    const std::shared_ptr<const HybridCesiumViewProps>& constProps = concreteShadowNode.getConcreteSharedProps();
-    const std::shared_ptr<HybridCesiumViewProps>& props = std::const_pointer_cast<HybridCesiumViewProps>(constProps);
-    HybridCesiumViewState state{props};
-    concreteShadowNode.setStateData(std::move(state));
-  }
-#endif
 
 } // namespace margelo::nitro::reactnativecesium::views

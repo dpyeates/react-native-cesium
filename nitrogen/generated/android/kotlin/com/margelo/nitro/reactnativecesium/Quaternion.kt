@@ -43,7 +43,7 @@ data class Quaternion(
   }
 
   override fun hashCode(): Int {
-    return arrayOf(
+    return arrayOf<Any?>(
       w,
       x,
       y,

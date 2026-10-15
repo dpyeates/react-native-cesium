@@ -17,7 +17,7 @@ namespace margelo::nitro::reactnativecesium {
   using namespace facebook;
 
   /**
-   * The C++ JNI bridge between the C++ struct "Quaternion" and the the Kotlin data class "Quaternion".
+   * The C++ JNI bridge between the C++ struct "Quaternion" and the Kotlin data class "Quaternion".
    */
   struct JQuaternion final: public jni::JavaClass<JQuaternion> {
   public:
