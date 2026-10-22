@@ -140,6 +140,15 @@ namespace margelo::nitro::reactnativecesium {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* ionImageryAssetId */)>("setIonImageryAssetId");
     method(_javaPart, ionImageryAssetId);
   }
+  std::optional<std::string> JHybridCesiumViewSpec::getAltitudeDatum() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JString>()>("getAltitudeDatum");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->toStdString()) : std::nullopt;
+  }
+  void JHybridCesiumViewSpec::setAltitudeDatum(const std::optional<std::string>& altitudeDatum) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* altitudeDatum */)>("setAltitudeDatum");
+    method(_javaPart, altitudeDatum.has_value() ? jni::make_jstring(altitudeDatum.value()) : nullptr);
+  }
   std::optional<double> JHybridCesiumViewSpec::getMaximumCachedMiB() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getMaximumCachedMiB");
     auto __result = method(_javaPart);

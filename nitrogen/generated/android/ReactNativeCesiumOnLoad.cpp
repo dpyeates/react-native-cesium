@@ -30,7 +30,7 @@ int initialize(JavaVM* vm) {
 }
 
 struct JHybridCesiumViewSpecImpl: public jni::JavaClass<JHybridCesiumViewSpecImpl, JHybridCesiumViewSpec::JavaPart> {
-  static constexpr auto kJavaDescriptor = "Lcom/margelo/nitro/reactnativecesium/HybridCesiumView;";
+  static constexpr auto kJavaDescriptor = "Lcom/reactnativecesium/HybridCesiumView;";
   static std::shared_ptr<JHybridCesiumViewSpec> create() {
     static const auto constructorFn = javaClassStatic()->getConstructor<JHybridCesiumViewSpecImpl::javaobject()>();
     jni::local_ref<JHybridCesiumViewSpec::JavaPart> javaPart = javaClassStatic()->newObject(constructorFn);

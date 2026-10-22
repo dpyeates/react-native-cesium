@@ -73,6 +73,8 @@ namespace margelo::nitro::reactnativecesium {
       virtual void setMsaaSampleCount(double msaaSampleCount) = 0;
       virtual double getIonImageryAssetId() = 0;
       virtual void setIonImageryAssetId(double ionImageryAssetId) = 0;
+      virtual std::optional<std::string> getAltitudeDatum() = 0;
+      virtual void setAltitudeDatum(const std::optional<std::string>& altitudeDatum) = 0;
       virtual std::optional<double> getMaximumCachedMiB() = 0;
       virtual void setMaximumCachedMiB(std::optional<double> maximumCachedMiB) = 0;
       virtual std::optional<bool> getPreloadAncestors() = 0;

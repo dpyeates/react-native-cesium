@@ -19,6 +19,7 @@ public protocol HybridCesiumViewSpec_protocol: HybridObject, HybridView {
   var loadingDescendantLimit: Double { get set }
   var msaaSampleCount: Double { get set }
   var ionImageryAssetId: Double { get set }
+  var altitudeDatum: String? { get set }
   var maximumCachedMiB: Double? { get set }
   var preloadAncestors: Bool? { get set }
   var preloadSiblings: Bool? { get set }

@@ -3429,8 +3429,8 @@ __metadata:
     react: "npm:^19.3.0"
     react-native: "npm:^0.87.1"
     react-native-cesium: "link:.."
-    react-native-dotenv: "npm:^3.4.12"
-    react-native-gesture-handler: "npm:^3.3.0"
+    react-native-dotenv: "npm:^5.0.0"
+    react-native-gesture-handler: "npm:^3.4.0"
     react-native-nitro-modules: "npm:^0.37.1"
     react-native-reanimated: "npm:^4.7.1"
     react-native-safe-area-context: "npm:^5.10.1"
@@ -4570,10 +4570,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dotenv@npm:^17.4.2":
-  version: 17.4.2
-  resolution: "dotenv@npm:17.4.2"
-  checksum: 10c0/164f8e77a646c8446867d5b588d26ea6005c8ea7c5eb41cf926f6113d23f2191355f6e0cfd95ea9bab98394a5b0a3f1e51a8399711b666fe55cc7b0bd745f942
+"dotenv@npm:^18.0.1":
+  version: 18.0.8
+  resolution: "dotenv@npm:18.0.8"
+  bin:
+    dotenv: dist/index.cjs
+  checksum: 10c0/88a6a81afe58aaad7f9ae5d97422731c6e7b9efa4db752ea5add7fb6035f5866ce6e10a76fb7ad2d7f606bdf0afc9507ffd7e04d86d9b347b38d4614a3a0c2ac
   languageName: node
   linkType: hard
 
@@ -8094,27 +8096,25 @@ __metadata:
   languageName: node
   linkType: soft
 
-"react-native-dotenv@npm:^3.4.12":
-  version: 3.4.12
-  resolution: "react-native-dotenv@npm:3.4.12"
+"react-native-dotenv@npm:^5.0.0":
+  version: 5.0.0
+  resolution: "react-native-dotenv@npm:5.0.0"
   dependencies:
-    dotenv: "npm:^17.4.2"
-  peerDependencies:
-    "@babel/runtime": ^7.20.6
-  checksum: 10c0/0e186d55fa14f58167aa340423a7de5d164581499786f6b50eca72ec2a6c669e7682574a40abe0a37dc77c550db65c7184cd24abe10ecf36aed281bb7315cfe9
+    dotenv: "npm:^18.0.1"
+  checksum: 10c0/d614ec933bdf7929a7e7bd7935e890d6e2221a29b935d23802bf2e4b2920cfba28437c8b785047e3374744891897874c2007f1061c0d8fe7e877d6dc133bf17a
   languageName: node
   linkType: hard
 
-"react-native-gesture-handler@npm:^3.3.0":
-  version: 3.3.0
-  resolution: "react-native-gesture-handler@npm:3.3.0"
+"react-native-gesture-handler@npm:^3.4.0":
+  version: 3.4.0
+  resolution: "react-native-gesture-handler@npm:3.4.0"
   dependencies:
     "@types/react-test-renderer": "npm:^19.1.0"
     invariant: "npm:^2.2.4"
   peerDependencies:
     react: "*"
     react-native: "*"
-  checksum: 10c0/6a710722f59eca293e2ff30852cbaf8fb4705712068c9ebb4d1d9d737cda61f175b2b0b452c9fab322d9e14efae3b6d0ab7c884439125b7f5cfb57934f7a65f8
+  checksum: 10c0/49fac726e4716347dcbefa7573272d2ec75f8a48eb0721f4fbd71386c10b3f630c339c664a521684425cf03c1b96b7245dd3df93f5262e426bb7a3517e58e8ee
   languageName: node
   linkType: hard
 

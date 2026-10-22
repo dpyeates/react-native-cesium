@@ -152,6 +152,12 @@ using namespace margelo::nitro::reactnativecesium::views;
           : !newViewProps.ionImageryAssetId.hasSameValue(oldViewProps->ionImageryAssetId)) {
       swiftPart.setIonImageryAssetId(newViewProps.ionImageryAssetId.get());
     }
+    // altitudeDatum: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.altitudeDatum.isProvided()
+          : !newViewProps.altitudeDatum.hasSameValue(oldViewProps->altitudeDatum)) {
+      swiftPart.setAltitudeDatum(newViewProps.altitudeDatum.get());
+    }
     // maximumCachedMiB: optional
     if (oldViewProps == nullptr
           ? newViewProps.maximumCachedMiB.isProvided()

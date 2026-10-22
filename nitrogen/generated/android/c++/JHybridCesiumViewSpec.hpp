@@ -68,6 +68,8 @@ namespace margelo::nitro::reactnativecesium {
     void setMsaaSampleCount(double msaaSampleCount) override;
     double getIonImageryAssetId() override;
     void setIonImageryAssetId(double ionImageryAssetId) override;
+    std::optional<std::string> getAltitudeDatum() override;
+    void setAltitudeDatum(const std::optional<std::string>& altitudeDatum) override;
     std::optional<double> getMaximumCachedMiB() override;
     void setMaximumCachedMiB(std::optional<double> maximumCachedMiB) override;
     std::optional<bool> getPreloadAncestors() override;

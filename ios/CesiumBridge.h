@@ -33,6 +33,11 @@ NS_ASSUME_NONNULL_BEGIN
 // instant. Pitch / roll are bundled because they typically come from a
 // single IMU sample.
 - (void)setPositionLatitude:(double)lat longitude:(double)lon;
+/// When YES, altitudes passed to setAltitude: and teleport are WGS84
+/// ellipsoidal heights. They are converted to MSL before the integrator, and
+/// altitude readback is converted back. A horizontal move keeps that
+/// ellipsoidal height.
+- (void)setAltitudeDatumEllipsoid:(BOOL)ellipsoid;
 - (void)setAltitude:(double)alt;
 - (void)setHeadingDeg:(double)deg;
 - (void)setAttitudePitch:(double)pitch roll:(double)roll;

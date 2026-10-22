@@ -86,6 +86,12 @@ abstract class HybridCesiumViewSpec: HybridView() {
   @get:Keep
   @set:DoNotStrip
   @set:Keep
+  abstract var altitudeDatum: String?
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
   abstract var maximumCachedMiB: Double?
   
   @get:DoNotStrip

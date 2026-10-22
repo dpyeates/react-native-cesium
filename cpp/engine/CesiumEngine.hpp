@@ -156,6 +156,9 @@ public:
 private:
   void createTileset();
   void destroyTileset();
+  // Wait until worker tasks and the main-thread continuations they post have
+  // finished. Safe to call with or without a live tileset.
+  void drainAsyncWork();
 
   // Apply runtime-mutable bits of `cfg` to the live tileset. Returns true if a
   // value actually changed (callers can use this to trigger force-render).

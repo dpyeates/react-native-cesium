@@ -128,6 +128,13 @@ namespace margelo::nitro::reactnativecesium {
     inline void setIonImageryAssetId(double ionImageryAssetId) noexcept override {
       _swiftPart.setIonImageryAssetId(std::forward<decltype(ionImageryAssetId)>(ionImageryAssetId));
     }
+    inline std::optional<std::string> getAltitudeDatum() noexcept override {
+      auto __result = _swiftPart.getAltitudeDatum();
+      return __result;
+    }
+    inline void setAltitudeDatum(const std::optional<std::string>& altitudeDatum) noexcept override {
+      _swiftPart.setAltitudeDatum(altitudeDatum);
+    }
     inline std::optional<double> getMaximumCachedMiB() noexcept override {
       auto __result = _swiftPart.getMaximumCachedMiB();
       return __result;

@@ -32,6 +32,8 @@ namespace margelo::nitro::reactnativecesium {
       prototype.registerHybridSetter("msaaSampleCount", &HybridCesiumViewSpec::setMsaaSampleCount);
       prototype.registerHybridGetter("ionImageryAssetId", &HybridCesiumViewSpec::getIonImageryAssetId);
       prototype.registerHybridSetter("ionImageryAssetId", &HybridCesiumViewSpec::setIonImageryAssetId);
+      prototype.registerHybridGetter("altitudeDatum", &HybridCesiumViewSpec::getAltitudeDatum);
+      prototype.registerHybridSetter("altitudeDatum", &HybridCesiumViewSpec::setAltitudeDatum);
       prototype.registerHybridGetter("maximumCachedMiB", &HybridCesiumViewSpec::getMaximumCachedMiB);
       prototype.registerHybridSetter("maximumCachedMiB", &HybridCesiumViewSpec::setMaximumCachedMiB);
       prototype.registerHybridGetter("preloadAncestors", &HybridCesiumViewSpec::getPreloadAncestors);

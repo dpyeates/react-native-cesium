@@ -294,6 +294,7 @@ When you pass a callback ref to `CesiumView`, wrap it with `callback(...)` from 
 
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
+| `altitudeDatum` | `"msl"` \| `"ellipsoid"` | `"msl"` | Vertical datum of every public altitude: `initialCamera`, `setAltitude`, `teleport`, and the altitude returned by `getActualCamera`, `getDemandCamera`, and `onActualCamera`. `"msl"` is metres above mean sea level. `"ellipsoid"` is WGS84 ellipsoidal height (Android `Location.getAltitude()`). Ellipsoidal heights are converted to mean sea level with EGM96 before the camera integrator, and converted back on read. Switching the prop does not move the camera: later reads use the new unit, and the next altitude or position write is interpreted in that unit. Leave this at `"msl"` for gesture and scripted altitudes. Use `"ellipsoid"` for a GPS ellipsoidal height, and call `setPosition` and `setAltitude` one after the other on the same thread. |
 | `onMetrics` | `(metrics: CesiumMetrics) => void` | `undefined` | Receives throttled runtime stats and credits text. |
 
 **Optional performance / quality knobs**
@@ -348,7 +349,7 @@ type CameraState = {
 | --- | --- |------------------------------|-------------------------------------------------------------------------------------------------------|
 | `latitude` | `number` | `-90..90`                    | Camera latitude in degrees.                                                                           |
 | `longitude` | `number` | `-180..180`                  | Camera longitude in degrees.                                                                          |
-| `altitude` | `number` | Meters above sea level (MSL) | Camera height in meters.                                                                              |
+| `altitude` | `number` | Metres | Camera height. Mean sea level unless `altitudeDatum` is `"ellipsoid"`, in which case this is WGS84 ellipsoidal height. Writes and reads use the same unit. |
 | `heading` | `number` | Degrees                      | Compass direction the camera faces. Example: `0` faces north, `90` faces east.                        |
 | `pitch` | `number` | Degrees                      | Tilt angle. Negative values look downward toward terrain; positive values tilt up toward horizon/sky. |
 | `roll` | `number` | Degrees                      | Bank/rotation around forward axis. Positive right bank, negative left bank.                           |
@@ -385,15 +386,15 @@ Each axis (position, altitude, heading, attitude, viewCorrection, verticalFov) h
 
 | Method | Signature | Description |
 | --- | --- | --- |
-| `setPosition` | `(latitude: number, longitude: number) => void` | New geographic position **demand** (degrees). Each call stamps the measurement with the native steady-clock time of arrival and runs one α-β update against the predicted state at that instant. Latitude is clamped to ±90 on extrapolation; longitude is continuous (no wrap normalisation) so shortest-arc residual maths stays correct across the antimeridian. |
-| `setAltitude` | `(altitudeMeters: number) => void` | New altitude demand (metres MSL). |
+| `setPosition` | `(latitude: number, longitude: number) => void` | New geographic position **demand** (degrees). Each call stamps the measurement with the native steady-clock time of arrival and runs one α-β update against the predicted state at that instant. Latitude is clamped to ±90 on extrapolation; longitude is continuous (no wrap normalisation) so shortest-arc residual maths stays correct across the antimeridian. When `altitudeDatum` is `"ellipsoid"`, a horizontal move keeps the demanded ellipsoidal height and recomputes mean sea level at the new point. `"msl"` leaves altitude unchanged. |
+| `setAltitude` | `(altitudeMeters: number) => void` | New altitude demand, in metres. Mean sea level unless `altitudeDatum` is `"ellipsoid"`, in which case it is WGS84 height and is converted to mean sea level before the integrator. A later read reports the same sample back in this unit. |
 | `setHeading` | `(headingDeg: number) => void` | New heading demand (degrees; `0` = north, increasing clockwise). The integrator computes the shortest-arc residual, so feeding it `359 → 1` rotates 2° clockwise, not 358° counter-clockwise. |
 | `setAttitude` | `(pitchDeg: number, rollDeg: number) => void` | New pitch and roll demand (degrees). Bundled because almost every IMU emits them together — but you can pass the previous value for either axis if only one of them has changed. |
 | `setViewCorrection` | `(q: Quaternion) => void` | New camera-space rotation applied **after** HPR. SLERPed toward the latest demand each frame. Use for boresight calibration, screen-fixed HUD alignment, etc. Non-unit values are normalised on the native side. |
 | `setVerticalFov` | `(deg: number) => void` | New vertical FOV demand (degrees). Clamped to `20..100` on the native side. |
-| `teleport` | `(camera: CameraState) => void` | Hard scene jump — atomically resets every DoF (value, velocity, demand) to `camera`. Bypasses the integrator entirely. Use for `Fly to coordinate` actions or seeding from saved state. |
-| `getActualCamera` | `() => Promise<CameraState>` | Most recently rendered camera (post-integration). This is what the user is currently looking at and what a HUD overlay should mirror. Differs from `getDemandCamera()` while a glide is in progress or when the terrain-floor clamp has raised the altitude. |
-| `getDemandCamera` | `() => Promise<CameraState>` | What the consumer last asked for (per-DoF demand). Useful for diagnostics, or for showing the requested camera alongside the rendered one. |
+| `teleport` | `(camera: CameraState) => void` | Hard scene jump — atomically resets every DoF (value, velocity, demand) to `camera`. Bypasses the integrator entirely. Use for `Fly to coordinate` actions or seeding from saved state. `camera.altitude` uses the unit selected by `altitudeDatum`. |
+| `getActualCamera` | `() => Promise<CameraState>` | Most recently rendered camera (post-integration). This is what the user is currently looking at and what a HUD overlay should mirror. Differs from `getDemandCamera()` while a glide is in progress or when the terrain-floor clamp has raised the altitude. Altitude is in the unit selected by `altitudeDatum`. |
+| `getDemandCamera` | `() => Promise<CameraState>` | What the consumer last asked for (per-DoF demand). Useful for diagnostics, or for showing the requested camera alongside the rendered one. Altitude is in the unit selected by `altitudeDatum`. |
 | `getViewCorrection` | `() => Promise<Quaternion>` | Current view-correction quaternion (smoothed toward the latest demand). Identity (`w=1, x=y=z=0`) if you have never called `setViewCorrection`. |
 
 #### Threading: setters vs getters
@@ -415,7 +416,7 @@ Avoid assuming **main-thread-only** vs **JS-thread-only** labels beyond the abov
 
 The integrator tracks two camera states simultaneously:
 
-- **Demand** — what the consumer asked for, exactly as it was passed to the setters. `getDemandCamera()` returns this.
+- **Demand** — what the consumer asked for. `getDemandCamera()` returns this, with altitude in the unit selected by `altitudeDatum`.
 - **Actual** — what the integrator extrapolated to and what was passed to the GPU on the last frame. `getActualCamera()` returns this.
 
 For a steady GPS feed with no terrain clamp the two values converge within a few frames. They diverge when:
@@ -460,6 +461,8 @@ imuSubscription.on('attitude', (att) => {
   cesiumViewRef.current?.setAttitude(att.pitchDeg, att.rollDeg)
 })
 ```
+
+`fix.altitudeMsl` matches the default `altitudeDatum="msl"`. Android `Location.getAltitude()` is a WGS84 ellipsoidal height: set `altitudeDatum="ellipsoid"` and pass that value to `setAltitude` instead. Call `setPosition` and `setAltitude` one after the other on the same thread so the geoid is applied at that fix.
 
 Each setter is synchronous, takes the integrator's mutex briefly, and is safe to call at any rate from any thread.
 

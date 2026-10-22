@@ -27,6 +27,8 @@ class CesiumBridgeJNI {
 
   // ── Per-DoF camera setters ───────────────────────────────────────────────
   fun setPosition(lat: Double, lon: Double) = nativeSetPosition(nativePtr, lat, lon)
+  fun setAltitudeDatumEllipsoid(ellipsoid: Boolean) =
+    nativeSetAltitudeDatumEllipsoid(nativePtr, ellipsoid)
   fun setAltitude(alt: Double) = nativeSetAltitude(nativePtr, alt)
   fun setHeading(headingDeg: Double) = nativeSetHeading(nativePtr, headingDeg)
   fun setAttitude(pitchDeg: Double, rollDeg: Double) = nativeSetAttitude(nativePtr, pitchDeg, rollDeg)
@@ -107,6 +109,7 @@ class CesiumBridgeJNI {
   private external fun nativeUpdateImageryAssetId(ptr: Long, assetId: Long)
 
   private external fun nativeSetPosition(ptr: Long, lat: Double, lon: Double)
+  private external fun nativeSetAltitudeDatumEllipsoid(ptr: Long, ellipsoid: Boolean)
   private external fun nativeSetAltitude(ptr: Long, alt: Double)
   private external fun nativeSetHeading(ptr: Long, headingDeg: Double)
   private external fun nativeSetAttitude(ptr: Long, pitchDeg: Double, rollDeg: Double)

@@ -54,6 +54,7 @@ namespace margelo::nitro::reactnativecesium::views {
     nitro::ReactProp<double> loadingDescendantLimit;
     nitro::ReactProp<double> msaaSampleCount;
     nitro::ReactProp<double> ionImageryAssetId;
+    nitro::ReactProp<std::optional<std::string>> altitudeDatum;
     nitro::ReactProp<std::optional<double>> maximumCachedMiB;
     nitro::ReactProp<std::optional<bool>> preloadAncestors;
     nitro::ReactProp<std::optional<bool>> preloadSiblings;
@@ -87,6 +88,7 @@ namespace margelo::nitro::reactnativecesium::views {
              loadingDescendantLimit.hasSameValue(other.loadingDescendantLimit) &&
              msaaSampleCount.hasSameValue(other.msaaSampleCount) &&
              ionImageryAssetId.hasSameValue(other.ionImageryAssetId) &&
+             altitudeDatum.hasSameValue(other.altitudeDatum) &&
              maximumCachedMiB.hasSameValue(other.maximumCachedMiB) &&
              preloadAncestors.hasSameValue(other.preloadAncestors) &&
              preloadSiblings.hasSameValue(other.preloadSiblings) &&
@@ -121,6 +123,7 @@ namespace margelo::nitro::reactnativecesium::views {
              loadingDescendantLimit.isProvided() ||
              msaaSampleCount.isProvided() ||
              ionImageryAssetId.isProvided() ||
+             altitudeDatum.isProvided() ||
              maximumCachedMiB.isProvided() ||
              preloadAncestors.isProvided() ||
              preloadSiblings.isProvided() ||

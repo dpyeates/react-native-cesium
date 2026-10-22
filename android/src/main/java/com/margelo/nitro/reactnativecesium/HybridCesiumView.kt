@@ -105,6 +105,14 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
   override var ionImageryAssetId: Double = 1.0
     set(value) { field = value; postToRender { bridge?.updateImageryAssetId(value.toLong()) } }
 
+  /** `"msl"` (default) or `"ellipsoid"`. Ellipsoid heights are converted to MSL. */
+  override var altitudeDatum: String? = "msl"
+    set(value) {
+      field = value
+      val ellipsoid = value == "ellipsoid"
+      postToRender { bridge?.setAltitudeDatumEllipsoid(ellipsoid) }
+    }
+
   // ── Optional perf / quality knobs ────────────────────────────────────────
   override var maximumCachedMiB: Double? = null
     set(value) { field = value; if (value != null) postToRender { bridge?.setMaximumCachedMiB(value.toInt()) } }
@@ -519,6 +527,7 @@ class HybridCesiumView(private val appContext: Context) : HybridCesiumViewSpec()
     // sqliteCacheMaxRows and taskProcessorThreads are applied before init() in
     // surfaceCreated; calling them here (after buildEngine) has no effect.
     minAltitudeAboveTerrain?.let { b.setMinAltitudeAboveTerrain(it.toFloat()) }
+    b.setAltitudeDatumEllipsoid(altitudeDatum == "ellipsoid")
   }
 
   /**

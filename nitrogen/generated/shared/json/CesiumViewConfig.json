@@ -13,6 +13,7 @@
     "loadingDescendantLimit": true,
     "msaaSampleCount": true,
     "ionImageryAssetId": true,
+    "altitudeDatum": true,
     "maximumCachedMiB": true,
     "preloadAncestors": true,
     "preloadSiblings": true,

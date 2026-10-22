@@ -11,6 +11,11 @@ import type {
 export interface CameraState {
   latitude: number
   longitude: number
+  /**
+   * Metres. Mean sea level unless `altitudeDatum` is `"ellipsoid"`, in which
+   * case this is WGS84 ellipsoidal height. `getActualCamera`,
+   * `getDemandCamera`, and `onActualCamera` report altitude in that same unit.
+   */
   altitude: number
   heading: number
   pitch: number
@@ -59,6 +64,16 @@ export interface CesiumViewProps extends HybridViewProps {
   /** 1 = off; 2 or 4 = MSAA when supported. */
   msaaSampleCount: number
   ionImageryAssetId: number
+  /**
+   * Vertical datum of public altitude numbers, in both directions.
+   * `"msl"` (default) is metres above mean sea level.
+   * `"ellipsoid"` is WGS84 ellipsoidal height (Android `Location.getAltitude`).
+   * Ellipsoidal heights are converted to mean sea level with EGM96 before the
+   * camera integrator, and converted back on read. Switching this prop does
+   * not move the camera: later reads use the new unit, and the next
+   * `setAltitude`, `setPosition`, or `teleport` is interpreted in that unit.
+   */
+  altitudeDatum?: string
 
   // ── Optional perf / quality knobs ────────────────────────────────────────
   // Note: all optional props below use "set once" semantics. Once a value has
@@ -157,10 +172,18 @@ export interface CesiumViewMethods extends HybridViewMethods {
    * for GPS or scripted position updates. Latitude is clamped to ±90 by the
    * integrator; longitude is continuous (no wrap normalisation) so the
    * shortest-arc residual maths stays correct across the antimeridian.
+   * When `altitudeDatum` is `"ellipsoid"`, a horizontal move keeps the
+   * demanded ellipsoidal height and recomputes mean sea level at the new
+   * point. Mean-sea-level mode leaves altitude unchanged.
    */
   setPosition(latitude: number, longitude: number): void
 
-  /** New altitude demand (metres above mean sea level). */
+  /**
+   * New altitude demand, in metres. Interpreted as mean sea level unless
+   * `altitudeDatum` is `"ellipsoid"`, in which case it is WGS84 height and
+   * converted to MSL before the integrator. A later read reports the same
+   * sample back in this unit.
+   */
   setAltitude(altitudeMeters: number): void
 
   /** New heading demand (degrees, 0 = north, increasing clockwise). */
@@ -195,14 +218,15 @@ export interface CesiumViewMethods extends HybridViewMethods {
    * Most recent camera that was rendered (post-integration). This is what
    * the user is currently looking at and is what a HUD overlay should
    * mirror. Differs from `getDemandCamera()` while a glide is in progress
-   * or when the terrain-floor clamp has raised the altitude.
+   * or when the terrain-floor clamp has raised the altitude. Altitude is in
+   * the unit selected by `altitudeDatum`.
    */
   getActualCamera(): Promise<CameraState>
 
   /**
    * What the consumer last asked for (per-DoF demand). Useful for
    * diagnostics or for showing the requested camera alongside the rendered
-   * one.
+   * one. Altitude is in the unit selected by `altitudeDatum`.
    */
   getDemandCamera(): Promise<CameraState>
 

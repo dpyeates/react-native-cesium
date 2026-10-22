@@ -99,6 +99,11 @@ void JHybridCesiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     hybridView->setIonImageryAssetId(newProps->ionImageryAssetId.get());
   }
   if (oldProps == nullptr
+        ? newProps->altitudeDatum.isProvided()
+        : !newProps->altitudeDatum.hasSameValue(oldProps->altitudeDatum)) {
+    hybridView->setAltitudeDatum(newProps->altitudeDatum.get());
+  }
+  if (oldProps == nullptr
         ? newProps->maximumCachedMiB.isProvided()
         : !newProps->maximumCachedMiB.hasSameValue(oldProps->maximumCachedMiB)) {
     hybridView->setMaximumCachedMiB(newProps->maximumCachedMiB.get());

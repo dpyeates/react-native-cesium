@@ -212,6 +212,21 @@ void CesiumEngine::shutdown() {
   creditSystem_.reset();
 }
 
+void CesiumEngine::drainAsyncWork() {
+  // Worker tasks post main-thread continuations and return. Those
+  // continuations (Ion raster-overlay loads in particular) can queue more
+  // worker tasks, so pump both sides until the pool stays idle.
+  for (int pass = 0; pass < 16; ++pass) {
+    if (taskProcessor_) {
+      taskProcessor_->waitUntilIdle();
+    }
+    asyncSystem_.dispatchMainThreadTasks();
+  }
+  if (taskProcessor_) {
+    taskProcessor_->waitUntilIdle();
+  }
+}
+
 void CesiumEngine::updateConfig(const EngineConfig& config) {
   // Only token / asset id changes force a full tileset rebuild. Everything
   // else is mutated in place via tileset_->getOptions() to avoid the very
@@ -407,19 +422,27 @@ void CesiumEngine::applyImageryOverlay(int64_t targetAssetId) {
 }
 
 void CesiumEngine::destroyTileset() {
-  currentOverlay_ = nullptr;
-  currentImageryAssetId_ = 1;
-  tileset_.reset();
-  if (taskProcessor_) {
-    taskProcessor_->waitUntilIdle();
+  // Detach the imagery overlay while this engine still owns it. Dropping
+  // currentOverlay_ before in-flight IonRasterOverlay tasks finish frees the
+  // overlay out from under their destructors (heap corruption).
+  if (tileset_ && currentOverlay_) {
+    tileset_->getOverlays().remove(currentOverlay_);
   }
-  // every TileGPUResources* baked into cachedDraws_ has just been freed.
-  // Clearing the cache guarantees no dangling pointer survives into the next
-  // updateFrame and forces a clean slow-path rebuild.
+  drainAsyncWork();
+
+  // Drop draw-cache pointers before the tileset frees TileGPUResources.
   lastDrawSignature_   = 0;
   stableSigFrames_     = 0;
   cachedDraws_.clear();
   clearResidentTerrain();
+
+  tileset_.reset();
+  currentImageryAssetId_ = 1;
+  // Tileset destruction schedules further async cleanup. Drain that while
+  // this engine still owns the overlay, then release it. Dropping the
+  // overlay first frees it under those continuations.
+  drainAsyncWork();
+  currentOverlay_ = nullptr;
 }
 
 void CesiumEngine::setImageryAssetId(int64_t assetId) {

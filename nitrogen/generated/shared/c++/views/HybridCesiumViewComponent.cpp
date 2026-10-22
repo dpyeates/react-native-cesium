@@ -29,6 +29,7 @@ namespace margelo::nitro::reactnativecesium::views {
     loadingDescendantLimit(nitro::ReactProp<double>::fromRawValue("CesiumView", "loadingDescendantLimit", rawProps, sourceProps.loadingDescendantLimit)),
     msaaSampleCount(nitro::ReactProp<double>::fromRawValue("CesiumView", "msaaSampleCount", rawProps, sourceProps.msaaSampleCount)),
     ionImageryAssetId(nitro::ReactProp<double>::fromRawValue("CesiumView", "ionImageryAssetId", rawProps, sourceProps.ionImageryAssetId)),
+    altitudeDatum(nitro::ReactProp<std::optional<std::string>>::fromRawValue("CesiumView", "altitudeDatum", rawProps, sourceProps.altitudeDatum)),
     maximumCachedMiB(nitro::ReactProp<std::optional<double>>::fromRawValue("CesiumView", "maximumCachedMiB", rawProps, sourceProps.maximumCachedMiB)),
     preloadAncestors(nitro::ReactProp<std::optional<bool>>::fromRawValue("CesiumView", "preloadAncestors", rawProps, sourceProps.preloadAncestors)),
     preloadSiblings(nitro::ReactProp<std::optional<bool>>::fromRawValue("CesiumView", "preloadSiblings", rawProps, sourceProps.preloadSiblings)),
@@ -62,6 +63,7 @@ namespace margelo::nitro::reactnativecesium::views {
       case hashString("loadingDescendantLimit"): return true;
       case hashString("msaaSampleCount"): return true;
       case hashString("ionImageryAssetId"): return true;
+      case hashString("altitudeDatum"): return true;
       case hashString("maximumCachedMiB"): return true;
       case hashString("preloadAncestors"): return true;
       case hashString("preloadSiblings"): return true;

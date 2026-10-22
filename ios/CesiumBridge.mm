@@ -4,6 +4,7 @@
 #include "engine/CameraIntegrator.hpp"
 #include "engine/CesiumEngine.hpp"
 #include "engine/EngineTunables.hpp"
+#include "engine/GeoidConverter.hpp"
 #include "engine/MetricsAggregator.hpp"
 #include "engine/TerrainFloor.hpp"
 #include "metal/MetalBackend.h"
@@ -35,6 +36,9 @@
   int   _viewportHeight;
   BOOL  _initialized;
   BOOL  _suspended;
+  // Written when the prop changes; read from the caller thread inside
+  // setAltitude / setPosition / teleport / readback.
+  std::atomic<bool> _altitudeIsEllipsoid;
 
   // Last wall-clock tick used to compute the metrics-only frame dt EMA. Kept
   // per-instance (not a function-local static) so a hot reload that destroys
@@ -65,8 +69,9 @@
   if (self) {
     _viewportWidth     = width;
     _viewportHeight    = height;
-    _initialized       = NO;
-    _suspended         = NO;
+    _initialized          = NO;
+    _suspended            = NO;
+    _altitudeIsEllipsoid.store(false, std::memory_order_relaxed);
     _lastTickSec       = 0.0;
     _forceRender.store(true, std::memory_order_release);
     _cacheDir          = [cacheDir copy];
@@ -184,13 +189,45 @@
 
 - (void)setPositionLatitude:(double)lat longitude:(double)lon {
   if (!_initialized) return;
+  const bool ellipsoid = _altitudeIsEllipsoid.load(std::memory_order_acquire);
+  double adjustedMsl = 0.0;
+  bool adjustAltitude = false;
+  if (ellipsoid) {
+    const auto demand = _integrator->getDemand();
+    adjustedMsl = reactnativecesium::mslAfterHorizontalMove(
+        demand.latitude, demand.longitude, demand.altitude, lat, lon);
+    adjustAltitude = std::abs(adjustedMsl - demand.altitude) >
+                     reactnativecesium::kHorizontalMoveMslEpsilonMeters;
+  }
   _integrator->setPosition(lat, lon);
+  if (adjustAltitude) {
+    _integrator->setAltitude(adjustedMsl);
+  }
   _forceRender.store(true, std::memory_order_release);
+}
+
+- (void)setAltitudeDatumEllipsoid:(BOOL)ellipsoid {
+  _altitudeIsEllipsoid.store(ellipsoid == YES, std::memory_order_release);
+}
+
+- (double)mslAltitude:(double)alt latitude:(double)lat longitude:(double)lon {
+  return reactnativecesium::demandAltitudeToMslMeters(
+      lat, lon, alt, _altitudeIsEllipsoid.load(std::memory_order_acquire));
+}
+
+- (double)demandAltitudeFromMsl:(double)msl
+                       latitude:(double)lat
+                      longitude:(double)lon {
+  return reactnativecesium::mslToDemandAltitudeMeters(
+      lat, lon, msl, _altitudeIsEllipsoid.load(std::memory_order_acquire));
 }
 
 - (void)setAltitude:(double)alt {
   if (!_initialized) return;
-  _integrator->setAltitude(alt);
+  const auto demand = _integrator->getDemand();
+  _integrator->setAltitude([self mslAltitude:alt
+                                    latitude:demand.latitude
+                                   longitude:demand.longitude]);
   _forceRender.store(true, std::memory_order_release);
 }
 
@@ -223,7 +260,7 @@
   reactnativecesium::CameraParams p;
   p.latitude    = lat;
   p.longitude   = lon;
-  p.altitude    = alt;
+  p.altitude    = [self mslAltitude:alt latitude:lat longitude:lon];
   p.heading     = heading;
   p.pitch       = pitch;
   p.roll        = roll;
@@ -427,7 +464,13 @@
 // ── Actual camera readback (post-integration; what was rendered) ─────────
 - (double)readActualLatitude       { return _integrator ? _integrator->getActual().latitude       : 0.0; }
 - (double)readActualLongitude      { return _integrator ? _integrator->getActual().longitude      : 0.0; }
-- (double)readActualAltitude       { return _integrator ? _integrator->getActual().altitude       : 0.0; }
+- (double)readActualAltitude {
+  if (!_integrator) return 0.0;
+  const auto actual = _integrator->getActual();
+  return [self demandAltitudeFromMsl:actual.altitude
+                            latitude:actual.latitude
+                           longitude:actual.longitude];
+}
 - (double)readActualHeading        { return _integrator ? _integrator->getActual().heading        : 0.0; }
 - (double)readActualPitch          { return _integrator ? _integrator->getActual().pitch          : 0.0; }
 - (double)readActualRoll           { return _integrator ? _integrator->getActual().roll           : 0.0; }
@@ -436,7 +479,13 @@
 // ── Demand camera readback (what the consumer last asked for) ────────────
 - (double)readDemandLatitude       { return _integrator ? _integrator->getDemand().latitude       : 0.0; }
 - (double)readDemandLongitude      { return _integrator ? _integrator->getDemand().longitude      : 0.0; }
-- (double)readDemandAltitude       { return _integrator ? _integrator->getDemand().altitude       : 0.0; }
+- (double)readDemandAltitude {
+  if (!_integrator) return 0.0;
+  const auto demand = _integrator->getDemand();
+  return [self demandAltitudeFromMsl:demand.altitude
+                            latitude:demand.latitude
+                           longitude:demand.longitude];
+}
 - (double)readDemandHeading        { return _integrator ? _integrator->getDemand().heading        : 0.0; }
 - (double)readDemandPitch          { return _integrator ? _integrator->getDemand().pitch          : 0.0; }
 - (double)readDemandRoll           { return _integrator ? _integrator->getDemand().roll           : 0.0; }

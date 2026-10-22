@@ -48,6 +48,10 @@ struct CesiumBridgeAndroid {
 
   // ── Per-DoF camera demand setters ──────────────────────────────────────
   void setPosition(double lat, double lon);
+  // When true, altitudes passed to setAltitude/teleport are WGS84 ellipsoidal
+  // heights. They are converted to MSL before the integrator, and altitude
+  // readback is converted back. A horizontal move keeps that ellipsoidal height.
+  void setAltitudeDatumEllipsoid(bool ellipsoid);
   void setAltitude(double alt);
   void setHeading(double headingDeg);
   void setAttitude(double pitchDeg, double rollDeg);
@@ -138,6 +142,9 @@ private:
   int  viewportWidth_  = 0;
   int  viewportHeight_ = 0;
   bool initialized_    = false;
+  // Written from the render thread when the prop changes; read from the
+  // caller thread inside setAltitude / setPosition / teleport / readback.
+  std::atomic<bool> altitudeIsEllipsoid_{false};
 
   // Force-render flag — set on every demand change so the render loop knows
   // to dispatch at least one frame.

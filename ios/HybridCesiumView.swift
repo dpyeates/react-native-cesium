@@ -72,6 +72,11 @@ class HybridCesiumView: HybridCesiumViewSpec {
   var ionImageryAssetId: Double = 1 {
     didSet { let v = Int64(ionImageryAssetId); postToRender { [weak self] in self?.bridge?.updateImageryAssetId(v) } }
   }
+  /// `"msl"` (default) or `"ellipsoid"`. Ellipsoid heights are converted to MSL
+  /// before the camera integrator.
+  var altitudeDatum: String? = "msl" {
+    didSet { pushAltitudeDatum() }
+  }
 
   // ── Optional perf / quality knobs ────────────────────────────────────────
   var maximumCachedMiB: Double? {
@@ -460,6 +465,12 @@ class HybridCesiumView: HybridCesiumViewSpec {
     // sqliteCacheMaxRows and taskProcessorThreads are applied at construction
     // time via the CesiumBridge initializer; calling them here has no effect.
     if let v = minAltitudeAboveTerrain { bridge?.setMinAltitudeAboveTerrain(Float(v)) }
+    bridge?.setAltitudeDatumEllipsoid(altitudeDatum == "ellipsoid")
+  }
+
+  private func pushAltitudeDatum() {
+    let ellipsoid = altitudeDatum == "ellipsoid"
+    postToRender { [weak self] in self?.bridge?.setAltitudeDatumEllipsoid(ellipsoid) }
   }
 
   // MARK: - Render Loop

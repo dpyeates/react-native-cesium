@@ -1,6 +1,7 @@
 #include "CesiumBridgeAndroid.h"
 
 #include "engine/EngineTunables.hpp"
+#include "engine/GeoidConverter.hpp"
 #include "engine/TerrainFloor.hpp"
 #include "vulkan/VulkanBackend.h"
 
@@ -149,13 +150,34 @@ void CesiumBridgeAndroid::updateImageryAssetId(int64_t assetId) {
 
 void CesiumBridgeAndroid::setPosition(double lat, double lon) {
   if (!initialized_ || !integrator_) return;
+  const bool ellipsoid =
+      altitudeIsEllipsoid_.load(std::memory_order_acquire);
+  double adjustedMsl = 0.0;
+  bool adjustAltitude = false;
+  if (ellipsoid) {
+    const auto demand = integrator_->getDemand();
+    adjustedMsl = reactnativecesium::mslAfterHorizontalMove(
+        demand.latitude, demand.longitude, demand.altitude, lat, lon);
+    adjustAltitude = std::abs(adjustedMsl - demand.altitude) >
+                     reactnativecesium::kHorizontalMoveMslEpsilonMeters;
+  }
   integrator_->setPosition(lat, lon);
+  if (adjustAltitude) {
+    integrator_->setAltitude(adjustedMsl);
+  }
   forceRender_.store(true, std::memory_order_release);
+}
+
+void CesiumBridgeAndroid::setAltitudeDatumEllipsoid(bool ellipsoid) {
+  altitudeIsEllipsoid_.store(ellipsoid, std::memory_order_release);
 }
 
 void CesiumBridgeAndroid::setAltitude(double alt) {
   if (!initialized_ || !integrator_) return;
-  integrator_->setAltitude(alt);
+  const auto demand = integrator_->getDemand();
+  integrator_->setAltitude(reactnativecesium::demandAltitudeToMslMeters(
+      demand.latitude, demand.longitude, alt,
+      altitudeIsEllipsoid_.load(std::memory_order_acquire)));
   forceRender_.store(true, std::memory_order_release);
 }
 
@@ -184,7 +206,8 @@ void CesiumBridgeAndroid::teleport(double lat, double lon, double alt,
   reactnativecesium::CameraParams p;
   p.latitude       = lat;
   p.longitude      = lon;
-  p.altitude       = alt;
+  p.altitude       = reactnativecesium::demandAltitudeToMslMeters(
+      lat, lon, alt, altitudeIsEllipsoid_.load(std::memory_order_acquire));
   p.heading        = heading;
   p.pitch          = pitch;
   p.roll           = roll;
@@ -338,7 +361,11 @@ double CesiumBridgeAndroid::readActualLongitude() {
   return integrator_ ? integrator_->getActual().longitude : 0.0;
 }
 double CesiumBridgeAndroid::readActualAltitude() {
-  return integrator_ ? integrator_->getActual().altitude : 0.0;
+  if (!integrator_) return 0.0;
+  const auto actual = integrator_->getActual();
+  return reactnativecesium::mslToDemandAltitudeMeters(
+      actual.latitude, actual.longitude, actual.altitude,
+      altitudeIsEllipsoid_.load(std::memory_order_acquire));
 }
 double CesiumBridgeAndroid::readActualHeading() {
   return integrator_ ? integrator_->getActual().heading : 0.0;
@@ -362,7 +389,11 @@ double CesiumBridgeAndroid::readDemandLongitude() {
   return integrator_ ? integrator_->getDemand().longitude : 0.0;
 }
 double CesiumBridgeAndroid::readDemandAltitude() {
-  return integrator_ ? integrator_->getDemand().altitude : 0.0;
+  if (!integrator_) return 0.0;
+  const auto demand = integrator_->getDemand();
+  return reactnativecesium::mslToDemandAltitudeMeters(
+      demand.latitude, demand.longitude, demand.altitude,
+      altitudeIsEllipsoid_.load(std::memory_order_acquire));
 }
 double CesiumBridgeAndroid::readDemandHeading() {
   return integrator_ ? integrator_->getDemand().heading : 0.0;
@@ -451,6 +482,11 @@ JNIEXPORT void JNICALL
 Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetPosition(
     JNIEnv*, jobject, jlong ptr, jdouble lat, jdouble lon) {
   getBridge(ptr)->setPosition(lat, lon);
+}
+JNIEXPORT void JNICALL
+Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetAltitudeDatumEllipsoid(
+    JNIEnv*, jobject, jlong ptr, jboolean ellipsoid) {
+  getBridge(ptr)->setAltitudeDatumEllipsoid(ellipsoid == JNI_TRUE);
 }
 JNIEXPORT void JNICALL
 Java_com_margelo_nitro_reactnativecesium_CesiumBridgeJNI_nativeSetAltitude(
