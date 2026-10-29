@@ -396,8 +396,12 @@ void CesiumEngine::applyImageryOverlay(int64_t targetAssetId) {
   if (!tileset_) return;
   if (targetAssetId == currentImageryAssetId_) return;
 
+  // Same order as destroyTileset: detach, drain in-flight Ion raster work
+  // while this engine still owns the overlay, then release it. Releasing
+  // currentOverlay_ before that drain frees it under those destructors.
   if (currentOverlay_) {
     tileset_->getOverlays().remove(currentOverlay_);
+    drainAsyncWork();
     currentOverlay_ = nullptr;
   }
   currentImageryAssetId_ = (targetAssetId <= 0) ? 1 : targetAssetId;
