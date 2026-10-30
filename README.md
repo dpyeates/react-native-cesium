@@ -87,15 +87,15 @@ Ensure Homebrew’s binary directory is on your **`PATH`** when you run the buil
 - Install **Android Studio**
 - In SDK Manager, install:
   - **Android SDK**
-  - **NDK** (the project currently uses `27.1.12297006`)
+  - **NDK `27.1.12297006`** — the same NDK React Native 0.88 links against. Do not substitute a newer side-by-side NDK; its libc++ will not match the app.
 - Ensure **Java 17 (JDK)** is available (Android Studio bundled JDK is fine)
 
-For Android builds, make sure one of these is set so the NDK can be discovered:
+For Android builds, make sure one of these is set so that NDK can be discovered:
 
-- `ANDROID_NDK_HOME` (explicit NDK path), or
-- `ANDROID_SDK_ROOT` / `ANDROID_HOME` with an installed NDK under `ndk/`
+- `ANDROID_NDK_HOME` pointing at NDK `27.1.12297006`, or
+- `ANDROID_SDK_ROOT` / `ANDROID_HOME` with that NDK installed under `ndk/27.1.12297006`
 
-If `ANDROID_NDK_HOME` is unset, the build script will try to auto-detect the latest installed NDK from your SDK directory.
+If `ANDROID_NDK_HOME` is unset, the build script selects `27.1.12297006` from the SDK. It does not use a newer installed NDK.
 
 </details>
 

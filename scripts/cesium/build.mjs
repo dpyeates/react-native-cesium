@@ -3,7 +3,7 @@
  * Release build of Cesium Native for Android (arm64-android) and iOS (arm64-ios + arm64-ios-simulator),
  * then stage under vendor/android and vendor/ios (XCFramework).
  *
- * Prerequisites: CMake 3.15+ (Ninja recommended; otherwise Unix Makefiles on macOS/Linux), git (to auto-clone vcpkg), vcpkg (see resolveVcpkgRoot), Xcode (iOS). Android NDK: ANDROID_NDK_HOME or auto-detect from ANDROID_HOME / ANDROID_SDK_ROOT / ~/Library/Android/sdk/ndk.
+ * Prerequisites: CMake 3.15+ (Ninja recommended; otherwise Unix Makefiles on macOS/Linux), git (to auto-clone vcpkg), vcpkg (see resolveVcpkgRoot), Xcode (iOS). Android NDK: React Native 0.88's 27.1.12297006 (ANDROID_NDK_HOME or the matching folder under the SDK ndk/ directory).
  * See README "Maintainers: Cesium Native prebuilts".
  */
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import os from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -655,20 +655,26 @@ function isValidNdkRoot(dir) {
   return existsSync(join(dir, 'build', 'cmake', 'android.toolchain.cmake'))
 }
 
-/** Prefer newer NDK folders (e.g. 27.1.12297006). */
-function compareNdkVersionDesc(a, b) {
-  const pa = a.split('.').map((x) => parseInt(x, 10) || 0)
-  const pb = b.split('.').map((x) => parseInt(x, 10) || 0)
-  const n = Math.max(pa.length, pb.length)
-  for (let i = 0; i < n; i++) {
-    const da = pa[i] ?? 0
-    const db = pb[i] ?? 0
-    if (da !== db) return db - da
-  }
-  return 0
+/**
+ * Must match React Native 0.88 `ndkVersion` (gradle/libs.versions.toml on 0.88-stable).
+ * Prebuilt static libraries are linked into an app that uses this NDK's libc++.
+ * A newer side-by-side NDK (for example 28.2) references __cxa_init_primary_exception,
+ * which 27.1's libc++_shared does not export.
+ */
+const REACT_NATIVE_NDK_VERSION = '27.1.12297006'
+
+function ndkRevision(dir) {
+  const propsPath = join(dir, 'source.properties')
+  if (!existsSync(propsPath)) return null
+  const match = readFileSync(propsPath, 'utf8').match(/^Pkg\.Revision\s*=\s*(\S+)/m)
+  return match ? match[1] : null
 }
 
-function pickLatestNdkUnder(ndkParentDir) {
+function findReactNativeNdkUnder(ndkParentDir) {
+  const exact = join(ndkParentDir, REACT_NATIVE_NDK_VERSION)
+  if (isValidNdkRoot(exact) && ndkRevision(exact) === REACT_NATIVE_NDK_VERSION) {
+    return exact
+  }
   let dirs = []
   try {
     dirs = readdirSync(ndkParentDir, { withFileTypes: true })
@@ -677,26 +683,38 @@ function pickLatestNdkUnder(ndkParentDir) {
   } catch {
     return null
   }
-  const valid = dirs.filter((d) => isValidNdkRoot(d))
-  if (valid.length === 0) return null
-  valid.sort((x, y) => compareNdkVersionDesc(basename(x), basename(y)))
-  return valid[0]
+  return (
+    dirs.find((d) => isValidNdkRoot(d) && ndkRevision(d) === REACT_NATIVE_NDK_VERSION) ?? null
+  )
+}
+
+function assertReactNativeNdk(dir) {
+  const revision = ndkRevision(dir)
+  if (revision === REACT_NATIVE_NDK_VERSION) return
+  console.error(
+    `Cesium Native must be built with NDK ${REACT_NATIVE_NDK_VERSION} (React Native 0.88).\n` +
+      `${dir} is revision ${revision ?? 'unknown'}.\n` +
+      `Install that NDK and point ANDROID_NDK_HOME at it. A newer NDK is not a substitute.`
+  )
+  process.exit(1)
 }
 
 /**
- * Sets process.env.ANDROID_NDK_HOME. Uses env var, or scans SDK ndk/ for versioned folders.
+ * Sets process.env.ANDROID_NDK_HOME to React Native 0.88's NDK.
+ * Uses ANDROID_NDK_HOME when it is that revision, otherwise the matching SDK ndk/ folder.
  */
 function resolveAndroidNdkHome() {
   const env = process.env.ANDROID_NDK_HOME?.trim()
   if (env) {
-    if (isValidNdkRoot(env)) {
-      process.env.ANDROID_NDK_HOME = env
-      return env
+    if (!isValidNdkRoot(env)) {
+      console.error(
+        `ANDROID_NDK_HOME="${env}" is not a valid NDK root (missing build/cmake/android.toolchain.cmake).`
+      )
+      process.exit(1)
     }
-    console.error(
-      `ANDROID_NDK_HOME="${env}" is not a valid NDK root (missing build/cmake/android.toolchain.cmake).`
-    )
-    process.exit(1)
+    assertReactNativeNdk(env)
+    process.env.ANDROID_NDK_HOME = env
+    return env
   }
 
   const sdkCandidates = [
@@ -708,22 +726,23 @@ function resolveAndroidNdkHome() {
 
   for (const sdk of sdkCandidates) {
     if (!existsSync(sdk)) continue
-    const ndkParent = join(sdk, 'ndk')
-    const picked = pickLatestNdkUnder(ndkParent)
+    const picked = findReactNativeNdkUnder(join(sdk, 'ndk'))
     if (picked) {
       process.env.ANDROID_NDK_HOME = picked
-      console.warn(
-        `Using ANDROID_NDK_HOME=${picked} (auto-detected). Override with ANDROID_NDK_HOME if needed.`
+      console.log(
+        `Using ANDROID_NDK_HOME=${picked} (React Native 0.88 NDK ${REACT_NATIVE_NDK_VERSION}).`
       )
       return picked
     }
   }
 
-  console.error(`Could not find Android NDK.
+  console.error(`Could not find Android NDK ${REACT_NATIVE_NDK_VERSION} (React Native 0.88).
 
-  Install the NDK (Android Studio → Settings → SDK → SDK Tools → NDK),
+  Install that exact NDK (Android Studio → Settings → SDK → SDK Tools → NDK),
   or set:
-    export ANDROID_NDK_HOME=/path/to/ndk/27.x.x
+    export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${REACT_NATIVE_NDK_VERSION}
+
+  A newer NDK installed beside it is ignored. Cesium Native must link the same libc++ as the app.
 
   Or build only iOS (macOS):
     CESIUM_BUILD_ONLY=ios yarn build
